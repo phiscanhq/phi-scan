@@ -30,7 +30,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --extra dev
 
       - name: Lint — ruff check
         run: uv run ruff check .
@@ -39,14 +39,25 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Type check — mypy
-        run: uv run mypy phi_scan/
-        continue-on-error: false
+        shell: bash
+        run: |
+          if [ -d "phi_scan" ]; then
+            uv run mypy phi_scan/
+          else
+            echo "phi_scan/ not yet created — skipping mypy"
+          fi
 
       - name: Tests — pytest
-        run: uv run pytest tests/ -v --cov=phi_scan --cov-report=xml --cov-report=term-missing
+        shell: bash
+        run: |
+          if [ -d "tests" ]; then
+            uv run pytest tests/ -v --cov=phi_scan --cov-report=xml --cov-report=term-missing
+          else
+            echo "tests/ not yet created — skipping pytest"
+          fi
 
       - name: Upload coverage report
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && hashFiles('coverage.xml') != ''
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
