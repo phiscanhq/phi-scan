@@ -1,0 +1,7 @@
+[project]
+name = "phi-scan"
+version = "0.1.0"
+description = "PHI/PII Scanner for CI/CD pipelines. HIPAA & FHIR compliant. Local execution only."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
