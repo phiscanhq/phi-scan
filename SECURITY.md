@@ -10,12 +10,13 @@
 
 If you discover a security vulnerability in PhiScan, please report it responsibly.
 
-**Email:** joey.essak@gmail.com (will migrate to security@phiscan.dev when the
-domain is live)
+**Email:** joey.essak@gmail.com (will migrate to security@phiscan.dev at first
+public release)
 
 **PGP encryption:** for sensitive reports, you may encrypt your email using our
-PGP public key (will be published at https://phiscan.dev/.well-known/pgp-key.txt
-once the project is public).
+PGP public key available at [SECURITY-PGP.asc](SECURITY-PGP.asc) in this
+repository (will also be published at https://phiscan.dev/.well-known/pgp-key.txt
+at first public release).
 
 **What to include:**
 
@@ -62,4 +63,5 @@ The following are out of scope:
 
 - Vulnerabilities in user-scanned codebases (that's what PhiScan detects)
 - Social engineering attacks
-- Denial of service against the CLI tool itself
+- Denial of service against the CLI tool (as a local CLI, availability attacks
+  are not a meaningful threat model)
