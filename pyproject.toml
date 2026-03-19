@@ -3,16 +3,58 @@ name = "phi-scan"
 version = "0.1.0"
 description = "PHI/PII Scanner for CI/CD pipelines. HIPAA & FHIR compliant. Local execution only."
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.12"
-dependencies = []
-
-[dependency-groups]
-dev = [
-    "pytest>=8.0",
-    "pytest-cov>=5.0",
-    "ruff>=0.15.6",
-    "mypy>=1.10",
+authors = [{name = "Joey Essak", email = "joey.essak@gmail.com"}]
+keywords = ["phi", "pii", "hipaa", "fhir", "scanner", "compliance", "security", "cicd"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
 ]
+dependencies = [
+    "typer>=0.24",
+    "rich>=13.7",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "pyfiglet>=1.0",
+    "watchdog>=4.0",
+    "httpx>=0.27",  # webhook notifications (Phase 5) + CI/CD integrations (Phase 6); never transmits PHI
+    "pathspec>=0.12",
+]
+
+[project.scripts]
+phi-scan = "phi_scan.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/joeyessak/phi-scan"
+Repository = "https://github.com/joeyessak/phi-scan"
+Issues = "https://github.com/joeyessak/phi-scan/issues"
+Changelog = "https://github.com/joeyessak/phi-scan/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+nlp = ["presidio-analyzer>=2.0", "presidio-anonymizer>=2.0", "spacy>=3.7"]
+fhir = ["fhir.resources>=7.0"]
+reports = ["fpdf2>=2.7", "jinja2>=3.1", "matplotlib>=3.8"]
+full = ["phi-scan[nlp]", "phi-scan[fhir]", "phi-scan[reports]"]
+
+[dependency-groups]  # uv-native; pip users install dev deps via source checkout + uv sync
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.15.6", "mypy>=1.10", "faker>=24.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["phi_scan"]
 
 [tool.ruff]
 target-version = "py312"
@@ -24,3 +66,7 @@ select = ["E", "F", "I", "N", "W", "UP"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
