@@ -1161,13 +1161,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "faker" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
 fhir = [
     { name = "fhir-resources" },
 ]
@@ -1193,6 +1186,7 @@ reports = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "faker" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -1201,13 +1195,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "faker", marker = "extra == 'dev'", specifier = ">=24.0" },
     { name = "fhir-resources", marker = "extra == 'fhir'", specifier = ">=7.0" },
     { name = "fpdf2", marker = "extra == 'reports'", specifier = ">=2.7" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jinja2", marker = "extra == 'reports'", specifier = ">=3.1" },
     { name = "matplotlib", marker = "extra == 'reports'", specifier = ">=3.8" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "pathspec", specifier = ">=0.12" },
     { name = "phi-scan", extras = ["fhir"], marker = "extra == 'full'" },
     { name = "phi-scan", extras = ["nlp"], marker = "extra == 'full'" },
@@ -1215,20 +1207,18 @@ requires-dist = [
     { name = "presidio-analyzer", marker = "extra == 'nlp'", specifier = ">=2.0" },
     { name = "presidio-anonymizer", marker = "extra == 'nlp'", specifier = ">=2.0" },
     { name = "pyfiglet", specifier = ">=1.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.7" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.6" },
     { name = "spacy", marker = "extra == 'nlp'", specifier = ">=3.7" },
     { name = "typer", specifier = ">=0.24" },
     { name = "watchdog", specifier = ">=4.0" },
 ]
-provides-extras = ["nlp", "fhir", "reports", "full", "dev"]
+provides-extras = ["nlp", "fhir", "reports", "full"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "faker", specifier = ">=24.0" },
     { name = "mypy", specifier = ">=1.10" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=5.0" },
