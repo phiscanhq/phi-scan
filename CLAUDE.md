@@ -456,6 +456,45 @@ Extensibility via Python entry points (Phase 8):
 
 ---
 
+## Git Branching Strategy
+
+**One long-lived branch: `main`.**
+
+`main` is always releasable. No one pushes directly to `main`. Every change arrives via a
+short-lived branch and a PR. Short-lived branches are deleted immediately after merge.
+
+### Branch Types
+
+| Type      | When to use                                              | Branches from |
+| --------- | -------------------------------------------------------- | ------------- |
+| `task/`   | Planned work from PLAN.md — the normal case              | `main`        |
+| `hotfix/` | Urgent fix that cannot wait for the next planned task    | `main`        |
+| `chore/`  | Maintenance with no PLAN.md task (dep bumps, docs, CI)   | `main`        |
+
+### Branch Naming
+
+```
+task/<phase><section>-<task-number>-<short-description>
+hotfix/<short-description>
+chore/<short-description>
+```
+
+Examples:
+- `task/1A-1-license-file`
+- `task/1B-7-scanner-traversal`
+- `hotfix/fix-ssn-regex-false-positive`
+- `chore/bump-ruff-to-0-16`
+
+### Branch Rules
+
+- Always branch from `main` — never branch off another feature branch
+- Never push directly to `main` — branch protection enforces this
+- Keep branches short-lived — open the PR the same day you create the branch
+- If `main` moves ahead while you are working, rebase: `git rebase main`
+- Delete the branch immediately after the PR is merged
+
+---
+
 ## Development Workflow — Non-Negotiable
 
 Every single task in the build plan follows this exact workflow before the next task begins.
@@ -476,18 +515,6 @@ Before moving to the next task:
 8. Claude automated code review must complete
 9. Merge PR to `main`
 10. Only then move to the next task
-
-### Branch Naming Convention
-
-```
-task/<phase><section>-<task-number>-<short-description>
-```
-
-Examples:
-- `task/1A-1-license-file`
-- `task/1A-4-rewrite-pyproject-toml`
-- `task/1B-7-scanner-traversal`
-- `task/2B-1-regex-pattern-registry`
 
 ### PR Requirements
 
