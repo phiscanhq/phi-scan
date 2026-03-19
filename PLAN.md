@@ -109,14 +109,14 @@ and explain commands deferred to Phase 2).
 - [x] **1A.1** Create `LICENSE` file — MIT license with copyright year and author name
 - [x] **1A.2** Create `CHANGELOG.md` — initial entry: `## [Unreleased]` section
 - [x] **1A.3** Create `SECURITY.md` — vulnerability reporting policy (email, response commitment, disclosure timeline)
-- [ ] **1A.4** Rewrite `pyproject.toml` — full metadata, all core dependencies, `[project.scripts]` entry point, version `0.1.0`
+- [x] **1A.4** Rewrite `pyproject.toml` — full metadata, all core dependencies, `[project.scripts]` entry point, version `0.1.0`
   - Include `[project.optional-dependencies]` groups: see Dependency Strategy section below
   - Include `[tool.ruff]` configuration
   - Include `[tool.pytest.ini_options]` configuration
   - Include `py.typed` marker in `[tool.setuptools.package-data]`
-- [ ] **1A.5** `uv add` core deps: `typer[all]`, `rich`, `pyyaml`, `python-dotenv`, `pyfiglet`, `watchdog`, `httpx`, `pathspec`
-- [ ] **1A.6** `uv add --dev` dev deps: `pytest`, `pytest-cov`, `ruff`, `mypy`
-- [ ] **1A.7** `uv sync` — generate `uv.lock` (commit it)
+- [x] **1A.5** `uv add` core deps: `typer[all]`, `rich`, `pyyaml`, `python-dotenv`, `pyfiglet`, `watchdog`, `httpx`, `pathspec`
+- [x] **1A.6** `uv add --dev` dev deps: `pytest`, `pytest-cov`, `ruff`, `mypy`
+- [x] **1A.7** `uv sync` — generate `uv.lock` (commit it)
 - [ ] **1A.8** Delete `main.py` — replaced by `phi_scan/cli.py` entry point
 - [ ] **1A.9** Create `phi_scan/` package directory with all module files
 - [ ] **1A.10** Create `phi_scan/py.typed` — PEP 561 type checking marker file
