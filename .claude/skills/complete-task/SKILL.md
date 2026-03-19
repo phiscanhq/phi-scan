@@ -76,7 +76,8 @@ Finish the current task and open a PR. Run every step in order. Stop and report 
    - What was built
    - Any deviations from the plan
    - Test coverage note
-     PR body must NOT reference Claude, AI tooling, or any internal project docs (e.g., CLAUDE.md)
+
+   PR body must NOT reference AI tooling or any internal project docs
 
 8. **Wait for CI to pass**
 
