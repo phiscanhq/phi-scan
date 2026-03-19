@@ -108,7 +108,7 @@ and explain commands deferred to Phase 2).
 
 - [x] **1A.1** Create `LICENSE` file — MIT license with copyright year and author name
 - [x] **1A.2** Create `CHANGELOG.md` — initial entry: `## [Unreleased]` section
-- [ ] **1A.3** Create `SECURITY.md` — vulnerability reporting policy (email, response commitment, disclosure timeline)
+- [x] **1A.3** Create `SECURITY.md` — vulnerability reporting policy (email, response commitment, disclosure timeline)
 - [ ] **1A.4** Rewrite `pyproject.toml` — full metadata, all core dependencies, `[project.scripts]` entry point, version `0.1.0`
   - Include `[project.optional-dependencies]` groups: see Dependency Strategy section below
   - Include `[tool.ruff]` configuration
