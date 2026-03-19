@@ -12,18 +12,25 @@ If you discover a security vulnerability in PhiScan, please report it responsibl
 
 **Email:** security@phiscan.dev
 
+**PGP encryption:** for sensitive reports, you may encrypt your email using our
+PGP public key (published at https://phiscan.dev/.well-known/pgp-key.txt once
+the project is public).
+
 **What to include:**
+
 - Description of the vulnerability
 - Steps to reproduce
 - Affected version(s)
 - Any potential impact assessment
 
 **Response commitment:**
+
 - **Acknowledgment:** within 48 hours of receipt
 - **Initial assessment:** within 7 days
 - **Resolution target:** within 30 days for confirmed vulnerabilities
 
 **Disclosure timeline:**
+
 - We follow coordinated disclosure. Please allow up to 90 days before public
   disclosure to give us time to develop and release a fix.
 - Once a fix is released, we will publish a security advisory on GitHub.
@@ -38,18 +45,20 @@ PhiScan is designed to handle sensitive data environments. Key security properti
   the raw values themselves.
 - **Immutable audit trail:** audit log entries are append-only (INSERT only, never
   UPDATE or DELETE) per HIPAA requirements (45 CFR §164.530(j)).
-- **Pinned dependencies:** all dependency versions are pinned and lockfile is committed
-  to prevent supply chain attacks.
+- **Pinned dependencies:** all dependency versions will be pinned with a committed
+  lockfile to prevent supply chain attacks.
 
 ## Scope
 
 The following are in scope for security reports:
+
 - PHI/PII leakage through scanner output or logs
 - Audit log tampering or bypass
 - Dependency vulnerabilities in pinned packages
 - Unintended external network calls during scanning
 
 The following are out of scope:
+
 - Vulnerabilities in user-scanned codebases (that's what PhiScan detects)
 - Social engineering attacks
 - Denial of service against the CLI tool itself
