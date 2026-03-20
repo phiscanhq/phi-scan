@@ -26,6 +26,8 @@ test: ## Run pytest with coverage (fails below 80% — enforced in pyproject.tom
 	uv run pytest tests/
 
 scan: ## Scan files changed since DIFF_BASE (default: HEAD~1)
+	@echo "$(DIFF_BASE)" | grep -qE '^[a-zA-Z0-9_.~^/:@-]+$$' \
+		|| (echo "ERROR: DIFF_BASE contains invalid characters"; exit 1)
 	uv run phi-scan scan --diff "$(DIFF_BASE)"
 
 clean: ## Remove cache and coverage artifacts
@@ -37,5 +39,6 @@ clean: ## Remove cache and coverage artifacts
 	-find . -P -maxdepth 1 -name .pytest_cache ! -type l -exec rm -rf {} \;
 
 help: ## List all available targets
+	@# $$ below escapes $ in Make — the shell receives a single $ for awk field refs
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
