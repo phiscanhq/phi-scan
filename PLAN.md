@@ -146,7 +146,7 @@ and explain commands deferred to Phase 2).
     - NLP/NER (Layer 2): 0.50–0.90 (context-dependent, model uncertainty)
     - FHIR (Layer 3): 0.80–0.95 (schema-based structural match)
     - AI (Layer 4): adjusts existing scores ±0.15 (second-opinion refinement)
-  - `AUDIT_RETENTION_DAYS = 2192` (HIPAA 6-year minimum — conservative, accounts for leap years)
+  - `AUDIT_RETENTION_DAYS = 2192` (HIPAA 6-year minimum — 4×365 + 2×366, the mathematical maximum for a 6-year span; must match `.phi-scanner.yml` default)
   - `EXIT_CODE_CLEAN = 0`, `EXIT_CODE_VIOLATION = 1`
   - Enums: `OutputFormat` (TABLE, JSON, SARIF, CSV, PDF, HTML, JUNIT, CODEQUALITY, GITLAB_SAST), `SeverityLevel` (LOW, MEDIUM, HIGH)
   - Enum: `RiskLevel` (CRITICAL, HIGH, MODERATE, LOW, CLEAN)
