@@ -12,9 +12,6 @@ from phi_scan.cli import app
 PACKAGE_DISTRIBUTION_NAME = "phi-scan"
 METADATA_NAME_KEY = "Name"
 
-EXPECTED_VERSION = version(PACKAGE_DISTRIBUTION_NAME)
-EXPECTED_DISTRIBUTION_NAME = metadata(PACKAGE_DISTRIBUTION_NAME)[METADATA_NAME_KEY]
-
 PHASE_ONE_MODULES = [
     "phi_scan.constants",
     "phi_scan.exceptions",
@@ -65,9 +62,13 @@ def test_cli_app_is_typer_instance() -> None:
 
 def test_package_version_matches_pyproject() -> None:
     """Package version must stay consistent with pyproject.toml."""
-    assert phi_scan.__version__ == EXPECTED_VERSION
+    expected_version = version(PACKAGE_DISTRIBUTION_NAME)
+
+    assert phi_scan.__version__ == expected_version
 
 
 def test_package_app_name_matches_distribution() -> None:
     """Package app name must match the PyPI distribution name."""
-    assert phi_scan.__app_name__ == EXPECTED_DISTRIBUTION_NAME
+    expected_distribution_name = metadata(PACKAGE_DISTRIBUTION_NAME)[METADATA_NAME_KEY]
+
+    assert phi_scan.__app_name__ == expected_distribution_name
