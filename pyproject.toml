@@ -65,7 +65,7 @@ select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov-fail-under=80"
+addopts = "-v --cov=phi_scan --cov-fail-under=80"
 
 [tool.mypy]
 python_version = "3.12"
