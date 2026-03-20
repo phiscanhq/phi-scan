@@ -9,8 +9,11 @@ import typer
 import phi_scan
 from phi_scan.cli import app
 
-EXPECTED_VERSION = version("phi-scan")
-EXPECTED_APP_NAME = metadata("phi-scan")["Name"]
+PACKAGE_DISTRIBUTION_NAME = "phi-scan"
+METADATA_NAME_KEY = "Name"
+
+EXPECTED_VERSION = version(PACKAGE_DISTRIBUTION_NAME)
+EXPECTED_DISTRIBUTION_NAME = metadata(PACKAGE_DISTRIBUTION_NAME)[METADATA_NAME_KEY]
 
 PHASE_ONE_MODULES = [
     "phi_scan.constants",
@@ -65,6 +68,6 @@ def test_package_version_matches_pyproject() -> None:
     assert phi_scan.__version__ == EXPECTED_VERSION
 
 
-def test_package_app_name_is_defined() -> None:
-    """Package app name must be the CLI command name."""
-    assert phi_scan.__app_name__ == EXPECTED_APP_NAME
+def test_package_app_name_matches_distribution() -> None:
+    """Package app name must match the PyPI distribution name."""
+    assert phi_scan.__app_name__ == EXPECTED_DISTRIBUTION_NAME
