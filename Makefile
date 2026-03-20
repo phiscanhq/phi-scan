@@ -1,14 +1,14 @@
 .DEFAULT_GOAL := help
 
-DIFF_BASE           ?= HEAD~1
-SPACY_MODEL_NAME    ?= en_core_web_lg
-SPACY_MODEL_VERSION ?= 3.7.0
+# HEAD~1 assumes full clone depth — shallow clones (e.g. actions/checkout default)
+# must override: make scan DIFF_BASE=origin/main
+DIFF_BASE ?= HEAD~1
 
 .PHONY: install lint typecheck test scan clean help
 
-install: ## Install dependencies and download spaCy model
+install: ## Install dependencies and download spaCy model (hash-verified)
 	uv sync
-	uv pip install "$(SPACY_MODEL_NAME)==$(SPACY_MODEL_VERSION)"
+	uv pip install --require-hashes -r constraints/spacy-model.txt
 
 lint: ## Run Ruff linter and formatter
 	uv run ruff check . --fix
@@ -24,12 +24,12 @@ scan: ## Scan files changed since DIFF_BASE (default: HEAD~1)
 	uv run phi-scan scan --diff "$(DIFF_BASE)"
 
 clean: ## Remove cache and coverage artifacts
-	find . -P -type d -name __pycache__ -exec rm -rf --one-file-system {} \; 2>/dev/null
-	find . -P -type d -name .mypy_cache -exec rm -rf --one-file-system {} \; 2>/dev/null
-	find . -P -type d -name .ruff_cache -exec rm -rf --one-file-system {} \; 2>/dev/null
-	find . -P -maxdepth 1 -name .coverage ! -type l -exec rm -rf {} \; 2>/dev/null
-	find . -P -maxdepth 1 -name htmlcov ! -type l -exec rm -rf {} \; 2>/dev/null
-	find . -P -maxdepth 1 -name .pytest_cache ! -type l -exec rm -rf {} \; 2>/dev/null
+	find . -P -type d -name __pycache__ -prune -exec rm -rf --one-file-system {} \; || true
+	find . -P -type d -name .mypy_cache -prune -exec rm -rf --one-file-system {} \; || true
+	find . -P -type d -name .ruff_cache -prune -exec rm -rf --one-file-system {} \; || true
+	find . -P -maxdepth 1 -name .coverage ! -type l -exec rm -rf {} \; || true
+	find . -P -maxdepth 1 -name htmlcov ! -type l -exec rm -rf {} \; || true
+	find . -P -maxdepth 1 -name .pytest_cache ! -type l -exec rm -rf {} \; || true
 
 help: ## List all available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
