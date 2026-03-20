@@ -1,6 +1,7 @@
 """Tests verifying all phi_scan module files are importable."""
 
 import importlib
+from importlib.metadata import metadata, version
 
 import pytest
 import typer
@@ -8,8 +9,8 @@ import typer
 import phi_scan
 from phi_scan.cli import app
 
-EXPECTED_VERSION = "0.1.0"
-EXPECTED_APP_NAME = "phi-scan"
+EXPECTED_VERSION = version("phi-scan")
+EXPECTED_APP_NAME = metadata("phi-scan")["Name"]
 
 PHASE_ONE_MODULES = [
     "phi_scan.constants",
