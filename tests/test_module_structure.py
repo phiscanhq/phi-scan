@@ -2,7 +2,11 @@
 
 import importlib
 
+import pytest
+import typer
+
 import phi_scan
+from phi_scan.cli import app
 
 PHASE_ONE_MODULES = [
     "phi_scan.constants",
@@ -31,26 +35,24 @@ FUTURE_PHASE_MODULES = [
 ]
 
 
-def test_all_phase_one_modules_are_importable() -> None:
-    """Every Phase 1 module must import without error."""
-    for module_name in PHASE_ONE_MODULES:
-        module = importlib.import_module(module_name)
-        assert module is not None, f"{module_name} failed to import"
+@pytest.mark.parametrize("module_name", PHASE_ONE_MODULES)
+def test_phase_one_module_is_importable(module_name: str) -> None:
+    """Each Phase 1 module must import without error."""
+    imported_module = importlib.import_module(module_name)
+
+    assert imported_module is not None
 
 
-def test_all_future_phase_modules_are_importable() -> None:
-    """Every future-phase stub module must import without error."""
-    for module_name in FUTURE_PHASE_MODULES:
-        module = importlib.import_module(module_name)
-        assert module is not None, f"{module_name} failed to import"
+@pytest.mark.parametrize("module_name", FUTURE_PHASE_MODULES)
+def test_future_phase_module_is_importable(module_name: str) -> None:
+    """Each future-phase stub module must import without error."""
+    imported_module = importlib.import_module(module_name)
+
+    assert imported_module is not None
 
 
 def test_cli_app_is_typer_instance() -> None:
     """The CLI entry point must be a Typer app instance."""
-    import typer
-
-    from phi_scan.cli import app
-
     assert isinstance(app, typer.Typer)
 
 
