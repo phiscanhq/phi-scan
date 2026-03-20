@@ -1,0 +1,9 @@
+# Pinned spaCy model for NLP layer (Phase 2).
+# Update hash when bumping version — obtain from:
+# https://github.com/explosion/spacy-models/releases/tag/en_core_web_lg-<version>
+# Verify hash length (must be exactly 64 hex chars):
+#   python3 -c "print(len('708da1110fbe1163d059de34a2cbedb1db65c26e1e624ca925897a2711cb7d77'))"  # → 64
+# Verify hash against wheel:
+#   curl -sL <wheel-url> | sha256sum
+en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.7.0/en_core_web_lg-3.7.0-py3-none-any.whl \
+    --hash=sha256:708da1110fbe1163d059de34a2cbedb1db65c26e1e624ca925897a2711cb7d77
