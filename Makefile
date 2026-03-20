@@ -2,7 +2,9 @@
 
 # HEAD~1 assumes full clone depth — shallow clones (e.g. actions/checkout default)
 # must override: make scan DIFF_BASE=origin/main
-# DIFF_BASE is trusted input — do not pass values from untrusted external sources
+# SECURITY: DIFF_BASE must never be sourced from untrusted CI input (e.g. PR branch
+# names or fork metadata). Make interpolates the value before the shell validation
+# guard runs, so a malicious value could escape the regex check via Make expansion.
 DIFF_BASE ?= HEAD~1
 
 .PHONY: install lint format typecheck test scan clean help
