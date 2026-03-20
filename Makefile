@@ -7,7 +7,9 @@
 # guard runs, so a malicious value could escape the regex check via Make expansion.
 # Mitigation: CI policy — DIFF_BASE is only set by trusted pipeline config, never
 # from PR metadata. This will be documented in CONTRIBUTING.md (Phase 4).
+# unexport prevents DIFF_BASE from leaking into sub-make or child processes.
 DIFF_BASE ?= HEAD~1
+unexport DIFF_BASE
 
 .PHONY: install lint format typecheck test ci scan clean help
 
@@ -41,10 +43,10 @@ clean: ## Remove cache and coverage artifacts
 	-find -P . -type d -name __pycache__ -prune -exec rm -rf --one-file-system {} \;
 	-find -P . -type d -name .mypy_cache -prune -exec rm -rf --one-file-system {} \;
 	-find -P . -type d -name .ruff_cache -prune -exec rm -rf --one-file-system {} \;
-	-find -P . -maxdepth 1 -name .coverage ! -type l -exec rm -rf {} \;
-	-find -P . -maxdepth 1 -name coverage.xml ! -type l -exec rm -rf {} \;
-	-find -P . -maxdepth 1 -name htmlcov ! -type l -exec rm -rf {} \;
-	-find -P . -maxdepth 1 -name .pytest_cache ! -type l -exec rm -rf {} \;
+	-find -P . -maxdepth 1 -name .coverage ! -type l -exec rm -rf --one-file-system {} \;
+	-find -P . -maxdepth 1 -name coverage.xml ! -type l -exec rm -rf --one-file-system {} \;
+	-find -P . -maxdepth 1 -name htmlcov ! -type l -exec rm -rf --one-file-system {} \;
+	-find -P . -maxdepth 1 -name .pytest_cache ! -type l -exec rm -rf --one-file-system {} \;
 
 help: ## List all available targets
 	@# $$ below escapes $ in Make — the shell receives a single $ for awk field refs
