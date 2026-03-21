@@ -647,12 +647,6 @@ and can be wired in before or alongside the detection engine.
   - SQL files (.sql) → scan string literals and comments
   - Notebooks (.ipynb) → parse JSON, scan cell outputs and source
   - All other text files → full-text line-by-line scan
-- [ ] **2E.3a** Archive inspection — scan embedded plaintext resources in Java archives:
-  - File types: .jar, .war, .zip (unzip in-memory, never write to disk)
-  - Scan embedded text resources: .properties, .xml, .yaml, .yml, .json, .conf
-  - Skip embedded .class files (compiled bytecode — safe to ignore within archives)
-  - Remove .jar and .war from KNOWN_BINARY_EXTENSIONS in constants.py when this ships
-  - Graceful degradation: if zipfile extraction fails, log warning and skip the archive
 - [ ] **2E.4** Variable-name contextual boosting — boost confidence when value is assigned to a PHI-suggestive variable:
   - Pattern match variable names containing: `patient`, `ssn`, `mrn`, `dob`, `birth`, `name`, `address`, `phone`, `email`, `diagnosis`, `insurance`, `beneficiary`
   - Boost: +0.15 confidence when PHI-suggestive variable name + detected entity type align
@@ -663,6 +657,17 @@ and can be wired in before or alongside the detection engine.
 - [ ] **2E.6** Integrate scan cache from 2A.2 — skip unchanged files
 - [ ] **2E.7** Tune confidence thresholds — benchmark recall vs false positive rate
 - [ ] **2E.8** Target: >90% recall, <10% false positive rate on synthetic test dataset
+- [ ] **2E.9** Archive inspection — scan embedded plaintext resources inside Java archives:
+  - File types: .jar, .war, .zip (Python `zipfile` module — no external dependencies)
+  - Scan embedded text resources only: .properties, .xml, .yaml, .yml, .json, .conf
+  - Skip embedded .class files (compiled bytecode — opaque within archives)
+  - SECURITY REQUIREMENT (must be a test criterion): extraction is in-memory only —
+    never write extracted content to disk. PHI exposed to disk would violate the
+    local-execution-only contract and could persist beyond the scan process.
+  - Test: assert no temporary files are created in tmp or the working directory
+  - Graceful degradation: if zipfile extraction fails, log warning and skip the archive
+  - Remove .jar and .war from KNOWN_BINARY_EXTENSIONS in constants.py when this ships
+  - Update `.phi-scanignore` Format Specification in PLAN.md to note archive inspection live
 
 ### 2F — Auto-Fix Engine (`phi-scan fix`)
 

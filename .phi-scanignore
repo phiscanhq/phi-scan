@@ -22,6 +22,10 @@
 #   .env         — .env files may contain hardcoded credentials or PHI values.
 #                  If a .env file exists in the repo it should be scanned.
 #                  Add .env to .gitignore to keep it out of the repo entirely.
+#   .*~          — Editor backup files ending in ~ also match backups of sensitive
+#                  hidden files (.env~, .secrets~, .phi-scanner.yml~). Those backups
+#                  should be scanned, not suppressed. Add specific patterns such as
+#                  .bash_history~ to your own .phi-scanignore if needed.
 #   *.jar / *.war — Java archives bundle compiled bytecode AND plaintext resources
 #                  (e.g. application.properties, web.xml, Spring configs) that may
 #                  contain PHI. Archive inspection is tracked in PLAN.md Phase 2E.
@@ -51,9 +55,9 @@ target/
 # IDE and editor
 .idea/
 .vscode/
-*.sw?
-\#*#
-.*~
+*.sw?  # Vim swap files (.swp, .swo, .swa, ...); ? is gitwildmatch standard, supported by pathspec.
+\#*#   # Emacs auto-save files (#filename#). Backslash escapes the leading # per gitignore spec.
+       # Validate pathspec escape handling during Phase 2E.2 implementation.
 .DS_Store
 
 # Version control
