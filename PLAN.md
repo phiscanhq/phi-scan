@@ -124,7 +124,7 @@ and explain commands deferred to Phase 2).
 - [x] **1A.12** Create `Makefile` — targets: `install`, `lint`, `typecheck`, `test`, `scan`, `help`
 - [x] **1A.13** Create `.phi-scanner.yml` — default scanner configuration
 - [x] **1A.14** Create `.phi-scanignore` — default exclusion patterns (see Ignore Format Spec below)
-- [ ] **1A.15** Update `.gitignore` — add `.env`, `*.db`, `*.sqlite3`, `.phi-scanner/`, `phi-report.json`, `dist/`, `*.egg-info`
+- [x] **1A.15** Update `.gitignore` — add `.env`, `*.db`, `*.sqlite3`, `.phi-scanner/`, `phi-report.json`, `dist/`, `*.egg-info`
 - [ ] **1A.16** Update `README.md` — project name, install instructions, basic usage, license badge
 - [ ] **1A.17** Create `.github/workflows/ci.yml` — PhiScan's own CI pipeline (see 1H below)
 

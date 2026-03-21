@@ -8,3 +8,20 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Environment variables — never commit credentials or PHI values
+.env
+
+# SQLite databases — may contain PHI; exclude from version control
+*.db
+*.sqlite3
+
+# PhiScan internal state — stores SHA-256 hashes, never raw PHI
+.phi-scanner/
+
+# PhiScan scan output
+phi-report.json
+
+# Test coverage artifacts
+.coverage
+coverage.xml
