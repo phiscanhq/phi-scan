@@ -50,6 +50,8 @@ scan:
 output:
   # Default output format when --output flag is not specified.
   # Accepted values: table, json, sarif, csv, pdf, html, junit, codequality, gitlab-sast
+  # Note: gitlab-sast maps to OutputFormat.GITLAB_SAST — the config loader must
+  # handle this mapping explicitly (not via a generic replace/upper transform).
   # Run: phi-scan explain config for authoritative descriptions of each format.
   format: table
 
