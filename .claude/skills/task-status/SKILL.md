@@ -11,7 +11,7 @@ This gives a definitive answer on what was last completed and what comes next â€
 user is unsure or does not remember.
 
 **Merged task branches on main:**
-!`git log main --merges --oneline --format="%s" 2>/dev/null | grep -o 'task/[^ ]*' | head -20 || echo "none"`
+!`git log main --merges --oneline --format="%s" | grep -o 'task/[^ ]*' | head -20`
 
 **Current branch:**
 !`git branch --show-current`
@@ -19,11 +19,8 @@ user is unsure or does not remember.
 **Uncommitted changes:**
 !`git status --short`
 
-**Open PRs:**
-!`gh pr list --state open --json number,title,headRefName 2>/dev/null || echo "none"`
-
-**CI status (current branch PR):**
-!`gh pr checks 2>/dev/null || echo "no open PR on this branch"`
+**Open PRs (with CI status):**
+!`gh pr list --state open --json number,title,headRefName,statusCheckRollup`
 
 ### Steps
 
