@@ -1,0 +1,87 @@
+# .phi-scanignore — PhiScan exclusion patterns
+# Syntax: gitignore-style (via Python pathspec library)
+#
+# Rules:
+#   - Lines starting with # are comments
+#   - Blank lines are ignored
+#   - Patterns match relative to the repository root
+#   - Trailing / matches directories only: node_modules/
+#   - * matches anything except /: *.pyc
+#   - ** matches any number of directories: **/test_data/
+#   - ! prefix negates a pattern (re-include): !important_config.yml
+#   - Leading / anchors to repo root: /build/ matches only root-level build/
+#   - No leading / matches at any depth: __pycache__/ at depth 1 or depth 10
+#
+# Full syntax reference: phi-scan explain ignore (available Phase 2+)
+#
+# Intentional omissions (not excluded by default):
+#   *.log        — Log files are a primary PHI leak vector in healthcare systems.
+#                  Excluding them would silently suppress detections in application
+#                  logs. Add *.log to your own .phi-scanignore if you are certain
+#                  your logs contain no PHI (e.g. build logs in a non-clinical repo).
+#   .env         — .env files may contain hardcoded credentials or PHI values.
+#                  If a .env file exists in the repo it should be scanned.
+#                  Add .env to .gitignore to keep it out of the repo entirely.
+#   .*~          — Editor backup files ending in ~ also match backups of sensitive
+#                  hidden files (.env~, .secrets~, .phi-scanner.yml~). Those backups
+#                  should be scanned, not suppressed. Add specific patterns such as
+#                  .bash_history~ to your own .phi-scanignore if needed.
+#   *.jar / *.war / *.zip — Java archives and zip files bundle plaintext resources
+#                  (e.g. application.properties, web.xml, Spring configs) that may
+#                  contain PHI. Archive inspection for .jar, .war, and .zip is
+#                  tracked in PLAN.md Phase 2E.9. Until implemented, the scanner
+#                  skips them as binary but does not suppress them via this file —
+#                  preserving the option to flag or inspect them when that ships.
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+env/
+__pycache__/
+.tox/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+target/
+
+# Compiled bytecode
+# Pure binary bytecode — no readable text, cannot hold PHI as plaintext.
+*.pyc
+*.pyo
+*.class
+
+# IDE and editor
+.idea/
+.vscode/
+# Vim swap files (.swp, .swo, .swa, ...); ? is gitwildmatch standard, supported by pathspec.
+*.sw?
+# Emacs auto-save files (#filename#). Backslash escapes the leading # per gitignore spec so
+# pathspec treats it as a pattern, not a comment. Verified against pathspec gitwildmatch.
+\#*#
+.DS_Store
+
+# Version control
+# .git/ is listed explicitly for clarity — pathspec does not skip hidden
+# directories automatically, so this ensures git internals are never scanned.
+.git/
+
+# PhiScan internal
+# PhiScan writes SHA-256 hashes of detected values here — never raw PHI.
+# Excluded because scanning PhiScan's own output is always a false-positive.
+# Note: *.db and *.sqlite3 are intentionally NOT excluded at the global level.
+# SQLite databases in a repo may contain PHI; the scanner's binary-file
+# detection skips unreadable files automatically without this exclusion.
+.phi-scanner/
+
+# Infrastructure directories
+# .terraform/providers/ and .terraform/modules/ contain provider binaries and
+# downloaded module code — binary artifacts with no PHI risk.
+# WARNING: Do NOT add *.tfstate or terraform.tfstate here. Terraform state files
+# live at the repo root (not inside .terraform/) and are known to contain secrets
+# and occasionally PHI. Leave them unexcluded so PhiScan can flag them.
+.terraform/providers/
+.terraform/modules/
+.serverless/

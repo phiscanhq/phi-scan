@@ -123,7 +123,7 @@ and explain commands deferred to Phase 2).
 - [x] **1A.11** Create `tests/` directory with `conftest.py`
 - [x] **1A.12** Create `Makefile` — targets: `install`, `lint`, `typecheck`, `test`, `scan`, `help`
 - [x] **1A.13** Create `.phi-scanner.yml` — default scanner configuration
-- [ ] **1A.14** Create `.phi-scanignore` — default exclusion patterns (see Ignore Format Spec below)
+- [x] **1A.14** Create `.phi-scanignore` — default exclusion patterns (see Ignore Format Spec below)
 - [ ] **1A.15** Update `.gitignore` — add `.env`, `*.db`, `*.sqlite3`, `.phi-scanner/`, `phi-report.json`, `dist/`, `*.egg-info`
 - [ ] **1A.16** Update `README.md` — project name, install instructions, basic usage, license badge
 - [ ] **1A.17** Create `.github/workflows/ci.yml` — PhiScan's own CI pipeline (see 1H below)
@@ -657,6 +657,19 @@ and can be wired in before or alongside the detection engine.
 - [ ] **2E.6** Integrate scan cache from 2A.2 — skip unchanged files
 - [ ] **2E.7** Tune confidence thresholds — benchmark recall vs false positive rate
 - [ ] **2E.8** Target: >90% recall, <10% false positive rate on synthetic test dataset
+- [ ] **2E.9** Archive inspection — scan embedded plaintext resources inside Java archives:
+  - File types: .jar, .war, .zip (Python `zipfile` module — no external dependencies)
+  - Scan embedded text resources only: .properties, .xml, .yaml, .yml, .json, .conf
+  - Skip embedded .class files (compiled bytecode — opaque within archives)
+  - SECURITY REQUIREMENT (must be a test criterion): extraction is in-memory only —
+    never write extracted content to disk. PHI exposed to disk would violate the
+    local-execution-only contract and could persist beyond the scan process.
+  - Mandated pattern: use ZipFile.read(member) → BytesIO for in-memory access.
+    Never use ZipFile.extract() or ZipFile.extractall() — both write to disk.
+  - Test: assert no temporary files are created in tmp or the working directory
+  - Graceful degradation: if zipfile extraction fails, log warning and skip the archive
+  - Remove .jar and .war from KNOWN_BINARY_EXTENSIONS in constants.py when this ships
+  - Update `.phi-scanignore` Format Specification in PLAN.md to note archive inspection live
 
 ### 2F — Auto-Fix Engine (`phi-scan fix`)
 
