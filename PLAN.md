@@ -664,6 +664,8 @@ and can be wired in before or alongside the detection engine.
   - SECURITY REQUIREMENT (must be a test criterion): extraction is in-memory only —
     never write extracted content to disk. PHI exposed to disk would violate the
     local-execution-only contract and could persist beyond the scan process.
+  - Mandated pattern: use ZipFile.read(member) → BytesIO for in-memory access.
+    Never use ZipFile.extract() or ZipFile.extractall() — both write to disk.
   - Test: assert no temporary files are created in tmp or the working directory
   - Graceful degradation: if zipfile extraction fails, log warning and skip the archive
   - Remove .jar and .war from KNOWN_BINARY_EXTENSIONS in constants.py when this ships

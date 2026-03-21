@@ -55,9 +55,11 @@ target/
 # IDE and editor
 .idea/
 .vscode/
-*.sw?  # Vim swap files (.swp, .swo, .swa, ...); ? is gitwildmatch standard, supported by pathspec.
-\#*#   # Emacs auto-save files (#filename#). Backslash escapes the leading # per gitignore spec.
-       # Validate pathspec escape handling during Phase 2E.2 implementation.
+# Vim swap files (.swp, .swo, .swa, ...); ? is gitwildmatch standard, supported by pathspec.
+*.sw?
+# Emacs auto-save files (#filename#). Backslash escapes the leading # per gitignore spec so
+# pathspec treats it as a pattern, not a comment. Verified against pathspec gitwildmatch.
+\#*#
 .DS_Store
 
 # Version control
