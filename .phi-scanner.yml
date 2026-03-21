@@ -14,6 +14,8 @@ scan:
   # Minimum severity level to include in output and exit-code evaluation.
   # Maps to the SeverityLevel enum (not RiskLevel — that is per-scan aggregate).
   # Accepted values: low, medium, high
+  # Spec: the config loader must raise ConfigurationError on any unknown value —
+  # never silently fall back to a default.
   severity_threshold: low
 
   # Maximum file size to scan. Files exceeding this limit are skipped and logged.
@@ -22,7 +24,8 @@ scan:
   # SECURITY: Symlink following is disabled and must remain false.
   # Setting this to true is a security violation — it allows traversal to escape
   # the repository boundary and cause infinite loops in CI/CD environments.
-  # The runtime enforces false regardless of this value as a safety backstop.
+  # The config loader reads this field: if set to true, it raises ConfigurationError
+  # and the scan does not start. This field is not silently ignored.
   follow_symlinks: false
 
   # Optional allowlist of file extensions to scan.
@@ -52,6 +55,8 @@ output:
   # Accepted values: table, json, sarif, csv, pdf, html, junit, codequality, gitlab-sast
   # Note: gitlab-sast maps to OutputFormat.GITLAB_SAST — the config loader must
   # handle this mapping explicitly (not via a generic replace/upper transform).
+  # Spec: the config loader must raise ConfigurationError on any unknown value —
+  # never silently fall back to table.
   # Run: phi-scan explain config for authoritative descriptions of each format.
   format: table
 
