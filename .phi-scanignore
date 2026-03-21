@@ -13,6 +13,15 @@
 #   - No leading / matches at any depth: __pycache__/ at depth 1 or depth 10
 #
 # Reference: phi-scan explain ignore
+#
+# Intentional omissions (not excluded by default):
+#   *.log  — Log files are a primary PHI leak vector in healthcare systems.
+#            Excluding them would silently suppress detections in application logs.
+#            Add *.log to your own .phi-scanignore if you are certain your logs
+#            contain no PHI (e.g. build logs in a non-clinical repo).
+#   .env   — .env files may contain hardcoded credentials or PHI values.
+#            If a .env file exists in the repo it should be scanned.
+#            Add .env to .gitignore to keep it out of the repo entirely.
 
 # Dependencies
 node_modules/
@@ -27,6 +36,11 @@ build/
 *.egg-info/
 target/
 
+# Compiled files
+# Binary artifacts — contain no scannable text and cannot hold PHI as plaintext.
+*.pyc
+*.pyo
+
 # IDE and editor
 .idea/
 .vscode/
@@ -37,7 +51,12 @@ target/
 # Version control
 .git/
 
-# PhiScan's own files
+# Binary and database files
+# WARNING: *.db and *.sqlite3 suppress scanning of ALL SQLite files in the repo,
+# including third-party or application databases that may contain PHI.
+# PhiScan skips binary files automatically, but this exclusion prevents even
+# attempting to open them. Remove these lines if you store PHI in SQLite files
+# and want PhiScan to flag the presence of the database itself.
 .phi-scanner/
 *.db
 *.sqlite3
