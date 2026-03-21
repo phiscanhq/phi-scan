@@ -7,10 +7,15 @@ and writes the review to review_comment.txt for posting as a PR comment.
 
 import os
 import sys
+import time
 
 import anthropic
 
 MAX_DIFF_CHARACTERS = 30_000
+MAX_RETRY_ATTEMPTS = 3
+OVERLOADED_STATUS_CODE = 529
+RETRY_BASE_DELAY_SECONDS = 10
+RETRY_BACKOFF_MULTIPLIER = 2
 REVIEW_OUTPUT_FILE = "review_comment.txt"
 DIFF_INPUT_FILE = "pr_diff.txt"
 
@@ -90,23 +95,42 @@ Diff:
 Review this PR against the PhiScan code standards. Be specific about any violations found."""
 
 
-def request_claude_review(pr_title: str, diff: str) -> str:
-    """Send the diff to Claude and return the review text."""
-    client = anthropic.Anthropic()
-
+def _send_to_claude(client: anthropic.Anthropic, prompt: str) -> str:
+    """Send a single review prompt to Claude and return the response text."""
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1024,
         system=SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": build_review_prompt(pr_title, diff),
-            }
-        ],
+        messages=[{"role": "user", "content": prompt}],
     )
+    return message.content[0].text  # type: ignore[return-value]
 
-    return message.content[0].text
+
+def _sleep_before_retry(attempt: int) -> None:
+    """Sleep with exponential backoff before retrying a Claude API call."""
+    delay = RETRY_BASE_DELAY_SECONDS * (RETRY_BACKOFF_MULTIPLIER**attempt)
+    print(
+        f"API overloaded (529) — retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRY_ATTEMPTS})"
+    )  # noqa: E501
+    time.sleep(delay)
+
+
+def request_claude_review(pr_title: str, diff: str) -> str:
+    """Send the diff to Claude and return the review text, retrying on 529 overload."""
+    client = anthropic.Anthropic()
+    prompt = build_review_prompt(pr_title, diff)
+
+    for attempt in range(MAX_RETRY_ATTEMPTS):
+        try:
+            return _send_to_claude(client, prompt)
+        except anthropic.APIStatusError as error:
+            is_overloaded = error.status_code == OVERLOADED_STATUS_CODE
+            is_final_attempt = attempt == MAX_RETRY_ATTEMPTS - 1
+            if not is_overloaded or is_final_attempt:
+                raise
+            _sleep_before_retry(attempt)
+
+    raise RuntimeError("All retry attempts exhausted without returning or raising")
 
 
 def write_review_comment(review_text: str) -> None:
