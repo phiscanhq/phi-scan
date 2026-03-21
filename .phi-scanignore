@@ -32,6 +32,7 @@ target/
 .vscode/
 *.swp
 *.swo
+.DS_Store
 
 # Version control
 .git/
