@@ -173,7 +173,8 @@ and explain commands deferred to Phase 2).
   - Validation raises `ConfigurationError` on invalid values — never silently fall back
   - Map `gitlab-sast` → `OutputFormat.GITLAB_SAST` explicitly (not via generic replace/upper)
   - Call `Path(database_path).expanduser()` before any file I/O — never pass raw `~` string
-  - Raise `ConfigurationError` (not `ValueError`) if `follow_symlinks: true` is set
+  - Raise `ConfigurationError` (not `ValueError`) if `follow_symlinks: true` is set;
+    use `if scan_config.follow_symlinks:` (boolean check — no magic string `"true"` in logic)
 - [ ] **1B.7** `scanner.py` — recursive file traversal (NO detection yet)
   - `collect_scan_targets(root_path, excluded_patterns, config)` → `list[Path]` via `pathlib.rglob("*")`
   - `is_path_excluded(file_path, excluded_patterns)` → bool
