@@ -12,7 +12,7 @@
 #   - Leading / anchors to repo root: /build/ matches only root-level build/
 #   - No leading / matches at any depth: __pycache__/ at depth 1 or depth 10
 #
-# Reference: phi-scan explain ignore
+# Full syntax reference: phi-scan explain ignore (available Phase 2+)
 #
 # Intentional omissions (not excluded by default):
 #   *.log  — Log files are a primary PHI leak vector in healthcare systems.
@@ -47,6 +47,8 @@ target/
 .idea/
 .vscode/
 *.sw?
+#*#
+.*~
 .DS_Store
 
 # Version control
@@ -67,6 +69,10 @@ target/
 # Audit database and runtime state written by PhiScan itself.
 .phi-scanner/
 
-# Common non-code directories
+# Infrastructure directories
+# WARNING: .terraform/ suppresses scanning of the entire Terraform working
+# directory, including .tfstate files which are known to contain secrets and
+# occasionally PHI (e.g. resource names, IDs, tags with patient identifiers).
+# Remove .terraform/ from this file if your Terraform state may contain PHI.
 .terraform/
 .serverless/
