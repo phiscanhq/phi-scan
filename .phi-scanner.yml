@@ -49,7 +49,7 @@ scan:
 
 output:
   # Default output format when --output flag is not specified.
-  # Accepted values: table, json, sarif, csv, pdf, html, junit, codequality, gitlab-sast
+  # See: phi-scan explain config — output.format for the current accepted values list.
   format: table
 
   # Suppress all Rich terminal output. Findings still written to audit log.
