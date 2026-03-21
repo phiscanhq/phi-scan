@@ -26,17 +26,18 @@
 #                  hidden files (.env~, .secrets~, .phi-scanner.yml~). Those backups
 #                  should be scanned, not suppressed. Add specific patterns such as
 #                  .bash_history~ to your own .phi-scanignore if needed.
-#   *.jar / *.war — Java archives bundle compiled bytecode AND plaintext resources
+#   *.jar / *.war / *.zip — Java archives and zip files bundle plaintext resources
 #                  (e.g. application.properties, web.xml, Spring configs) that may
-#                  contain PHI. Archive inspection is tracked in PLAN.md Phase 2E.
-#                  Until implemented, the scanner skips them as binary but does not
-#                  suppress them via this file — preserving the option to flag or
-#                  inspect them when that capability ships.
+#                  contain PHI. Archive inspection for .jar, .war, and .zip is
+#                  tracked in PLAN.md Phase 2E.9. Until implemented, the scanner
+#                  skips them as binary but does not suppress them via this file —
+#                  preserving the option to flag or inspect them when that ships.
 
 # Dependencies
 node_modules/
 .venv/
 venv/
+env/
 __pycache__/
 .tox/
 
