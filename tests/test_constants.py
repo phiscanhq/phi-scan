@@ -39,7 +39,7 @@ def test_output_format_raises_value_error_for_non_string_value() -> None:
     # _missing_ guard clause: non-string input returns None immediately,
     # causing Python's enum machinery to raise ValueError.
     with pytest.raises(ValueError):
-        OutputFormat(42)  # type: ignore[call-arg]
+        OutputFormat(42)  # type: ignore[arg-type]
 
 
 def test_output_format_missing_matches_gitlab_sast_by_value() -> None:

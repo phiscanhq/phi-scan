@@ -1,5 +1,7 @@
 """Named constants, enums, and remediation guidance for PhiScan."""
 
+from __future__ import annotations
+
 from enum import StrEnum
 
 __all__ = [
@@ -7,7 +9,7 @@ __all__ = [
     "AUDIT_SCHEMA_VERSION",
     "BINARY_CHECK_BYTE_COUNT",
     "CACHE_SCHEMA_VERSION",
-    "CONFIDENCE_AI_ADJUSTMENT_MAX",
+    "AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX",
     "CONFIDENCE_FHIR_MAX",
     "CONFIDENCE_FHIR_MIN",
     "CONFIDENCE_HIGH_FLOOR",
@@ -135,7 +137,7 @@ CONFIDENCE_FHIR_MAX: float = 0.95
 # Adjustment delta — not a score floor or ceiling.
 # Layer 4 (AI) refines an existing score by at most this amount in either
 # direction. Do not compare this constant against raw confidence scores.
-CONFIDENCE_AI_ADJUSTMENT_MAX: float = 0.15
+AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX: float = 0.15
 
 # ---------------------------------------------------------------------------
 # File size limit
@@ -215,7 +217,7 @@ class OutputFormat(StrEnum):
     GITLAB_SAST = "gitlab-sast"
 
     @classmethod
-    def _missing_(cls, lookup_value: object) -> "OutputFormat | None":
+    def _missing_(cls, lookup_value: object) -> OutputFormat | None:
         """Allow case-insensitive value lookup from CLI input."""
         if not isinstance(lookup_value, str):
             return None
