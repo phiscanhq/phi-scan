@@ -150,11 +150,11 @@ AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX: float = 0.15
 # Use MAX_FILE_SIZE_BYTES in logic code — never multiply MAX_FILE_SIZE_MB inline.
 MAX_FILE_SIZE_MB: int = 10
 _BYTES_PER_KILOBYTE: int = 1024
-_KILOBYTES_PER_MEGABYTE: int = 1024
+# 1 MB = 1024 KB; each KB is 1024 bytes → 1024² bytes per megabyte.
 # Exported so any module that converts MB → bytes can import the factor rather
 # than duplicating the inline multiply. Do not use this for ad-hoc conversions
 # outside a named constant — always define a named constant at the call site.
-BYTES_PER_MEGABYTE: int = _BYTES_PER_KILOBYTE * _KILOBYTES_PER_MEGABYTE
+BYTES_PER_MEGABYTE: int = _BYTES_PER_KILOBYTE * _BYTES_PER_KILOBYTE
 MAX_FILE_SIZE_BYTES: int = MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE
 
 # ---------------------------------------------------------------------------
@@ -221,12 +221,12 @@ class OutputFormat(StrEnum):
     GITLAB_SAST = "gitlab-sast"
 
     @classmethod
-    def _missing_(cls, lookup_value: object) -> OutputFormat | None:
+    def _missing_(cls, candidate_string: object) -> OutputFormat | None:
         """Allow case-insensitive value lookup from CLI input."""
-        if not isinstance(lookup_value, str):
+        if not isinstance(candidate_string, str):
             return None
         for member in cls:
-            if member.value == lookup_value.lower():
+            if member.value == candidate_string.lower():
                 return member
         return None
 
