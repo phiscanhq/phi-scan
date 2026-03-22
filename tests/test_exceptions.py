@@ -1,5 +1,7 @@
 """Tests for phi_scan.exceptions — custom exception hierarchy."""
 
+import pytest
+
 from phi_scan.exceptions import (
     AuditLogError,
     ConfigurationError,
@@ -8,7 +10,8 @@ from phi_scan.exceptions import (
     TraversalError,
 )
 
-_MISSING_PATH: str = "/tmp/missing"
+# A path that cannot exist on any OS — avoids /tmp which is real (and a symlink on macOS).
+_NONEXISTENT_PATH: str = "/nonexistent/phi-scan-test-path"
 _AUDIT_DB_PATH: str = "/var/phi-scanner/audit.db"
 
 
@@ -49,7 +52,7 @@ def test_configuration_error_preserves_message() -> None:
 
 
 def test_traversal_error_preserves_message() -> None:
-    error_message = f"path '{_MISSING_PATH}' does not exist or is not readable"
+    error_message = f"path '{_NONEXISTENT_PATH}' does not exist or is not readable"
 
     raised_error = TraversalError(error_message)
 
@@ -75,43 +78,35 @@ def test_schema_migration_error_preserves_message() -> None:
 def test_phi_scan_error_is_catchable_as_exception() -> None:
     error_message = "base catch test"
 
-    try:
+    with pytest.raises(Exception) as exc_info:
         raise PhiScanError(error_message)
-    except Exception as caught_error:
-        assert str(caught_error) == error_message
+
+    assert str(exc_info.value) == error_message
 
 
 def test_configuration_error_is_catchable_as_phi_scan_error() -> None:
-    raised_error = ConfigurationError("test")
+    with pytest.raises(PhiScanError) as exc_info:
+        raise ConfigurationError("test")
 
-    try:
-        raise raised_error
-    except PhiScanError as caught_error:
-        assert isinstance(caught_error, ConfigurationError)
+    assert isinstance(exc_info.value, ConfigurationError)
 
 
 def test_traversal_error_is_catchable_as_phi_scan_error() -> None:
-    raised_error = TraversalError("test")
+    with pytest.raises(PhiScanError) as exc_info:
+        raise TraversalError("test")
 
-    try:
-        raise raised_error
-    except PhiScanError as caught_error:
-        assert isinstance(caught_error, TraversalError)
+    assert isinstance(exc_info.value, TraversalError)
 
 
 def test_audit_log_error_is_catchable_as_phi_scan_error() -> None:
-    raised_error = AuditLogError("test")
+    with pytest.raises(PhiScanError) as exc_info:
+        raise AuditLogError("test")
 
-    try:
-        raise raised_error
-    except PhiScanError as caught_error:
-        assert isinstance(caught_error, AuditLogError)
+    assert isinstance(exc_info.value, AuditLogError)
 
 
 def test_schema_migration_error_is_catchable_as_phi_scan_error() -> None:
-    raised_error = SchemaMigrationError("test")
+    with pytest.raises(PhiScanError) as exc_info:
+        raise SchemaMigrationError("test")
 
-    try:
-        raise raised_error
-    except PhiScanError as caught_error:
-        assert isinstance(caught_error, SchemaMigrationError)
+    assert isinstance(exc_info.value, SchemaMigrationError)
