@@ -4,11 +4,11 @@ from enum import StrEnum
 
 __all__ = [
     "AUDIT_RETENTION_DAYS",
+    "AUDIT_SCHEMA_VERSION",
     "BINARY_CHECK_BYTE_COUNT",
     "CACHE_SCHEMA_VERSION",
     "CONFIDENCE_AI_ADJUSTMENT_MAX",
     "CONFIDENCE_FHIR_MAX",
-    "CONFIDENCE_SCORE_MAXIMUM",
     "CONFIDENCE_FHIR_MIN",
     "CONFIDENCE_HIGH_FLOOR",
     "CONFIDENCE_LOW_FLOOR",
@@ -17,12 +17,12 @@ __all__ = [
     "CONFIDENCE_NLP_MIN",
     "CONFIDENCE_REGEX_MAX",
     "CONFIDENCE_REGEX_MIN",
+    "CONFIDENCE_SCORE_MAXIMUM",
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_CONFIG_FILENAME",
     "DEFAULT_IGNORE_FILENAME",
     "EXIT_CODE_CLEAN",
     "EXIT_CODE_VIOLATION",
-    "AUDIT_SCHEMA_VERSION",
     "HIPAA_REMEDIATION_GUIDANCE",
     "KNOWN_BINARY_EXTENSIONS",
     "MAX_FILE_SIZE_MB",
@@ -36,8 +36,8 @@ __all__ = [
 # File names
 # ---------------------------------------------------------------------------
 
-DEFAULT_CONFIG_FILENAME = ".phi-scanner.yml"
-DEFAULT_IGNORE_FILENAME = ".phi-scanignore"
+DEFAULT_CONFIG_FILENAME: str = ".phi-scanner.yml"
+DEFAULT_IGNORE_FILENAME: str = ".phi-scanignore"
 
 # ---------------------------------------------------------------------------
 # Binary file detection
@@ -86,7 +86,7 @@ KNOWN_BINARY_EXTENSIONS: frozenset[str] = frozenset(
 )
 
 # Number of bytes read from a file to detect binary content via null bytes.
-BINARY_CHECK_BYTE_COUNT = 8192
+BINARY_CHECK_BYTE_COUNT: int = 8192
 
 # ---------------------------------------------------------------------------
 # Confidence thresholds
@@ -97,18 +97,18 @@ BINARY_CHECK_BYTE_COUNT = 8192
 # CONFIDENCE_MEDIUM_FLOOR=0.70), surfacing findings that are plausibly PHI
 # while discarding very weak signals. Callers can raise this in .phi-scanner.yml
 # to reduce noise at the cost of missing lower-confidence matches.
-DEFAULT_CONFIDENCE_THRESHOLD = 0.6
+DEFAULT_CONFIDENCE_THRESHOLD: float = 0.6
 
 # Confidence floor that separates HIGH severity from MEDIUM.
-CONFIDENCE_HIGH_FLOOR = 0.90
+CONFIDENCE_HIGH_FLOOR: float = 0.90
 
 # Confidence floor that separates MEDIUM severity from LOW.
-CONFIDENCE_MEDIUM_FLOOR = 0.70
+CONFIDENCE_MEDIUM_FLOOR: float = 0.70
 
 # Confidence floor that separates LOW severity from INFO.
 # Findings below this value are assigned SeverityLevel.INFO and are logged
 # but not flagged by default (below DEFAULT_CONFIDENCE_THRESHOLD).
-CONFIDENCE_LOW_FLOOR = 0.40
+CONFIDENCE_LOW_FLOOR: float = 0.40
 
 # ---------------------------------------------------------------------------
 # Confidence ranges by detection layer (informational — used in docs/logging)
@@ -116,25 +116,25 @@ CONFIDENCE_LOW_FLOOR = 0.40
 
 # Absolute ceiling for any confidence score — used as the upper bound for
 # layer ranges and normalization. All CONFIDENCE_*_MAX values reference this.
-CONFIDENCE_SCORE_MAXIMUM = 1.0
+CONFIDENCE_SCORE_MAXIMUM: float = 1.0
 
 # Score bounds per detection layer — the range a layer assigns to its findings.
 # Layer 1 — Regex: structured patterns are unambiguous.
-CONFIDENCE_REGEX_MIN = 0.85
-CONFIDENCE_REGEX_MAX = CONFIDENCE_SCORE_MAXIMUM
+CONFIDENCE_REGEX_MIN: float = 0.85
+CONFIDENCE_REGEX_MAX: float = CONFIDENCE_SCORE_MAXIMUM
 
 # Layer 2 — NLP/NER: context-dependent, model uncertainty applies.
-CONFIDENCE_NLP_MIN = 0.50
-CONFIDENCE_NLP_MAX = 0.90
+CONFIDENCE_NLP_MIN: float = 0.50
+CONFIDENCE_NLP_MAX: float = 0.90
 
 # Layer 3 — FHIR: schema-based structural match.
-CONFIDENCE_FHIR_MIN = 0.80
-CONFIDENCE_FHIR_MAX = 0.95
+CONFIDENCE_FHIR_MIN: float = 0.80
+CONFIDENCE_FHIR_MAX: float = 0.95
 
 # Adjustment delta — not a score floor or ceiling.
 # Layer 4 (AI) refines an existing score by at most this amount in either
 # direction. Do not compare this constant against raw confidence scores.
-CONFIDENCE_AI_ADJUSTMENT_MAX = 0.15
+CONFIDENCE_AI_ADJUSTMENT_MAX: float = 0.15
 
 # ---------------------------------------------------------------------------
 # File size limit
@@ -143,7 +143,7 @@ CONFIDENCE_AI_ADJUSTMENT_MAX = 0.15
 # Files larger than this are skipped to bound memory usage during scanning.
 # At 8192-byte chunks, a 10 MB file requires ~1280 reads — a reasonable cap
 # that excludes accidental binary blobs while covering all realistic source files.
-MAX_FILE_SIZE_MB = 10
+MAX_FILE_SIZE_MB: int = 10
 
 # ---------------------------------------------------------------------------
 # HIPAA audit retention
@@ -153,31 +153,33 @@ MAX_FILE_SIZE_MB = 10
 # A 6-year window contains either 1 or 2 leap years depending on start date.
 # Using 2 leap years ensures we always satisfy the minimum even in the
 # worst-case distribution. Must match audit_retention_days in .phi-scanner.yml.
-_HIPAA_RETENTION_YEARS = 6
-_DAYS_IN_STANDARD_YEAR = 365
-_DAYS_IN_LEAP_YEAR = 366
-_LEAP_YEARS_IN_RETENTION_WINDOW = 2
+_HIPAA_RETENTION_YEARS: int = 6
+_DAYS_IN_STANDARD_YEAR: int = 365
+_DAYS_IN_LEAP_YEAR: int = 366
+_LEAP_YEARS_IN_RETENTION_WINDOW: int = 2
+_STANDARD_YEARS_IN_RETENTION_WINDOW: int = _HIPAA_RETENTION_YEARS - _LEAP_YEARS_IN_RETENTION_WINDOW
 
-AUDIT_RETENTION_DAYS = (
-    _HIPAA_RETENTION_YEARS - _LEAP_YEARS_IN_RETENTION_WINDOW
-) * _DAYS_IN_STANDARD_YEAR + _LEAP_YEARS_IN_RETENTION_WINDOW * _DAYS_IN_LEAP_YEAR
+AUDIT_RETENTION_DAYS: int = (
+    _STANDARD_YEARS_IN_RETENTION_WINDOW * _DAYS_IN_STANDARD_YEAR
+    + _LEAP_YEARS_IN_RETENTION_WINDOW * _DAYS_IN_LEAP_YEAR
+)
 
 # ---------------------------------------------------------------------------
 # Exit codes
 # ---------------------------------------------------------------------------
 
-EXIT_CODE_CLEAN = 0
-EXIT_CODE_VIOLATION = 1
+EXIT_CODE_CLEAN: int = 0
+EXIT_CODE_VIOLATION: int = 1
 
 # ---------------------------------------------------------------------------
 # Database schema versions
 # ---------------------------------------------------------------------------
 
 # Increment when the audit SQLite schema changes; triggers migration logic.
-AUDIT_SCHEMA_VERSION = 1
+AUDIT_SCHEMA_VERSION: int = 1
 
 # Increment when the scan-cache SQLite schema changes; triggers migration logic.
-CACHE_SCHEMA_VERSION = 1
+CACHE_SCHEMA_VERSION: int = 1
 
 # ---------------------------------------------------------------------------
 # Enums
