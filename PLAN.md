@@ -130,8 +130,8 @@ and explain commands deferred to Phase 2).
 
 ### 1B — Package Modules (`phi_scan/`)
 
-- [ ] **1B.1** `__init__.py` — `__version__ = "0.1.0"`, `__app_name__ = "phi-scan"`
-- [ ] **1B.2** `constants.py` — all named constants and enums
+- [x] **1B.1** `__init__.py` — `__version__ = "0.1.0"`, `__app_name__ = "phi-scan"`
+- [x] **1B.2** `constants.py` — all named constants and enums
   - `DEFAULT_CONFIG_FILENAME`, `DEFAULT_IGNORE_FILENAME`
   - `KNOWN_BINARY_EXTENSIONS` — skip list (.png, .jpg, .gif, .ico, .wasm, .exe, .dll, .so, .dylib, .zip, .tar, .gz, .jar, .pyc, .pyo, .o, .a, .pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .mp3, .mp4, .mov, .avi, .wav, .ttf, .woff, .woff2, .eot)
   - `BINARY_CHECK_BYTE_COUNT = 8192` — read first 8KB to detect binary via null bytes
