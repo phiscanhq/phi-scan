@@ -215,10 +215,11 @@ class OutputFormat(StrEnum):
     @classmethod
     def _missing_(cls, value: object) -> "OutputFormat | None":
         """Allow case-insensitive value lookup from CLI input."""
-        if isinstance(value, str):
-            for member in cls:
-                if member.value == value.lower():
-                    return member
+        if not isinstance(value, str):
+            return None
+        for member in cls:
+            if member.value == value.lower():
+                return member
         return None
 
 
