@@ -4,24 +4,25 @@ import pytest
 
 from phi_scan.constants import (
     AUDIT_RETENTION_DAYS,
+    BYTES_PER_MEGABYTE,
     HIPAA_REMEDIATION_GUIDANCE,
     KNOWN_BINARY_EXTENSIONS,
     MAX_FILE_SIZE_BYTES,
+    MAX_FILE_SIZE_MB,
     OutputFormat,
     PhiCategory,
     RiskLevel,
     SeverityLevel,
 )
 
-# HIPAA §164.530(j) 6-year minimum: 4 standard years + 2 leap years = 2192 days.
+# Cross-check: AUDIT_RETENTION_DAYS must equal the HIPAA-mandated 6-year minimum.
+# 6 years worst-case: 4 standard years (365 days) + 2 leap years (366 days) = 2192 days.
+# This concrete value is intentional — it guards against formula regressions.
 _EXPECTED_HIPAA_RETENTION_DAYS: int = 2192
-
-# 10 MB expressed in bytes: 10 × 1024 × 1024.
-_EXPECTED_MAX_FILE_SIZE_BYTES: int = 10_485_760
 
 
 def test_max_file_size_bytes_equals_mb_times_bytes_per_megabyte() -> None:
-    assert MAX_FILE_SIZE_BYTES == _EXPECTED_MAX_FILE_SIZE_BYTES
+    assert MAX_FILE_SIZE_BYTES == MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE
 
 
 def test_audit_retention_days_equals_hipaa_six_year_minimum() -> None:
