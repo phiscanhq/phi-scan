@@ -8,6 +8,7 @@ __all__ = [
     "CACHE_SCHEMA_VERSION",
     "CONFIDENCE_AI_ADJUSTMENT_MAX",
     "CONFIDENCE_FHIR_MAX",
+    "CONFIDENCE_SCORE_MAXIMUM",
     "CONFIDENCE_FHIR_MIN",
     "CONFIDENCE_HIGH_FLOOR",
     "CONFIDENCE_LOW_FLOOR",
@@ -113,9 +114,14 @@ CONFIDENCE_LOW_FLOOR = 0.40
 # Confidence ranges by detection layer (informational — used in docs/logging)
 # ---------------------------------------------------------------------------
 
+# Absolute ceiling for any confidence score — used as the upper bound for
+# layer ranges and normalization. All CONFIDENCE_*_MAX values reference this.
+CONFIDENCE_SCORE_MAXIMUM = 1.0
+
+# Score bounds per detection layer — the range a layer assigns to its findings.
 # Layer 1 — Regex: structured patterns are unambiguous.
 CONFIDENCE_REGEX_MIN = 0.85
-CONFIDENCE_REGEX_MAX = 1.0
+CONFIDENCE_REGEX_MAX = CONFIDENCE_SCORE_MAXIMUM
 
 # Layer 2 — NLP/NER: context-dependent, model uncertainty applies.
 CONFIDENCE_NLP_MIN = 0.50
@@ -125,7 +131,9 @@ CONFIDENCE_NLP_MAX = 0.90
 CONFIDENCE_FHIR_MIN = 0.80
 CONFIDENCE_FHIR_MAX = 0.95
 
-# Layer 4 — AI: adjusts existing scores as a second-opinion refinement.
+# Adjustment delta — not a score floor or ceiling.
+# Layer 4 (AI) refines an existing score by at most this amount in either
+# direction. Do not compare this constant against raw confidence scores.
 CONFIDENCE_AI_ADJUSTMENT_MAX = 0.15
 
 # ---------------------------------------------------------------------------
@@ -143,10 +151,16 @@ MAX_FILE_SIZE_MB = 10
 
 # HIPAA §164.530(j) requires audit log retention for a minimum of 6 years.
 # A 6-year window contains either 1 or 2 leap years depending on start date.
-# Using 2 leap years (2×366 + 4×365 = 2192) ensures we always meet the minimum
-# even in the worst-case leap-year distribution. Must match the
-# audit_retention_days default in .phi-scanner.yml.
-AUDIT_RETENTION_DAYS = 2192
+# Using 2 leap years ensures we always satisfy the minimum even in the
+# worst-case distribution. Must match audit_retention_days in .phi-scanner.yml.
+_HIPAA_RETENTION_YEARS = 6
+_DAYS_IN_STANDARD_YEAR = 365
+_DAYS_IN_LEAP_YEAR = 366
+_LEAP_YEARS_IN_RETENTION_WINDOW = 2
+
+AUDIT_RETENTION_DAYS = (
+    _HIPAA_RETENTION_YEARS - _LEAP_YEARS_IN_RETENTION_WINDOW
+) * _DAYS_IN_STANDARD_YEAR + _LEAP_YEARS_IN_RETENTION_WINDOW * _DAYS_IN_LEAP_YEAR
 
 # ---------------------------------------------------------------------------
 # Exit codes
