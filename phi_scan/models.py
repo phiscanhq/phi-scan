@@ -138,8 +138,7 @@ class ScanResult:
         _reject_files_with_findings_exceeding_files_scanned(self)
         _reject_negative_scan_duration(self)
         _reject_clean_result_with_findings(self)
-        _reject_clean_result_with_wrong_risk_level(self)
-        _reject_dirty_result_with_clean_risk_level(self)
+        _reject_mismatched_clean_flag_and_risk_level(self)
 
 
 def _reject_negative_files_scanned(result: ScanResult) -> None:
@@ -180,15 +179,15 @@ def _reject_clean_result_with_findings(result: ScanResult) -> None:
         )
 
 
-def _reject_clean_result_with_wrong_risk_level(result: ScanResult) -> None:
+def _reject_mismatched_clean_flag_and_risk_level(result: ScanResult) -> None:
+    # is_clean and risk_level must agree: is_clean=True requires RiskLevel.CLEAN
+    # and is_clean=False requires any other RiskLevel. Both directions of the
+    # bi-conditional are enforced here so neither half can be bypassed in isolation.
     if result.is_clean and result.risk_level != RiskLevel.CLEAN:
         raise PhiDetectionError(
             f"is_clean is True but risk_level is {result.risk_level!r} — "
             "a clean result must have RiskLevel.CLEAN"
         )
-
-
-def _reject_dirty_result_with_clean_risk_level(result: ScanResult) -> None:
     if not result.is_clean and result.risk_level == RiskLevel.CLEAN:
         raise PhiDetectionError(
             "risk_level is RiskLevel.CLEAN but is_clean is False — "
@@ -255,6 +254,8 @@ class ScanConfig:
 
 
 def _validate_should_follow_symlinks(value: object) -> None:
+    if not isinstance(value, bool):
+        raise ConfigurationError(f"should_follow_symlinks must be a bool, got {value!r}")
     if value:
         raise ConfigurationError(
             "should_follow_symlinks must be False — symlink traversal is prohibited "

@@ -446,7 +446,7 @@ def test_scan_result_raises_phi_detection_error_when_files_with_findings_exceeds
         )
 
 
-def test_scan_result_raises_phi_detection_error_when_is_clean_with_non_clean_risk_level() -> None:
+def test_scan_result_raises_phi_detection_error_when_is_clean_true_with_wrong_risk_level() -> None:
     with pytest.raises(PhiDetectionError):
         ScanResult(
             findings=(),
@@ -460,9 +460,9 @@ def test_scan_result_raises_phi_detection_error_when_is_clean_with_non_clean_ris
         )
 
 
-def test_scan_result_raises_phi_detection_error_when_risk_level_clean_but_is_clean_false() -> None:
-    # findings must be non-empty so the empty-findings guard does not fire first;
-    # this test targets the risk_level/is_clean mismatch invariant specifically.
+def test_scan_result_raises_phi_detection_error_when_is_clean_false_with_clean_risk_level() -> None:
+    # is_clean=False with RiskLevel.CLEAN is a bi-conditional mismatch —
+    # both directions are enforced by _reject_mismatched_clean_flag_and_risk_level.
     with pytest.raises(PhiDetectionError):
         ScanResult(
             findings=(_build_scan_finding(),),
