@@ -106,8 +106,9 @@ class ScanResult:
         files_with_findings: Number of files that contained at least one finding.
         scan_duration: Wall-clock time in seconds the scan took to complete.
         is_clean: True when the scan produced zero findings at or above the threshold.
-            False when at least one finding met the threshold — or when findings is empty
-            because all raw detections were below the confidence threshold and filtered out.
+            is_clean=False with findings=() is explicitly valid — it means raw
+            detections were produced but all fell below the confidence threshold
+            and were filtered out before the result was built.
         risk_level: Overall risk classification for the scanned codebase.
         severity_counts: Number of findings per severity level.
         category_counts: Number of findings per HIPAA PHI category.
@@ -123,13 +124,13 @@ class ScanResult:
     category_counts: MappingProxyType[PhiCategory, int]
 
     def __post_init__(self) -> None:
-        _check_scan_result_file_counts(self)
-        _check_scan_result_duration(self)
-        _check_is_clean_findings_agreement(self)
-        _check_is_clean_risk_level_agreement(self)
+        _validate_file_counts(self)
+        _validate_scan_duration(self)
+        _validate_clean_findings_consistency(self)
+        _validate_clean_risk_level_consistency(self)
 
 
-def _check_scan_result_file_counts(result: ScanResult) -> None:
+def _validate_file_counts(result: ScanResult) -> None:
     if result.files_scanned < _MINIMUM_ELIGIBLE_FILE_COUNT:
         raise PhiDetectionError(
             f"files_scanned ({result.files_scanned}) must be >= {_MINIMUM_ELIGIBLE_FILE_COUNT}"
@@ -146,14 +147,14 @@ def _check_scan_result_file_counts(result: ScanResult) -> None:
         )
 
 
-def _check_scan_result_duration(result: ScanResult) -> None:
+def _validate_scan_duration(result: ScanResult) -> None:
     if result.scan_duration < _MINIMUM_SCAN_DURATION:
         raise PhiDetectionError(
             f"scan_duration ({result.scan_duration!r}) must be >= {_MINIMUM_SCAN_DURATION}"
         )
 
 
-def _check_is_clean_findings_agreement(result: ScanResult) -> None:
+def _validate_clean_findings_consistency(result: ScanResult) -> None:
     if result.is_clean and result.findings:
         raise PhiDetectionError(
             f"is_clean is True but findings contains {len(result.findings)} finding(s) — "
@@ -161,7 +162,7 @@ def _check_is_clean_findings_agreement(result: ScanResult) -> None:
         )
 
 
-def _check_is_clean_risk_level_agreement(result: ScanResult) -> None:
+def _validate_clean_risk_level_consistency(result: ScanResult) -> None:
     if result.is_clean and result.risk_level != RiskLevel.CLEAN:
         raise PhiDetectionError(
             f"is_clean is True but risk_level is {result.risk_level!r} — "
@@ -186,7 +187,8 @@ class ScanConfig:
         severity_threshold: Minimum severity level to include in the report.
         confidence_threshold: Minimum confidence score [0.0, 1.0] for a finding to be reported.
         should_follow_symlinks: Must remain False — symlink traversal is prohibited.
-            Raises ConfigurationError immediately on construction if set to True.
+            Raises ConfigurationError on construction or post-construction mutation
+            if set to True. The __setattr__ override enforces this at every assignment.
         max_file_size_mb: Files larger than this value in megabytes are skipped.
         include_extensions: If set, only files with a suffix in this list are scanned.
             None (default) scans all non-binary text files regardless of extension.
@@ -204,22 +206,8 @@ class ScanConfig:
     include_extensions: list[str] | None = None
 
     def __post_init__(self) -> None:
-        # Validate before mutating self — if a guard raises, the object is never
-        # partially mutated, preventing inconsistent state on retry after catch.
-        if self.should_follow_symlinks:
-            raise ConfigurationError(
-                "should_follow_symlinks must be False — symlink traversal is prohibited "
-                "to prevent infinite loops and directory escape attacks."
-            )
-        if not CONFIDENCE_SCORE_MINIMUM <= self.confidence_threshold <= CONFIDENCE_SCORE_MAXIMUM:
-            raise ConfigurationError(
-                f"confidence_threshold {self.confidence_threshold!r} is outside the valid range "
-                f"[{CONFIDENCE_SCORE_MINIMUM}, {CONFIDENCE_SCORE_MAXIMUM}]"
-            )
-        if self.max_file_size_mb < _MINIMUM_FILE_SIZE_MB:
-            raise ConfigurationError(
-                f"max_file_size_mb {self.max_file_size_mb!r} must be >= {_MINIMUM_FILE_SIZE_MB}"
-            )
+        # Field validation runs in __setattr__, which fires for every assignment
+        # including those in __init__ — no duplicate guards needed here.
         # Compute both copies before assigning so both fields are updated together;
         # readers of this object never observe one updated field and one original.
         exclude_paths_copy = list(self.exclude_paths)
@@ -228,3 +216,24 @@ class ScanConfig:
         )
         self.exclude_paths = exclude_paths_copy
         self.include_extensions = include_extensions_copy
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Re-enforce security-critical invariants on every field assignment so
+        # post-construction mutation cannot bypass the __post_init__ guards.
+        if name == "should_follow_symlinks" and value is True:
+            raise ConfigurationError(
+                "should_follow_symlinks must be False — symlink traversal is prohibited "
+                "to prevent infinite loops and directory escape attacks."
+            )
+        if name == "max_file_size_mb" and isinstance(value, int) and not isinstance(value, bool):
+            if value < _MINIMUM_FILE_SIZE_MB:
+                raise ConfigurationError(
+                    f"max_file_size_mb {value!r} must be >= {_MINIMUM_FILE_SIZE_MB}"
+                )
+        if name == "confidence_threshold" and isinstance(value, float):
+            if not CONFIDENCE_SCORE_MINIMUM <= value <= CONFIDENCE_SCORE_MAXIMUM:
+                raise ConfigurationError(
+                    f"confidence_threshold {value!r} is outside the valid range "
+                    f"[{CONFIDENCE_SCORE_MINIMUM}, {CONFIDENCE_SCORE_MAXIMUM}]"
+                )
+        super().__setattr__(name, value)

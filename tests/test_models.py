@@ -375,7 +375,7 @@ def test_scan_result_raises_phi_detection_error_when_is_clean_true_with_findings
 def test_scan_result_accepts_is_clean_false_with_empty_findings() -> None:
     # findings=() with is_clean=False is valid when all raw detections were below
     # the confidence threshold and filtered out before the result was built.
-    result = ScanResult(
+    filtered_scan_result = ScanResult(
         findings=(),
         files_scanned=_RESULT_FILES_SCANNED,
         files_with_findings=_RESULT_FILES_WITH_FINDINGS_ZERO,
@@ -386,8 +386,8 @@ def test_scan_result_accepts_is_clean_false_with_empty_findings() -> None:
         category_counts=MappingProxyType({}),
     )
 
-    assert result.is_clean is False
-    assert result.findings == ()
+    assert filtered_scan_result.is_clean is False
+    assert filtered_scan_result.findings == ()
 
 
 def test_scan_result_raises_phi_detection_error_when_files_scanned_is_negative() -> None:
@@ -669,3 +669,31 @@ def test_scan_config_raises_configuration_error_for_threshold_above_maximum() ->
 def test_scan_config_raises_configuration_error_when_follow_symlinks_is_true() -> None:
     with pytest.raises(ConfigurationError):
         ScanConfig(should_follow_symlinks=True)
+
+
+# ---------------------------------------------------------------------------
+# ScanConfig — __setattr__ post-construction mutation guards
+# ---------------------------------------------------------------------------
+
+
+def test_scan_config_raises_when_symlinks_set_true_post_construction() -> None:
+    # Mutable ScanConfig must not allow security-critical invariants to be bypassed
+    # by direct field assignment after the object is constructed.
+    config = ScanConfig()
+
+    with pytest.raises(ConfigurationError):
+        config.should_follow_symlinks = True  # type: ignore[misc]
+
+
+def test_scan_config_raises_when_max_file_size_below_minimum_post_construction() -> None:
+    config = ScanConfig()
+
+    with pytest.raises(ConfigurationError):
+        config.max_file_size_mb = _INVALID_MAX_FILE_SIZE_MB_ZERO
+
+
+def test_scan_config_raises_when_confidence_threshold_out_of_range_post_construction() -> None:
+    config = ScanConfig()
+
+    with pytest.raises(ConfigurationError):
+        config.confidence_threshold = _CONFIDENCE_ABOVE_MAXIMUM
