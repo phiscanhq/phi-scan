@@ -143,6 +143,11 @@ class ScanResult:
                 f"is_clean is True but findings contains {len(self.findings)} finding(s) — "
                 "a clean result must have zero findings"
             )
+        if not self.is_clean and not self.findings:
+            raise PhiDetectionError(
+                "is_clean is False but findings is empty — "
+                "a result with no findings must have is_clean=True"
+            )
         if self.is_clean and self.risk_level != RiskLevel.CLEAN:
             raise PhiDetectionError(
                 f"is_clean is True but risk_level is {self.risk_level!r} — "
@@ -190,11 +195,8 @@ class ScanConfig:
     include_extensions: list[str] | None = None
 
     def __post_init__(self) -> None:
-        # Defensive copies are made first so all subsequent validation reads the
-        # owned data, not the caller's original list — guarding against mid-init mutation.
-        self.exclude_paths = list(self.exclude_paths)
-        if self.include_extensions is not None:
-            self.include_extensions = list(self.include_extensions)
+        # Validate before mutating self — if a guard raises, the object is never
+        # partially mutated, preventing inconsistent state on retry after catch.
         if self.should_follow_symlinks:
             raise ConfigurationError(
                 "should_follow_symlinks must be False — symlink traversal is prohibited "
@@ -209,3 +211,8 @@ class ScanConfig:
             raise ConfigurationError(
                 f"max_file_size_mb {self.max_file_size_mb!r} must be >= {_MINIMUM_FILE_SIZE_MB}"
             )
+        # Defensive copies are made after validation so a raised ConfigurationError
+        # leaves the object completely unmutated — no partial state.
+        self.exclude_paths = list(self.exclude_paths)
+        if self.include_extensions is not None:
+            self.include_extensions = list(self.include_extensions)

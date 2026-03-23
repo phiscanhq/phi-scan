@@ -372,6 +372,20 @@ def test_scan_result_raises_phi_detection_error_when_is_clean_true_with_findings
         )
 
 
+def test_scan_result_raises_phi_detection_error_when_is_clean_false_with_empty_findings() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanResult(
+            findings=(),
+            files_scanned=_RESULT_FILES_SCANNED,
+            files_with_findings=_RESULT_FILES_WITH_FINDINGS_ZERO,
+            scan_duration=_RESULT_SCAN_DURATION,
+            is_clean=False,
+            risk_level=RiskLevel.LOW,
+            severity_counts=MappingProxyType({}),
+            category_counts=MappingProxyType({}),
+        )
+
+
 def test_scan_result_raises_phi_detection_error_when_files_scanned_is_negative() -> None:
     with pytest.raises(PhiDetectionError):
         ScanResult(
@@ -443,16 +457,18 @@ def test_scan_result_raises_phi_detection_error_when_is_clean_with_non_clean_ris
 
 
 def test_scan_result_raises_phi_detection_error_when_risk_level_clean_but_is_clean_false() -> None:
+    # findings must be non-empty so the empty-findings guard does not fire first;
+    # this test targets the risk_level/is_clean mismatch invariant specifically.
     with pytest.raises(PhiDetectionError):
         ScanResult(
-            findings=(),
+            findings=(_build_scan_finding(),),
             files_scanned=_RESULT_FILES_SCANNED,
-            files_with_findings=_RESULT_FILES_WITH_FINDINGS_ZERO,
+            files_with_findings=_RESULT_FILES_WITH_FINDINGS,
             scan_duration=_RESULT_SCAN_DURATION,
             is_clean=False,
             risk_level=RiskLevel.CLEAN,
-            severity_counts=MappingProxyType({}),
-            category_counts=MappingProxyType({}),
+            severity_counts=MappingProxyType({SeverityLevel.HIGH: 1}),
+            category_counts=MappingProxyType({PhiCategory.SSN: 1}),
         )
 
 
