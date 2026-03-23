@@ -154,7 +154,7 @@ and explain commands deferred to Phase 2).
   - `SCHEMA_VERSION = 1` — audit DB schema version for migration tracking
   - `CACHE_SCHEMA_VERSION = 1` — cache DB schema version
 - [x] **1B.3** `exceptions.py` — `PhiScanError` (base), `ConfigurationError`, `TraversalError`, `AuditLogError`, `SchemaMigrationError`
-- [ ] **1B.4** `models.py` — dataclasses:
+- [x] **1B.4** `models.py` — dataclasses:
   - `ScanFinding` (file_path, line_number, entity_type, hipaa_category, confidence, detection_layer, value_hash, severity, code_context, remediation_hint)
   - `ScanResult` (findings, files_scanned, files_with_findings, scan_duration, is_clean, risk_level, severity_counts, category_counts)
   - `ScanConfig` (exclude_paths, severity_threshold, confidence_threshold, follow_symlinks, max_file_size_mb, include_extensions — optional allowlist filter, defaults to None meaning scan all text files)

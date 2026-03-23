@@ -11,6 +11,7 @@ from __future__ import annotations
 __all__ = [
     "AuditLogError",
     "ConfigurationError",
+    "PhiDetectionError",
     "PhiScanError",
     "SchemaMigrationError",
     "TraversalError",
@@ -57,6 +58,18 @@ class AuditLogError(PhiScanError):
     Args:
         message: Description of the failure including the database path
             and the underlying cause.
+    """
+
+
+class PhiDetectionError(PhiScanError):
+    """Raised when a detection layer produces an internally inconsistent finding.
+
+    This is a bug in a detection layer, not a user-facing error. Examples include
+    a confidence score outside [0.0, 1.0] or a malformed value hash.
+
+    Args:
+        message: Description of the invariant that was violated, including the
+            bad value and the expected range or format.
     """
 
 

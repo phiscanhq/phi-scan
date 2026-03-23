@@ -272,6 +272,23 @@ make help         # list all available targets
 - Constants: `UPPER_SNAKE_CASE`
 - Booleans must start with `is_`, `has_`, `can_`, `should_`, or `was_`
 - Function names must be verb-noun pairs: `calculate_tax_total`, not `process`
+- Two approved patterns for functions whose body is a guard-clause raise:
+  1. **`reject_<what_is_rejected>`** — used for domain invariant checkers where the
+     noun names the invalid thing: `reject_negative_files_scanned`,
+     `reject_clean_result_with_findings`, `reject_clean_flag_with_non_clean_risk_level`.
+     Verb = reject (throw an error for), noun = the bad value or bad state.
+  2. **`validate_<field_name>`** — used for single-field guards called from
+     `__setattr__` or `__post_init__`: `validate_confidence_threshold`,
+     `validate_max_file_size_mb`. Verb = validate, noun = the field name.
+  Do **not** use `check_`, `assert_`, `raise_on_`, or plain `validate` (without a
+  noun suffix) for these patterns — all were tried and rejected in earlier review
+  cycles. The two patterns above are the only approved forms.
+  **One guard clause = one function.** When two guard clauses together enforce a
+  biconditional invariant (e.g. `is_clean=True → RiskLevel.CLEAN` and
+  `is_clean=False → not RiskLevel.CLEAN`), each direction is a distinct bad state
+  and gets its own `reject_<noun>` function. Do **not** merge them into a single
+  function — merging creates a function body with two raises, two distinct
+  conditions, and a name that cannot describe one bad state without "and".
 - No abbreviations — write the full word. No: `usr`, `cfg`, `tmp`, `val`, `res`, `d`, `ts`
 - Avoid class names ending in: `Manager`, `Handler`, `Processor`, `Helper`, `Util`
 - The bigger the scope, the longer the name
