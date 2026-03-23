@@ -587,6 +587,8 @@ _EMPTY_INCLUDE_EXTENSIONS: list[str] = []
 # Misspelled field name — exercises the __setattr__ unknown-attribute guard.
 _MISSPELLED_FIELD_NAME: str = "shold_follow_symlinks"
 _MISSPELLED_FIELD_VALUE: bool = True
+# Extensions missing the leading dot — silently match nothing against Path.suffix.
+_INCLUDE_EXTENSIONS_MISSING_DOT_PREFIX: list[str] = ["py", "txt"]
 # A truthy non-bool — exercises the gap where `value is True` would silently
 # pass 1 (or any other truthy int) as should_follow_symlinks.
 _TRUTHY_NON_BOOL_SYMLINK_VALUE: int = 1
@@ -813,3 +815,10 @@ def test_scan_config_raises_when_unknown_attribute_is_assigned() -> None:
 
     with pytest.raises(ConfigurationError):
         setattr(config, _MISSPELLED_FIELD_NAME, _MISSPELLED_FIELD_VALUE)
+
+
+def test_scan_config_raises_when_include_extensions_entries_missing_dot_prefix() -> None:
+    # "py" does not match pathlib.Path.suffix which returns ".py" — bare extensions
+    # silently scan nothing, a HIPAA coverage gap.
+    with pytest.raises(ConfigurationError):
+        ScanConfig(include_extensions=_INCLUDE_EXTENSIONS_MISSING_DOT_PREFIX)

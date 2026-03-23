@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
+from typing import final
 
 from phi_scan.constants import (
     CONFIDENCE_SCORE_MAXIMUM,
@@ -37,6 +39,9 @@ _MINIMUM_FILE_SIZE_MB: int = 1
 # An empty list means "scan no files" — callers who want unrestricted scanning
 # must pass None, not []. Enforced to prevent silent HIPAA coverage gaps.
 _MINIMUM_INCLUDE_EXTENSIONS_COUNT: int = 1
+# Extensions must start with a dot so they match pathlib.Path.suffix values
+# (e.g. ".py", not "py"). Bare extensions silently match nothing.
+_EXTENSION_DOT_PREFIX: str = "."
 
 
 class _ConfigField(StrEnum):
@@ -225,6 +230,7 @@ def _reject_non_clean_flag_with_clean_risk_level(result: ScanResult) -> None:
         )
 
 
+@final
 @dataclass
 class ScanConfig:
     """Configuration that controls the behaviour of a scan operation.
@@ -268,22 +274,13 @@ class ScanConfig:
         self.include_extensions = include_extensions_copy
 
     def __setattr__(self, name: str, value: object) -> None:
-        if name == _ConfigField.SHOULD_FOLLOW_SYMLINKS:
-            _validate_should_follow_symlinks(value)
-        elif name == _ConfigField.MAX_FILE_SIZE_MB:
-            _validate_max_file_size_mb(value)
-        elif name == _ConfigField.CONFIDENCE_THRESHOLD:
-            _validate_confidence_threshold(value)
-        elif name == _ConfigField.SEVERITY_THRESHOLD:
-            _validate_severity_threshold(value)
-        elif name == _ConfigField.EXCLUDE_PATHS:
-            _validate_exclude_paths(value)
-        elif name == _ConfigField.INCLUDE_EXTENSIONS:
-            _validate_include_extensions(value)
+        validator = _FIELD_VALIDATORS.get(name)
+        if validator is not None:
+            validator(value)
         else:
             # Reject unknown attribute names — a typo like shold_follow_symlinks
-            # would otherwise set a phantom attribute while the real security
-            # control remains unchanged.
+            # would silently create a phantom attribute while leaving the real
+            # security control unchanged.
             raise ConfigurationError(
                 f"ScanConfig has no field named {name!r} — "
                 "assignment to unknown attributes is not permitted"
@@ -357,3 +354,22 @@ def _validate_include_extensions(include_extensions: object) -> None:
         raise ConfigurationError(
             f"include_extensions must be a list of strings, got {include_extensions!r}"
         )
+    if not all(extension.startswith(_EXTENSION_DOT_PREFIX) for extension in include_extensions):
+        raise ConfigurationError(
+            f"include_extensions entries must start with '{_EXTENSION_DOT_PREFIX}', "
+            f"got {include_extensions!r}"
+        )
+
+
+# Dispatch table for ScanConfig.__setattr__ — maps each field name to its validator.
+# Defined after all _validate_* functions so the references are valid at module load.
+# __setattr__ resolves this name at call time (not at class definition time), so the
+# forward reference from inside the class body is safe.
+_FIELD_VALIDATORS: dict[str, Callable[[object], None]] = {
+    _ConfigField.SHOULD_FOLLOW_SYMLINKS: _validate_should_follow_symlinks,
+    _ConfigField.MAX_FILE_SIZE_MB: _validate_max_file_size_mb,
+    _ConfigField.CONFIDENCE_THRESHOLD: _validate_confidence_threshold,
+    _ConfigField.SEVERITY_THRESHOLD: _validate_severity_threshold,
+    _ConfigField.EXCLUDE_PATHS: _validate_exclude_paths,
+    _ConfigField.INCLUDE_EXTENSIONS: _validate_include_extensions,
+}
