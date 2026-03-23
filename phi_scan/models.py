@@ -116,7 +116,7 @@ class ScanResult:
     severity_counts: MappingProxyType[SeverityLevel, int]
     category_counts: MappingProxyType[PhiCategory, int]
 
-    def __post_init__(self) -> None:
+    def _validate_file_counts(self) -> None:
         if self.files_scanned < _MINIMUM_FILE_COUNT:
             raise PhiDetectionError(
                 f"files_scanned ({self.files_scanned}) must be >= {_MINIMUM_FILE_COUNT}"
@@ -129,15 +129,17 @@ class ScanResult:
             raise PhiDetectionError(
                 f"scan_duration ({self.scan_duration!r}) must be >= {_MINIMUM_SCAN_DURATION}"
             )
-        if self.is_clean and self.findings:
-            raise PhiDetectionError(
-                f"is_clean is True but findings contains {len(self.findings)} finding(s) — "
-                "a clean result must have zero findings"
-            )
         if self.files_with_findings > self.files_scanned:
             raise PhiDetectionError(
                 f"files_with_findings ({self.files_with_findings}) exceeds "
                 f"files_scanned ({self.files_scanned})"
+            )
+
+    def _validate_clean_invariant(self) -> None:
+        if self.is_clean and self.findings:
+            raise PhiDetectionError(
+                f"is_clean is True but findings contains {len(self.findings)} finding(s) — "
+                "a clean result must have zero findings"
             )
         if self.is_clean and self.risk_level != RiskLevel.CLEAN:
             raise PhiDetectionError(
@@ -149,6 +151,10 @@ class ScanResult:
                 "risk_level is RiskLevel.CLEAN but is_clean is False — "
                 "RiskLevel.CLEAN requires is_clean to be True"
             )
+
+    def __post_init__(self) -> None:
+        self._validate_file_counts()
+        self._validate_clean_invariant()
 
 
 @dataclass
@@ -169,6 +175,10 @@ class ScanConfig:
             None (default) scans all non-binary text files regardless of extension.
     """
 
+    # ScanConfig is intentionally mutable (not frozen=True) so callers can update
+    # individual fields post-construction (e.g. a CLI that applies flag overrides to a
+    # file-loaded config). Defensive copies in __post_init__ guard against the caller
+    # mutating the lists they passed in; they do not prevent mutation of the config itself.
     exclude_paths: list[str] = field(default_factory=list)
     severity_threshold: SeverityLevel = SeverityLevel.LOW
     confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD

@@ -45,7 +45,7 @@ _INVALID_VALUE_HASH_NON_HEX: str = "z" * SHA256_HEX_DIGEST_LENGTH
 _INVALID_VALUE_HASH_UPPERCASE_HEX: str = "A" * SHA256_HEX_DIGEST_LENGTH
 
 
-def _make_scan_finding() -> ScanFinding:
+def _build_scan_finding() -> ScanFinding:
     """Return a fully populated ScanFinding for use across multiple tests."""
     return ScanFinding(
         file_path=_FINDING_FILE_PATH,
@@ -67,61 +67,61 @@ def _make_scan_finding() -> ScanFinding:
 
 
 def test_scan_finding_stores_file_path() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.file_path == _FINDING_FILE_PATH
 
 
 def test_scan_finding_stores_line_number() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.line_number == _FINDING_LINE_NUMBER
 
 
 def test_scan_finding_stores_entity_type() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.entity_type == _FINDING_ENTITY_TYPE
 
 
 def test_scan_finding_stores_hipaa_category() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.hipaa_category == _FINDING_HIPAA_CATEGORY
 
 
 def test_scan_finding_stores_confidence() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.confidence == _FINDING_CONFIDENCE
 
 
 def test_scan_finding_stores_detection_layer() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.detection_layer == _FINDING_DETECTION_LAYER
 
 
 def test_scan_finding_stores_value_hash() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.value_hash == _FINDING_VALUE_HASH
 
 
 def test_scan_finding_stores_severity() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.severity == _FINDING_SEVERITY
 
 
 def test_scan_finding_stores_code_context() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.code_context == _FINDING_CODE_CONTEXT
 
 
 def test_scan_finding_stores_remediation_hint() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     assert finding.remediation_hint == _FINDING_REMEDIATION_HINT
 
@@ -129,7 +129,7 @@ def test_scan_finding_stores_remediation_hint() -> None:
 def test_scan_finding_is_immutable() -> None:
     # frozen=True prevents mutation of findings after they are produced by
     # the detection engine — findings are immutable records of observed PHI.
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
     with pytest.raises(FrozenInstanceError):
         finding.confidence = 0.5  # type: ignore[misc]
@@ -258,11 +258,11 @@ _INVALID_FILES_WITH_FINDINGS_TOO_HIGH: int = _RESULT_FILES_SCANNED + 1
 _INVALID_SCAN_DURATION_NEGATIVE: float = -0.001
 
 
-def _make_scan_result(
+def _build_scan_result(
     findings: tuple[ScanFinding, ...] | None = None,
 ) -> ScanResult:
     """Return a populated ScanResult for use across multiple tests."""
-    findings_to_use = findings if findings is not None else (_make_scan_finding(),)
+    findings_to_use = findings if findings is not None else (_build_scan_finding(),)
     return ScanResult(
         findings=findings_to_use,
         files_scanned=_RESULT_FILES_SCANNED,
@@ -276,39 +276,39 @@ def _make_scan_result(
 
 
 def test_scan_result_stores_findings() -> None:
-    finding = _make_scan_finding()
+    finding = _build_scan_finding()
 
-    scan_result = _make_scan_result(findings=(finding,))
+    scan_result = _build_scan_result(findings=(finding,))
 
     assert scan_result.findings == (finding,)
 
 
 def test_scan_result_stores_files_scanned() -> None:
-    scan_result = _make_scan_result()
+    scan_result = _build_scan_result()
 
     assert scan_result.files_scanned == _RESULT_FILES_SCANNED
 
 
 def test_scan_result_stores_files_with_findings() -> None:
-    scan_result = _make_scan_result()
+    scan_result = _build_scan_result()
 
     assert scan_result.files_with_findings == _RESULT_FILES_WITH_FINDINGS
 
 
 def test_scan_result_stores_scan_duration() -> None:
-    scan_result = _make_scan_result()
+    scan_result = _build_scan_result()
 
     assert scan_result.scan_duration == _RESULT_SCAN_DURATION
 
 
 def test_scan_result_stores_is_clean() -> None:
-    scan_result = _make_scan_result()
+    scan_result = _build_scan_result()
 
     assert scan_result.is_clean is False
 
 
 def test_scan_result_stores_risk_level() -> None:
-    scan_result = _make_scan_result()
+    scan_result = _build_scan_result()
 
     assert scan_result.risk_level == _RESULT_RISK_LEVEL
 
@@ -316,7 +316,7 @@ def test_scan_result_stores_risk_level() -> None:
 def test_scan_result_stores_severity_counts() -> None:
     expected_severity_counts = MappingProxyType({SeverityLevel.HIGH: 1})
 
-    scan_result = _make_scan_result()
+    scan_result = _build_scan_result()
 
     assert scan_result.severity_counts == expected_severity_counts
 
@@ -324,7 +324,7 @@ def test_scan_result_stores_severity_counts() -> None:
 def test_scan_result_stores_category_counts() -> None:
     expected_category_counts = MappingProxyType({PhiCategory.SSN: 1})
 
-    scan_result = _make_scan_result()
+    scan_result = _build_scan_result()
 
     assert scan_result.category_counts == expected_category_counts
 
@@ -347,7 +347,7 @@ def test_scan_result_is_clean_when_no_findings() -> None:
 
 def test_scan_result_is_immutable() -> None:
     # frozen=True prevents field reassignment — ScanResult is a sealed record.
-    scan_result = _make_scan_result()
+    scan_result = _build_scan_result()
 
     with pytest.raises(FrozenInstanceError):
         scan_result.files_scanned = 0  # type: ignore[misc]
@@ -361,7 +361,7 @@ def test_scan_result_is_immutable() -> None:
 def test_scan_result_raises_phi_detection_error_when_is_clean_true_with_findings() -> None:
     with pytest.raises(PhiDetectionError):
         ScanResult(
-            findings=(_make_scan_finding(),),
+            findings=(_build_scan_finding(),),
             files_scanned=_RESULT_FILES_SCANNED,
             files_with_findings=_RESULT_FILES_WITH_FINDINGS,
             scan_duration=_RESULT_SCAN_DURATION,
