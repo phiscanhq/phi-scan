@@ -9,6 +9,7 @@ __all__ = [
     "AUDIT_SCHEMA_VERSION",
     "BINARY_CHECK_BYTE_COUNT",
     "CACHE_SCHEMA_VERSION",
+    "SHA256_HEX_DIGEST_LENGTH",
     "AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX",
     "CONFIDENCE_FHIR_MAX",
     "CONFIDENCE_FHIR_MIN",
@@ -93,6 +94,10 @@ KNOWN_BINARY_EXTENSIONS: frozenset[str] = frozenset(
 
 # Number of bytes read from a file to detect binary content via null bytes.
 BINARY_CHECK_BYTE_COUNT: int = 8192
+
+# Length of a SHA-256 hex digest in characters. ScanFinding.value_hash must
+# be exactly this length — raw PHI values are never stored, only their hashes.
+SHA256_HEX_DIGEST_LENGTH: int = 64
 
 # ---------------------------------------------------------------------------
 # Confidence thresholds

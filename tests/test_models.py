@@ -2,6 +2,7 @@
 
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -10,6 +11,7 @@ from phi_scan.constants import (
     CONFIDENCE_SCORE_MINIMUM,
     DEFAULT_CONFIDENCE_THRESHOLD,
     MAX_FILE_SIZE_MB,
+    SHA256_HEX_DIGEST_LENGTH,
     DetectionLayer,
     PhiCategory,
     RiskLevel,
@@ -22,18 +24,21 @@ from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 # ScanFinding fixture data — all fields required, no defaults
 # ---------------------------------------------------------------------------
 
-_SHA256_HEX_DIGEST_LENGTH: int = 64
-
 _FINDING_FILE_PATH: Path = Path("/project/src/patient_handler.py")
 _FINDING_LINE_NUMBER: int = 42
 _FINDING_ENTITY_TYPE: str = "us_ssn"
 _FINDING_HIPAA_CATEGORY: PhiCategory = PhiCategory.SSN
 _FINDING_CONFIDENCE: float = 0.95
 _FINDING_DETECTION_LAYER: DetectionLayer = DetectionLayer.REGEX
-_FINDING_VALUE_HASH: str = "a" * _SHA256_HEX_DIGEST_LENGTH
+_FINDING_VALUE_HASH: str = "a" * SHA256_HEX_DIGEST_LENGTH
 _FINDING_SEVERITY: SeverityLevel = SeverityLevel.HIGH
 _FINDING_CODE_CONTEXT: str = "patient_ssn = '***-**-****'"
 _FINDING_REMEDIATION_HINT: str = "Replace SSN with synthetic value using 000-00-0000 format."
+
+_INVALID_LINE_NUMBER_ZERO: int = 0
+_INVALID_LINE_NUMBER_NEGATIVE: int = -1
+_INVALID_VALUE_HASH_TOO_SHORT: str = "a" * (SHA256_HEX_DIGEST_LENGTH - 1)
+_INVALID_VALUE_HASH_TOO_LONG: str = "a" * (SHA256_HEX_DIGEST_LENGTH + 1)
 
 
 def _make_scan_finding() -> ScanFinding:
@@ -127,6 +132,80 @@ def test_scan_finding_is_immutable() -> None:
 
 
 # ---------------------------------------------------------------------------
+# ScanFinding — line_number validation
+# ---------------------------------------------------------------------------
+
+
+def test_scan_finding_raises_phi_detection_error_for_line_number_zero() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanFinding(
+            file_path=_FINDING_FILE_PATH,
+            line_number=_INVALID_LINE_NUMBER_ZERO,
+            entity_type=_FINDING_ENTITY_TYPE,
+            hipaa_category=_FINDING_HIPAA_CATEGORY,
+            confidence=_FINDING_CONFIDENCE,
+            detection_layer=_FINDING_DETECTION_LAYER,
+            value_hash=_FINDING_VALUE_HASH,
+            severity=_FINDING_SEVERITY,
+            code_context=_FINDING_CODE_CONTEXT,
+            remediation_hint=_FINDING_REMEDIATION_HINT,
+        )
+
+
+def test_scan_finding_raises_phi_detection_error_for_negative_line_number() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanFinding(
+            file_path=_FINDING_FILE_PATH,
+            line_number=_INVALID_LINE_NUMBER_NEGATIVE,
+            entity_type=_FINDING_ENTITY_TYPE,
+            hipaa_category=_FINDING_HIPAA_CATEGORY,
+            confidence=_FINDING_CONFIDENCE,
+            detection_layer=_FINDING_DETECTION_LAYER,
+            value_hash=_FINDING_VALUE_HASH,
+            severity=_FINDING_SEVERITY,
+            code_context=_FINDING_CODE_CONTEXT,
+            remediation_hint=_FINDING_REMEDIATION_HINT,
+        )
+
+
+# ---------------------------------------------------------------------------
+# ScanFinding — value_hash validation
+# ---------------------------------------------------------------------------
+
+
+def test_scan_finding_raises_phi_detection_error_for_value_hash_too_short() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanFinding(
+            file_path=_FINDING_FILE_PATH,
+            line_number=_FINDING_LINE_NUMBER,
+            entity_type=_FINDING_ENTITY_TYPE,
+            hipaa_category=_FINDING_HIPAA_CATEGORY,
+            confidence=_FINDING_CONFIDENCE,
+            detection_layer=_FINDING_DETECTION_LAYER,
+            value_hash=_INVALID_VALUE_HASH_TOO_SHORT,
+            severity=_FINDING_SEVERITY,
+            code_context=_FINDING_CODE_CONTEXT,
+            remediation_hint=_FINDING_REMEDIATION_HINT,
+        )
+
+
+def test_scan_finding_raises_phi_detection_error_for_value_hash_too_long() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanFinding(
+            file_path=_FINDING_FILE_PATH,
+            line_number=_FINDING_LINE_NUMBER,
+            entity_type=_FINDING_ENTITY_TYPE,
+            hipaa_category=_FINDING_HIPAA_CATEGORY,
+            confidence=_FINDING_CONFIDENCE,
+            detection_layer=_FINDING_DETECTION_LAYER,
+            value_hash=_INVALID_VALUE_HASH_TOO_LONG,
+            severity=_FINDING_SEVERITY,
+            code_context=_FINDING_CODE_CONTEXT,
+            remediation_hint=_FINDING_REMEDIATION_HINT,
+        )
+
+
+# ---------------------------------------------------------------------------
 # ScanResult tests
 # ---------------------------------------------------------------------------
 
@@ -136,9 +215,11 @@ _RESULT_SCAN_DURATION: float = 0.42
 _RESULT_RISK_LEVEL: RiskLevel = RiskLevel.HIGH
 
 
-def _make_scan_result(findings: list[ScanFinding] | None = None) -> ScanResult:
+def _make_scan_result(
+    findings: tuple[ScanFinding, ...] | None = None,
+) -> ScanResult:
     """Return a populated ScanResult for use across multiple tests."""
-    findings_to_use = findings if findings is not None else [_make_scan_finding()]
+    findings_to_use = findings if findings is not None else (_make_scan_finding(),)
     return ScanResult(
         findings=findings_to_use,
         files_scanned=_RESULT_FILES_SCANNED,
@@ -146,17 +227,17 @@ def _make_scan_result(findings: list[ScanFinding] | None = None) -> ScanResult:
         scan_duration=_RESULT_SCAN_DURATION,
         is_clean=False,
         risk_level=_RESULT_RISK_LEVEL,
-        severity_counts={SeverityLevel.HIGH: 1},
-        category_counts={PhiCategory.SSN: 1},
+        severity_counts=MappingProxyType({SeverityLevel.HIGH: 1}),
+        category_counts=MappingProxyType({PhiCategory.SSN: 1}),
     )
 
 
 def test_scan_result_stores_findings() -> None:
     finding = _make_scan_finding()
 
-    scan_result = _make_scan_result(findings=[finding])
+    scan_result = _make_scan_result(findings=(finding,))
 
-    assert scan_result.findings == [finding]
+    assert scan_result.findings == (finding,)
 
 
 def test_scan_result_stores_files_scanned() -> None:
@@ -190,7 +271,7 @@ def test_scan_result_stores_risk_level() -> None:
 
 
 def test_scan_result_stores_severity_counts() -> None:
-    expected_severity_counts = {SeverityLevel.HIGH: 1}
+    expected_severity_counts = MappingProxyType({SeverityLevel.HIGH: 1})
 
     scan_result = _make_scan_result()
 
@@ -198,7 +279,7 @@ def test_scan_result_stores_severity_counts() -> None:
 
 
 def test_scan_result_stores_category_counts() -> None:
-    expected_category_counts = {PhiCategory.SSN: 1}
+    expected_category_counts = MappingProxyType({PhiCategory.SSN: 1})
 
     scan_result = _make_scan_result()
 
@@ -207,18 +288,26 @@ def test_scan_result_stores_category_counts() -> None:
 
 def test_scan_result_is_clean_when_no_findings() -> None:
     clean_result = ScanResult(
-        findings=[],
+        findings=(),
         files_scanned=_RESULT_FILES_SCANNED,
         files_with_findings=0,
         scan_duration=_RESULT_SCAN_DURATION,
         is_clean=True,
         risk_level=RiskLevel.CLEAN,
-        severity_counts={},
-        category_counts={},
+        severity_counts=MappingProxyType({}),
+        category_counts=MappingProxyType({}),
     )
 
     assert clean_result.is_clean is True
     assert clean_result.risk_level == RiskLevel.CLEAN
+
+
+def test_scan_result_is_immutable() -> None:
+    # frozen=True prevents field reassignment — ScanResult is a sealed record.
+    scan_result = _make_scan_result()
+
+    with pytest.raises(FrozenInstanceError):
+        scan_result.files_scanned = 0  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -287,6 +376,26 @@ def test_scan_config_accepts_include_extensions_allowlist() -> None:
     config = ScanConfig(include_extensions=allowed_extensions)
 
     assert config.include_extensions == allowed_extensions
+
+
+def test_scan_config_exclude_paths_defensive_copy_isolates_caller() -> None:
+    # Mutating the original list after construction must not affect the config.
+    caller_paths = ["node_modules/"]
+
+    config = ScanConfig(exclude_paths=caller_paths)
+    caller_paths.append(".venv/")
+
+    assert config.exclude_paths == ["node_modules/"]
+
+
+def test_scan_config_include_extensions_defensive_copy_isolates_caller() -> None:
+    # Mutating the original list after construction must not affect the config.
+    caller_extensions = [".py"]
+
+    config = ScanConfig(include_extensions=caller_extensions)
+    caller_extensions.append(".js")
+
+    assert config.include_extensions == [".py"]
 
 
 # ---------------------------------------------------------------------------
@@ -376,11 +485,3 @@ def test_scan_config_raises_configuration_error_for_threshold_above_maximum() ->
 def test_scan_config_raises_configuration_error_when_follow_symlinks_is_true() -> None:
     with pytest.raises(ConfigurationError):
         ScanConfig(should_follow_symlinks=True)
-
-
-def test_scan_result_is_immutable() -> None:
-    # frozen=True prevents field reassignment — ScanResult is a sealed record.
-    scan_result = _make_scan_result()
-
-    with pytest.raises(FrozenInstanceError):
-        scan_result.files_scanned = 0  # type: ignore[misc]

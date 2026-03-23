@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 
 from phi_scan.constants import (
     CONFIDENCE_SCORE_MAXIMUM,
     CONFIDENCE_SCORE_MINIMUM,
     DEFAULT_CONFIDENCE_THRESHOLD,
     MAX_FILE_SIZE_MB,
+    SHA256_HEX_DIGEST_LENGTH,
     DetectionLayer,
     PhiCategory,
     RiskLevel,
@@ -22,6 +24,8 @@ __all__ = [
     "ScanFinding",
     "ScanResult",
 ]
+
+_MINIMUM_LINE_NUMBER: int = 1
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,16 @@ class ScanFinding:
     remediation_hint: str
 
     def __post_init__(self) -> None:
+        if self.line_number < _MINIMUM_LINE_NUMBER:
+            raise PhiDetectionError(
+                f"line_number {self.line_number!r} is invalid — "
+                f"line numbers are 1-indexed and must be >= {_MINIMUM_LINE_NUMBER}"
+            )
+        if len(self.value_hash) != SHA256_HEX_DIGEST_LENGTH:
+            raise PhiDetectionError(
+                f"value_hash has length {len(self.value_hash)} "
+                f"but a SHA-256 hex digest must be exactly {SHA256_HEX_DIGEST_LENGTH} characters"
+            )
         if not CONFIDENCE_SCORE_MINIMUM <= self.confidence <= CONFIDENCE_SCORE_MAXIMUM:
             raise PhiDetectionError(
                 f"confidence {self.confidence!r} is outside the valid range "
@@ -66,6 +80,9 @@ class ScanFinding:
 @dataclass(frozen=True)
 class ScanResult:
     """The aggregated outcome of a completed scan operation.
+
+    All container fields use immutable types so the sealed record cannot be
+    mutated after the scanner produces it.
 
     Args:
         findings: All findings produced by the scan, ordered by file path then line number.
@@ -78,14 +95,14 @@ class ScanResult:
         category_counts: Number of findings per HIPAA PHI category.
     """
 
-    findings: list[ScanFinding]
+    findings: tuple[ScanFinding, ...]
     files_scanned: int
     files_with_findings: int
     scan_duration: float
     is_clean: bool
     risk_level: RiskLevel
-    severity_counts: dict[SeverityLevel, int]
-    category_counts: dict[PhiCategory, int]
+    severity_counts: MappingProxyType[SeverityLevel, int]
+    category_counts: MappingProxyType[PhiCategory, int]
 
 
 @dataclass
@@ -124,3 +141,7 @@ class ScanConfig:
                 f"confidence_threshold {self.confidence_threshold!r} is outside the valid range "
                 f"[{CONFIDENCE_SCORE_MINIMUM}, {CONFIDENCE_SCORE_MAXIMUM}]"
             )
+        # Defensive copies prevent callers from mutating config state after construction.
+        self.exclude_paths = list(self.exclude_paths)
+        if self.include_extensions is not None:
+            self.include_extensions = list(self.include_extensions)
