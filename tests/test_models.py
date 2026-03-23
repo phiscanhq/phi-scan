@@ -442,6 +442,20 @@ def test_scan_result_raises_phi_detection_error_when_is_clean_with_non_clean_ris
         )
 
 
+def test_scan_result_raises_phi_detection_error_when_risk_level_clean_but_is_clean_false() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanResult(
+            findings=(),
+            files_scanned=_RESULT_FILES_SCANNED,
+            files_with_findings=_RESULT_FILES_WITH_FINDINGS_ZERO,
+            scan_duration=_RESULT_SCAN_DURATION,
+            is_clean=False,
+            risk_level=RiskLevel.CLEAN,
+            severity_counts=MappingProxyType({}),
+            category_counts=MappingProxyType({}),
+        )
+
+
 # ---------------------------------------------------------------------------
 # ScanConfig tests
 # ---------------------------------------------------------------------------
@@ -528,6 +542,24 @@ def test_scan_config_include_extensions_defensive_copy_isolates_caller() -> None
     caller_extensions.append(".js")
 
     assert config.include_extensions == [".py"]
+
+
+# ---------------------------------------------------------------------------
+# ScanConfig — max_file_size_mb validation
+# ---------------------------------------------------------------------------
+
+_INVALID_MAX_FILE_SIZE_MB_ZERO: int = 0
+_INVALID_MAX_FILE_SIZE_MB_NEGATIVE: int = -1
+
+
+def test_scan_config_raises_configuration_error_for_max_file_size_mb_zero() -> None:
+    with pytest.raises(ConfigurationError):
+        ScanConfig(max_file_size_mb=_INVALID_MAX_FILE_SIZE_MB_ZERO)
+
+
+def test_scan_config_raises_configuration_error_for_max_file_size_mb_negative() -> None:
+    with pytest.raises(ConfigurationError):
+        ScanConfig(max_file_size_mb=_INVALID_MAX_FILE_SIZE_MB_NEGATIVE)
 
 
 # ---------------------------------------------------------------------------

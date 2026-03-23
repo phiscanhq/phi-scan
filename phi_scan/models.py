@@ -29,9 +29,11 @@ __all__ = [
 _MINIMUM_LINE_NUMBER: int = 1
 _MINIMUM_FILE_COUNT: int = 0
 _MINIMUM_SCAN_DURATION: float = 0.0
+# Zero is not a valid file-size limit — a scanner that skips all files is broken.
+_MINIMUM_FILE_SIZE_MB: int = 1
 
 # Matches exactly SHA256_HEX_DIGEST_LENGTH lowercase hex characters.
-# fullmatch without anchors is used — anchors and fullmatch together are redundant.
+# fullmatch matches the entire string — explicit ^ and $ anchors are redundant and omitted.
 # A length-only check would accept base64 or truncated raw values of the right
 # length — the hex character class enforces that value_hash is actually a SHA-256 digest.
 _VALID_SHA256_PATTERN: re.Pattern[str] = re.compile(rf"[0-9a-f]{{{SHA256_HEX_DIGEST_LENGTH}}}")
@@ -142,6 +144,11 @@ class ScanResult:
                 f"is_clean is True but risk_level is {self.risk_level!r} — "
                 "a clean result must have RiskLevel.CLEAN"
             )
+        if not self.is_clean and self.risk_level == RiskLevel.CLEAN:
+            raise PhiDetectionError(
+                "risk_level is RiskLevel.CLEAN but is_clean is False — "
+                "RiskLevel.CLEAN requires is_clean to be True"
+            )
 
 
 @dataclass
@@ -184,4 +191,8 @@ class ScanConfig:
             raise ConfigurationError(
                 f"confidence_threshold {self.confidence_threshold!r} is outside the valid range "
                 f"[{CONFIDENCE_SCORE_MINIMUM}, {CONFIDENCE_SCORE_MAXIMUM}]"
+            )
+        if self.max_file_size_mb < _MINIMUM_FILE_SIZE_MB:
+            raise ConfigurationError(
+                f"max_file_size_mb {self.max_file_size_mb!r} must be >= {_MINIMUM_FILE_SIZE_MB}"
             )
