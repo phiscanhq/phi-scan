@@ -39,6 +39,10 @@ _INVALID_LINE_NUMBER_ZERO: int = 0
 _INVALID_LINE_NUMBER_NEGATIVE: int = -1
 _INVALID_VALUE_HASH_TOO_SHORT: str = "a" * (SHA256_HEX_DIGEST_LENGTH - 1)
 _INVALID_VALUE_HASH_TOO_LONG: str = "a" * (SHA256_HEX_DIGEST_LENGTH + 1)
+# Correct length but non-hex characters — exposes the weakness in length-only checks.
+_INVALID_VALUE_HASH_NON_HEX: str = "z" * SHA256_HEX_DIGEST_LENGTH
+# Uppercase hex is not a valid SHA-256 hex digest — must be lowercase [0-9a-f].
+_INVALID_VALUE_HASH_UPPERCASE_HEX: str = "A" * SHA256_HEX_DIGEST_LENGTH
 
 
 def _make_scan_finding() -> ScanFinding:
@@ -205,12 +209,45 @@ def test_scan_finding_raises_phi_detection_error_for_value_hash_too_long() -> No
         )
 
 
+def test_scan_finding_raises_phi_detection_error_for_value_hash_with_non_hex_characters() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanFinding(
+            file_path=_FINDING_FILE_PATH,
+            line_number=_FINDING_LINE_NUMBER,
+            entity_type=_FINDING_ENTITY_TYPE,
+            hipaa_category=_FINDING_HIPAA_CATEGORY,
+            confidence=_FINDING_CONFIDENCE,
+            detection_layer=_FINDING_DETECTION_LAYER,
+            value_hash=_INVALID_VALUE_HASH_NON_HEX,
+            severity=_FINDING_SEVERITY,
+            code_context=_FINDING_CODE_CONTEXT,
+            remediation_hint=_FINDING_REMEDIATION_HINT,
+        )
+
+
+def test_scan_finding_raises_phi_detection_error_for_value_hash_with_uppercase_hex() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanFinding(
+            file_path=_FINDING_FILE_PATH,
+            line_number=_FINDING_LINE_NUMBER,
+            entity_type=_FINDING_ENTITY_TYPE,
+            hipaa_category=_FINDING_HIPAA_CATEGORY,
+            confidence=_FINDING_CONFIDENCE,
+            detection_layer=_FINDING_DETECTION_LAYER,
+            value_hash=_INVALID_VALUE_HASH_UPPERCASE_HEX,
+            severity=_FINDING_SEVERITY,
+            code_context=_FINDING_CODE_CONTEXT,
+            remediation_hint=_FINDING_REMEDIATION_HINT,
+        )
+
+
 # ---------------------------------------------------------------------------
 # ScanResult tests
 # ---------------------------------------------------------------------------
 
 _RESULT_FILES_SCANNED: int = 10
 _RESULT_FILES_WITH_FINDINGS: int = 1
+_RESULT_FILES_WITH_FINDINGS_ZERO: int = 0
 _RESULT_SCAN_DURATION: float = 0.42
 _RESULT_RISK_LEVEL: RiskLevel = RiskLevel.HIGH
 
@@ -290,7 +327,7 @@ def test_scan_result_is_clean_when_no_findings() -> None:
     clean_result = ScanResult(
         findings=(),
         files_scanned=_RESULT_FILES_SCANNED,
-        files_with_findings=0,
+        files_with_findings=_RESULT_FILES_WITH_FINDINGS_ZERO,
         scan_duration=_RESULT_SCAN_DURATION,
         is_clean=True,
         risk_level=RiskLevel.CLEAN,
@@ -308,6 +345,53 @@ def test_scan_result_is_immutable() -> None:
 
     with pytest.raises(FrozenInstanceError):
         scan_result.files_scanned = 0  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# ScanResult — logical consistency validation
+# ---------------------------------------------------------------------------
+
+
+def test_scan_result_raises_phi_detection_error_when_is_clean_true_with_findings() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanResult(
+            findings=(_make_scan_finding(),),
+            files_scanned=_RESULT_FILES_SCANNED,
+            files_with_findings=_RESULT_FILES_WITH_FINDINGS,
+            scan_duration=_RESULT_SCAN_DURATION,
+            is_clean=True,
+            risk_level=RiskLevel.CLEAN,
+            severity_counts=MappingProxyType({}),
+            category_counts=MappingProxyType({}),
+        )
+
+
+def test_scan_result_raises_phi_detection_error_when_files_with_findings_exceeds_scanned() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanResult(
+            findings=(),
+            files_scanned=_RESULT_FILES_WITH_FINDINGS,
+            files_with_findings=_RESULT_FILES_SCANNED,
+            scan_duration=_RESULT_SCAN_DURATION,
+            is_clean=False,
+            risk_level=RiskLevel.LOW,
+            severity_counts=MappingProxyType({}),
+            category_counts=MappingProxyType({}),
+        )
+
+
+def test_scan_result_raises_phi_detection_error_when_is_clean_with_non_clean_risk_level() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanResult(
+            findings=(),
+            files_scanned=_RESULT_FILES_SCANNED,
+            files_with_findings=_RESULT_FILES_WITH_FINDINGS_ZERO,
+            scan_duration=_RESULT_SCAN_DURATION,
+            is_clean=True,
+            risk_level=RiskLevel.HIGH,
+            severity_counts=MappingProxyType({}),
+            category_counts=MappingProxyType({}),
+        )
 
 
 # ---------------------------------------------------------------------------

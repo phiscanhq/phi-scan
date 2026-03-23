@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -26,6 +27,11 @@ __all__ = [
 ]
 
 _MINIMUM_LINE_NUMBER: int = 1
+
+# Matches exactly SHA256_HEX_DIGEST_LENGTH lowercase hex characters.
+# A length-only check would accept base64 or truncated raw values of the right
+# length — the hex constraint enforces that value_hash is actually a SHA-256 digest.
+_VALID_SHA256_PATTERN: re.Pattern[str] = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -65,10 +71,11 @@ class ScanFinding:
                 f"line_number {self.line_number!r} is invalid — "
                 f"line numbers are 1-indexed and must be >= {_MINIMUM_LINE_NUMBER}"
             )
-        if len(self.value_hash) != SHA256_HEX_DIGEST_LENGTH:
+        if not _VALID_SHA256_PATTERN.fullmatch(self.value_hash):
             raise PhiDetectionError(
-                f"value_hash has length {len(self.value_hash)} "
-                f"but a SHA-256 hex digest must be exactly {SHA256_HEX_DIGEST_LENGTH} characters"
+                f"value_hash is not a valid SHA-256 hex digest — "
+                f"must be exactly {SHA256_HEX_DIGEST_LENGTH} lowercase hex characters [0-9a-f], "
+                f"got {len(self.value_hash)} characters"
             )
         if not CONFIDENCE_SCORE_MINIMUM <= self.confidence <= CONFIDENCE_SCORE_MAXIMUM:
             raise PhiDetectionError(
@@ -103,6 +110,23 @@ class ScanResult:
     risk_level: RiskLevel
     severity_counts: MappingProxyType[SeverityLevel, int]
     category_counts: MappingProxyType[PhiCategory, int]
+
+    def __post_init__(self) -> None:
+        if self.is_clean and self.findings:
+            raise PhiDetectionError(
+                f"is_clean is True but findings contains {len(self.findings)} finding(s) — "
+                "a clean result must have zero findings"
+            )
+        if self.files_with_findings > self.files_scanned:
+            raise PhiDetectionError(
+                f"files_with_findings ({self.files_with_findings}) exceeds "
+                f"files_scanned ({self.files_scanned})"
+            )
+        if self.is_clean and self.risk_level != RiskLevel.CLEAN:
+            raise PhiDetectionError(
+                f"is_clean is True but risk_level is {self.risk_level!r} — "
+                "a clean result must have RiskLevel.CLEAN"
+            )
 
 
 @dataclass
