@@ -126,10 +126,14 @@ def _reject_invalid_line_number(finding: ScanFinding) -> None:
 
 def _reject_invalid_value_hash(finding: ScanFinding) -> None:
     if not _VALID_SHA256_PATTERN.fullmatch(finding.value_hash):
+        # Do NOT include finding.value_hash in this message — if a caller
+        # accidentally passes a raw PHI value (e.g. an SSN) instead of its
+        # hash, the exception message would leak PHI into logs and CI output.
+        rejected_length = len(finding.value_hash)
         raise PhiDetectionError(
-            f"value_hash {finding.value_hash!r} is not a valid SHA-256 hex digest — "
+            f"value_hash is not a valid SHA-256 hex digest — "
             f"must be exactly {SHA256_HEX_DIGEST_LENGTH} lowercase hex characters [0-9a-f], "
-            f"got {len(finding.value_hash)} characters"
+            f"got {rejected_length} characters (value omitted to prevent PHI leakage)"
         )
 
 
