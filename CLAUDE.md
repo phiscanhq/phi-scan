@@ -272,11 +272,17 @@ make help         # list all available targets
 - Constants: `UPPER_SNAKE_CASE`
 - Booleans must start with `is_`, `has_`, `can_`, `should_`, or `was_`
 - Function names must be verb-noun pairs: `calculate_tax_total`, not `process`
-- Functions that raise when a condition is violated use `raise_on_<condition>`:
-  `raise_on_negative_files_scanned`, `raise_on_clean_result_with_findings`.
-  Functions that validate a single field and raise use `validate_<field_name>`:
-  `validate_confidence_threshold`, `validate_max_file_size_mb`.
-  Both patterns satisfy the verb-noun requirement.
+- Two approved patterns for functions whose body is a guard-clause raise:
+  1. **`reject_<what_is_rejected>`** — used for domain invariant checkers where the
+     noun names the invalid thing: `reject_negative_files_scanned`,
+     `reject_clean_result_with_findings`, `reject_dirty_result_with_clean_risk_level`.
+     Verb = reject (throw an error for), noun = the bad value or bad state.
+  2. **`validate_<field_name>`** — used for single-field guards called from
+     `__setattr__` or `__post_init__`: `validate_confidence_threshold`,
+     `validate_max_file_size_mb`. Verb = validate, noun = the field name.
+  Do **not** use `check_`, `assert_`, `raise_on_`, or plain `validate` (without a
+  noun suffix) for these patterns — all were tried and rejected in earlier review
+  cycles. The two patterns above are the only approved forms.
 - No abbreviations — write the full word. No: `usr`, `cfg`, `tmp`, `val`, `res`, `d`, `ts`
 - Avoid class names ending in: `Manager`, `Handler`, `Processor`, `Helper`, `Util`
 - The bigger the scope, the longer the name

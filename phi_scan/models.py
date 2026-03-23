@@ -124,23 +124,23 @@ class ScanResult:
     category_counts: MappingProxyType[PhiCategory, int]
 
     def __post_init__(self) -> None:
-        _raise_on_negative_files_scanned(self)
-        _raise_on_negative_files_with_findings(self)
-        _raise_on_files_with_findings_exceeding_files_scanned(self)
-        _raise_on_negative_scan_duration(self)
-        _raise_on_clean_result_with_findings(self)
-        _raise_on_clean_result_with_wrong_risk_level(self)
-        _raise_on_dirty_result_with_clean_risk_level(self)
+        _reject_negative_files_scanned(self)
+        _reject_negative_files_with_findings(self)
+        _reject_files_with_findings_exceeding_files_scanned(self)
+        _reject_negative_scan_duration(self)
+        _reject_clean_result_with_findings(self)
+        _reject_clean_result_with_wrong_risk_level(self)
+        _reject_dirty_result_with_clean_risk_level(self)
 
 
-def _raise_on_negative_files_scanned(result: ScanResult) -> None:
+def _reject_negative_files_scanned(result: ScanResult) -> None:
     if result.files_scanned < _MINIMUM_ELIGIBLE_FILE_COUNT:
         raise PhiDetectionError(
             f"files_scanned ({result.files_scanned}) must be >= {_MINIMUM_ELIGIBLE_FILE_COUNT}"
         )
 
 
-def _raise_on_negative_files_with_findings(result: ScanResult) -> None:
+def _reject_negative_files_with_findings(result: ScanResult) -> None:
     if result.files_with_findings < _MINIMUM_ELIGIBLE_FILE_COUNT:
         raise PhiDetectionError(
             f"files_with_findings ({result.files_with_findings}) "
@@ -148,7 +148,7 @@ def _raise_on_negative_files_with_findings(result: ScanResult) -> None:
         )
 
 
-def _raise_on_files_with_findings_exceeding_files_scanned(result: ScanResult) -> None:
+def _reject_files_with_findings_exceeding_files_scanned(result: ScanResult) -> None:
     if result.files_with_findings > result.files_scanned:
         raise PhiDetectionError(
             f"files_with_findings ({result.files_with_findings}) exceeds "
@@ -156,14 +156,14 @@ def _raise_on_files_with_findings_exceeding_files_scanned(result: ScanResult) ->
         )
 
 
-def _raise_on_negative_scan_duration(result: ScanResult) -> None:
+def _reject_negative_scan_duration(result: ScanResult) -> None:
     if result.scan_duration < _MINIMUM_SCAN_DURATION:
         raise PhiDetectionError(
             f"scan_duration ({result.scan_duration!r}) must be >= {_MINIMUM_SCAN_DURATION}"
         )
 
 
-def _raise_on_clean_result_with_findings(result: ScanResult) -> None:
+def _reject_clean_result_with_findings(result: ScanResult) -> None:
     if result.is_clean and result.findings:
         raise PhiDetectionError(
             f"is_clean is True but findings contains {len(result.findings)} finding(s) — "
@@ -171,7 +171,7 @@ def _raise_on_clean_result_with_findings(result: ScanResult) -> None:
         )
 
 
-def _raise_on_clean_result_with_wrong_risk_level(result: ScanResult) -> None:
+def _reject_clean_result_with_wrong_risk_level(result: ScanResult) -> None:
     if result.is_clean and result.risk_level != RiskLevel.CLEAN:
         raise PhiDetectionError(
             f"is_clean is True but risk_level is {result.risk_level!r} — "
@@ -179,7 +179,7 @@ def _raise_on_clean_result_with_wrong_risk_level(result: ScanResult) -> None:
         )
 
 
-def _raise_on_dirty_result_with_clean_risk_level(result: ScanResult) -> None:
+def _reject_dirty_result_with_clean_risk_level(result: ScanResult) -> None:
     if not result.is_clean and result.risk_level == RiskLevel.CLEAN:
         raise PhiDetectionError(
             "risk_level is RiskLevel.CLEAN but is_clean is False — "
