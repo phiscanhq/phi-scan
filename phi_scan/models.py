@@ -124,14 +124,14 @@ class ScanResult:
     category_counts: MappingProxyType[PhiCategory, int]
 
     def __post_init__(self) -> None:
-        _validate_file_counts(self)
-        _validate_scan_duration(self)
-        _validate_clean_findings_consistency(self)
-        _validate_clean_result_has_clean_risk_level(self)
-        _validate_dirty_result_lacks_clean_risk_level(self)
+        _raise_on_invalid_file_counts(self)
+        _raise_on_negative_scan_duration(self)
+        _raise_on_clean_result_with_findings(self)
+        _raise_on_clean_result_with_wrong_risk_level(self)
+        _raise_on_dirty_result_with_clean_risk_level(self)
 
 
-def _validate_file_counts(result: ScanResult) -> None:
+def _raise_on_invalid_file_counts(result: ScanResult) -> None:
     if result.files_scanned < _MINIMUM_ELIGIBLE_FILE_COUNT:
         raise PhiDetectionError(
             f"files_scanned ({result.files_scanned}) must be >= {_MINIMUM_ELIGIBLE_FILE_COUNT}"
@@ -148,14 +148,14 @@ def _validate_file_counts(result: ScanResult) -> None:
         )
 
 
-def _validate_scan_duration(result: ScanResult) -> None:
+def _raise_on_negative_scan_duration(result: ScanResult) -> None:
     if result.scan_duration < _MINIMUM_SCAN_DURATION:
         raise PhiDetectionError(
             f"scan_duration ({result.scan_duration!r}) must be >= {_MINIMUM_SCAN_DURATION}"
         )
 
 
-def _validate_clean_findings_consistency(result: ScanResult) -> None:
+def _raise_on_clean_result_with_findings(result: ScanResult) -> None:
     if result.is_clean and result.findings:
         raise PhiDetectionError(
             f"is_clean is True but findings contains {len(result.findings)} finding(s) — "
@@ -163,7 +163,7 @@ def _validate_clean_findings_consistency(result: ScanResult) -> None:
         )
 
 
-def _validate_clean_result_has_clean_risk_level(result: ScanResult) -> None:
+def _raise_on_clean_result_with_wrong_risk_level(result: ScanResult) -> None:
     if result.is_clean and result.risk_level != RiskLevel.CLEAN:
         raise PhiDetectionError(
             f"is_clean is True but risk_level is {result.risk_level!r} — "
@@ -171,7 +171,7 @@ def _validate_clean_result_has_clean_risk_level(result: ScanResult) -> None:
         )
 
 
-def _validate_dirty_result_lacks_clean_risk_level(result: ScanResult) -> None:
+def _raise_on_dirty_result_with_clean_risk_level(result: ScanResult) -> None:
     if not result.is_clean and result.risk_level == RiskLevel.CLEAN:
         raise PhiDetectionError(
             "risk_level is RiskLevel.CLEAN but is_clean is False — "
@@ -210,11 +210,10 @@ class ScanConfig:
     include_extensions: list[str] | None = None
 
     def __post_init__(self) -> None:
-        # Non-frozen dataclass __init__ uses normal attribute assignment (not
-        # object.__setattr__), so __setattr__ fires for every field during
-        # construction — all guards run then, no duplicate checks needed here.
-        # Compute both copies before assigning so both fields are updated together;
-        # readers never observe one updated field and one original.
+        # Non-frozen dataclass __init__ uses normal attribute assignment, so
+        # __setattr__ fires for each field during construction and for the copy
+        # assignments below — list values pass type guards without error.
+        # Compute both copies before assigning so state is never partially updated.
         exclude_paths_copy = list(self.exclude_paths)
         include_extensions_copy: list[str] | None = (
             list(self.include_extensions) if self.include_extensions is not None else None
@@ -223,7 +222,6 @@ class ScanConfig:
         self.include_extensions = include_extensions_copy
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Guards enforce invariants at every assignment, including during __init__.
         if name == "should_follow_symlinks" and value:
             raise ConfigurationError(
                 "should_follow_symlinks must be False — symlink traversal is prohibited "
@@ -248,4 +246,8 @@ class ScanConfig:
             raise ConfigurationError(
                 f"severity_threshold must be a SeverityLevel member, got {value!r}"
             )
+        if name == "exclude_paths" and not isinstance(value, list):
+            raise ConfigurationError(f"exclude_paths must be a list, got {value!r}")
+        if name == "include_extensions" and not (value is None or isinstance(value, list)):
+            raise ConfigurationError(f"include_extensions must be a list or None, got {value!r}")
         super().__setattr__(name, value)

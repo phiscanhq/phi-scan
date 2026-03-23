@@ -574,6 +574,9 @@ _INVALID_MAX_FILE_SIZE_MB_NEGATIVE: int = -1
 # isinstance(value, float) would silently skip int inputs in __setattr__.
 _INVALID_CONFIDENCE_THRESHOLD_AS_INT: int = 2
 _INVALID_SEVERITY_THRESHOLD: str = "not_a_severity"
+# String values passed where list fields are expected — must be rejected.
+_INVALID_EXCLUDE_PATHS_NON_LIST: str = "*.py"
+_INVALID_INCLUDE_EXTENSIONS_NON_LIST: str = ".py"
 # A truthy non-bool — exercises the gap where `value is True` would silently
 # pass 1 (or any other truthy int) as should_follow_symlinks.
 _TRUTHY_NON_BOOL_SYMLINK_VALUE: int = 1
@@ -751,3 +754,17 @@ def test_scan_config_raises_when_severity_threshold_set_to_invalid_value() -> No
 
     with pytest.raises(ConfigurationError):
         config.severity_threshold = _INVALID_SEVERITY_THRESHOLD  # type: ignore[assignment]
+
+
+def test_scan_config_raises_when_exclude_paths_set_to_non_list() -> None:
+    config = ScanConfig()
+
+    with pytest.raises(ConfigurationError):
+        config.exclude_paths = _INVALID_EXCLUDE_PATHS_NON_LIST  # type: ignore[assignment]
+
+
+def test_scan_config_raises_when_include_extensions_set_to_non_list() -> None:
+    config = ScanConfig()
+
+    with pytest.raises(ConfigurationError):
+        config.include_extensions = _INVALID_INCLUDE_EXTENSIONS_NON_LIST  # type: ignore[assignment]
