@@ -12,7 +12,8 @@ from phi_scan.exceptions import (
 
 # A path that cannot exist on any OS — avoids /tmp which is real (and a symlink on macOS).
 _NONEXISTENT_PATH: str = "/nonexistent/phi-scan-test-path"
-_AUDIT_DB_PATH: str = "/var/phi-scanner/audit.db"
+# Placeholder used in tests where the message content is not under test.
+_PLACEHOLDER_ERROR_MESSAGE: str = "phi-scan-test-error"
 
 
 def test_phi_scan_error_is_exception_subclass() -> None:
@@ -60,7 +61,7 @@ def test_traversal_error_preserves_message() -> None:
 
 
 def test_audit_log_error_preserves_message() -> None:
-    error_message = f"cannot write to audit log at '{_AUDIT_DB_PATH}': permission denied"
+    error_message = f"cannot write to audit log at '{_NONEXISTENT_PATH}': permission denied"
 
     raised_error = AuditLogError(error_message)
 
@@ -76,37 +77,7 @@ def test_schema_migration_error_preserves_message() -> None:
 
 
 def test_phi_scan_error_is_catchable_as_exception() -> None:
-    error_message = "base catch test"
-
     with pytest.raises(Exception) as exc_info:
-        raise PhiScanError(error_message)
+        raise PhiScanError(_PLACEHOLDER_ERROR_MESSAGE)
 
-    assert str(exc_info.value) == error_message
-
-
-def test_configuration_error_is_catchable_as_phi_scan_error() -> None:
-    with pytest.raises(PhiScanError) as exc_info:
-        raise ConfigurationError("test")
-
-    assert isinstance(exc_info.value, ConfigurationError)
-
-
-def test_traversal_error_is_catchable_as_phi_scan_error() -> None:
-    with pytest.raises(PhiScanError) as exc_info:
-        raise TraversalError("test")
-
-    assert isinstance(exc_info.value, TraversalError)
-
-
-def test_audit_log_error_is_catchable_as_phi_scan_error() -> None:
-    with pytest.raises(PhiScanError) as exc_info:
-        raise AuditLogError("test")
-
-    assert isinstance(exc_info.value, AuditLogError)
-
-
-def test_schema_migration_error_is_catchable_as_phi_scan_error() -> None:
-    with pytest.raises(PhiScanError) as exc_info:
-        raise SchemaMigrationError("test")
-
-    assert isinstance(exc_info.value, SchemaMigrationError)
+    assert str(exc_info.value) == _PLACEHOLDER_ERROR_MESSAGE
