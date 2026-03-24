@@ -12,12 +12,24 @@ from phi_scan.constants import (
     CONFIDENCE_REGEX_MAX,
     CONFIDENCE_REGEX_MIN,
     CONFIDENCE_SCORE_MAXIMUM,
+    DBSNP_RS_ID_MAX_DIGITS,
+    DBSNP_RS_ID_MIN_DIGITS,
+    DEA_NUMBER_DIGIT_COUNT,
     DEFAULT_CONFIDENCE_THRESHOLD,
+    ENSEMBL_GENE_ID_DIGIT_COUNT,
+    FICTIONAL_PHONE_EXCHANGE,
+    FICTIONAL_PHONE_SUBSCRIBER_MAX,
+    FICTIONAL_PHONE_SUBSCRIBER_MIN,
+    HIPAA_AGE_RESTRICTION_THRESHOLD,
     HIPAA_REMEDIATION_GUIDANCE,
     KNOWN_BINARY_EXTENSIONS,
     MAX_FILE_SIZE_BYTES,
     MAX_FILE_SIZE_MB,
+    MBI_CHARACTER_COUNT,
+    MINIMUM_QUASI_IDENTIFIER_COUNT,
     QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES,
+    VIN_CHARACTER_COUNT,
+    ZIP_CODE_SAFE_HARBOR_POPULATION_MIN,
     OutputFormat,
     PhiCategory,
     RiskLevel,
@@ -145,3 +157,66 @@ def test_quasi_identifier_proximity_window_lines_is_positive_int() -> None:
     # would disable combination detection entirely without raising an error.
     assert isinstance(QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES, int)
     assert QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES > 0
+
+
+def test_minimum_quasi_identifier_count_is_at_least_two() -> None:
+    # A count of 1 would flag every single-field finding as a combination —
+    # the combination rule requires at least two distinct categories.
+    assert isinstance(MINIMUM_QUASI_IDENTIFIER_COUNT, int)
+    assert MINIMUM_QUASI_IDENTIFIER_COUNT >= 2
+
+
+def test_hipaa_age_restriction_threshold_is_ninety() -> None:
+    # HIPAA §164.514(b)(2)(i) restricts ages "over 90" — strictly greater than 90.
+    # If this value drifts, detection logic using > HIPAA_AGE_RESTRICTION_THRESHOLD
+    # would flag the wrong population. Pin the concrete value as a regression guard.
+    assert HIPAA_AGE_RESTRICTION_THRESHOLD == 90
+
+
+def test_mbi_character_count_is_eleven() -> None:
+    # Medicare Beneficiary Identifier is a fixed 11-character alphanumeric string.
+    # A change here would silently break the MBI regex pattern.
+    assert MBI_CHARACTER_COUNT == 11
+
+
+def test_dea_number_digit_count_is_seven() -> None:
+    # DEA number structure: 2-letter prefix + exactly 7 digits + checksum on last digit.
+    assert DEA_NUMBER_DIGIT_COUNT == 7
+
+
+def test_vin_character_count_is_seventeen() -> None:
+    # VIN is a fixed-length 17-character identifier per ISO 3779.
+    assert VIN_CHARACTER_COUNT == 17
+
+
+def test_dbsnp_rs_id_min_digits_is_below_max_digits() -> None:
+    # Sanity: the minimum digit count must be less than the maximum.
+    assert DBSNP_RS_ID_MIN_DIGITS < DBSNP_RS_ID_MAX_DIGITS
+
+
+def test_dbsnp_rs_id_digit_bounds_are_positive() -> None:
+    assert DBSNP_RS_ID_MIN_DIGITS > 0
+    assert DBSNP_RS_ID_MAX_DIGITS > 0
+
+
+def test_ensembl_gene_id_digit_count_is_eleven() -> None:
+    # Ensembl gene IDs use the pattern ENSG + 11 zero-padded digits.
+    assert ENSEMBL_GENE_ID_DIGIT_COUNT == 11
+
+
+def test_fictional_phone_subscriber_min_is_below_max() -> None:
+    # The FCC fictional subscriber range must be a valid non-empty interval.
+    assert FICTIONAL_PHONE_SUBSCRIBER_MIN < FICTIONAL_PHONE_SUBSCRIBER_MAX
+
+
+def test_fictional_phone_exchange_is_555() -> None:
+    # FCC reserves exchange 555 for fictional use; this value is load-bearing
+    # in both the exclusion regex and the synthetic data generator.
+    assert FICTIONAL_PHONE_EXCHANGE == 555
+
+
+def test_zip_code_safe_harbor_population_min_is_positive() -> None:
+    # A value of zero would make every 3-digit ZIP prefix "safe" — defeating
+    # the purpose of the constant entirely.
+    assert isinstance(ZIP_CODE_SAFE_HARBOR_POPULATION_MIN, int)
+    assert ZIP_CODE_SAFE_HARBOR_POPULATION_MIN > 0

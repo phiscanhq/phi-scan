@@ -25,19 +25,31 @@ __all__ = [
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_CONFIG_FILENAME",
     "DEFAULT_IGNORE_FILENAME",
+    "DBSNP_RS_ID_MAX_DIGITS",
+    "DBSNP_RS_ID_MIN_DIGITS",
+    "DEA_NUMBER_DIGIT_COUNT",
     "DetectionLayer",
+    "ENSEMBL_GENE_ID_DIGIT_COUNT",
     "EXIT_CODE_CLEAN",
     "EXIT_CODE_VIOLATION",
-    "QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES",
+    "FICTIONAL_PHONE_EXCHANGE",
+    "FICTIONAL_PHONE_SUBSCRIBER_MAX",
+    "FICTIONAL_PHONE_SUBSCRIBER_MIN",
+    "HIPAA_AGE_RESTRICTION_THRESHOLD",
     "HIPAA_REMEDIATION_GUIDANCE",
     "KNOWN_BINARY_EXTENSIONS",
     "BYTES_PER_MEGABYTE",
     "MAX_FILE_SIZE_BYTES",
     "MAX_FILE_SIZE_MB",
+    "MBI_CHARACTER_COUNT",
+    "MINIMUM_QUASI_IDENTIFIER_COUNT",
     "OutputFormat",
     "PhiCategory",
+    "QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES",
     "RiskLevel",
     "SeverityLevel",
+    "VIN_CHARACTER_COUNT",
+    "ZIP_CODE_SAFE_HARBOR_POPULATION_MIN",
 ]
 
 # ---------------------------------------------------------------------------
@@ -202,6 +214,59 @@ EXIT_CODE_VIOLATION: int = 1
 # be considered a quasi-identifier combination (2E.11). Never compare against
 # the literal 50 in logic code — always reference this constant.
 QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES: int = 50
+
+# Minimum number of distinct quasi-identifier categories that must be present
+# within QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES of each other to trigger a
+# combination finding. The literal 2 must never appear in detection logic —
+# always import and reference this constant.
+MINIMUM_QUASI_IDENTIFIER_COUNT: int = 2
+
+# HIPAA §164.514(b)(2)(i) requires ages "over 90" to be generalized (reported
+# as "90 or older"). "Over 90" means strictly greater than 90, i.e., ages 91+.
+# Logic code must use: age > HIPAA_AGE_RESTRICTION_THRESHOLD.
+# Never compare against the literal 90 in detection logic.
+HIPAA_AGE_RESTRICTION_THRESHOLD: int = 90
+
+# ---------------------------------------------------------------------------
+# Identifier structure constants
+# ---------------------------------------------------------------------------
+# These constants encode the structural properties of specific PHI identifiers.
+# They are used by the regex layer (Phase 2B) to construct patterns without
+# embedding magic numbers. Never use the literal values inline in logic code.
+
+# Medicare Beneficiary Identifier (MBI) — fixed-length alphanumeric format
+# introduced in 2019 to replace the SSN-based HICN.
+MBI_CHARACTER_COUNT: int = 11
+
+# DEA registration number — 2-letter prefix followed by exactly this many digits,
+# validated by a checksum over digits 1, 3, 5, 2, 4, 6.
+DEA_NUMBER_DIGIT_COUNT: int = 7
+
+# Vehicle Identification Number — fixed-length per ISO 3779 (WMI + VDS + VIS).
+# Position 9 is a check digit; I, O, Q are never used.
+VIN_CHARACTER_COUNT: int = 17
+
+# dbSNP rs-ID digit bounds — rs-IDs currently range from 7 to 9 digits after
+# the "rs" prefix. Both ends are needed to construct the regex quantifier.
+DBSNP_RS_ID_MIN_DIGITS: int = 7
+DBSNP_RS_ID_MAX_DIGITS: int = 9
+
+# Ensembl gene ID — "ENSG" prefix followed by exactly this many zero-padded digits.
+ENSEMBL_GENE_ID_DIGIT_COUNT: int = 11
+
+# FCC-reserved fictional NANP telephone exchange and subscriber range.
+# Numbers in this range (555-0100 through 555-0199) are never assigned to real
+# subscribers and are safe for use in synthetic test data. The scanner excludes
+# this range to avoid false positives on test fixtures.
+FICTIONAL_PHONE_EXCHANGE: int = 555
+FICTIONAL_PHONE_SUBSCRIBER_MIN: int = 100
+FICTIONAL_PHONE_SUBSCRIBER_MAX: int = 199
+
+# HIPAA Safe Harbor §164.514(b)(2)(i): a 3-digit ZIP code prefix is safe only
+# when the geographic unit it represents contains at least this many people.
+# The scanner cannot verify population counts, so it flags 3-digit prefixes
+# in patient-geographic context and defers the decision to the user.
+ZIP_CODE_SAFE_HARBOR_POPULATION_MIN: int = 20_000
 
 # ---------------------------------------------------------------------------
 # Database schema versions

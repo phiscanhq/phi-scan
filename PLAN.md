@@ -159,6 +159,24 @@ and explain commands deferred to Phase 2).
     Both members must also have entries in `HIPAA_REMEDIATION_GUIDANCE` in this same task.
   - `QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES = 50` — module-level constant; referenced by
     `detect_quasi_identifier_combination()` in Phase 2E.11
+  - `MINIMUM_QUASI_IDENTIFIER_COUNT = 2` — minimum distinct quasi-identifier categories
+    required to trigger a combination finding; the literal `2` must never appear in logic code
+  - `HIPAA_AGE_RESTRICTION_THRESHOLD = 90` — HIPAA §164.514(b)(2)(i) restricts ages "over
+    90" (strictly greater than 90 = ages 91+); logic code uses `age > HIPAA_AGE_RESTRICTION_THRESHOLD`;
+    the literal `90` must never appear in detection logic
+  - Identifier structure constants (prevent magic values in regex pattern construction):
+    - `MBI_CHARACTER_COUNT = 11` — fixed character count of a Medicare Beneficiary Identifier
+    - `DEA_NUMBER_DIGIT_COUNT = 7` — digit count in a DEA number (2-letter prefix + 7 digits)
+    - `VIN_CHARACTER_COUNT = 17` — fixed character count of a VIN (ISO 3779)
+    - `DBSNP_RS_ID_MIN_DIGITS = 7` — minimum digit count in a dbSNP rs-ID
+    - `DBSNP_RS_ID_MAX_DIGITS = 9` — maximum digit count in a dbSNP rs-ID
+    - `ENSEMBL_GENE_ID_DIGIT_COUNT = 11` — digit count in an Ensembl gene ID (ENSG + 11 digits)
+    - `FICTIONAL_PHONE_EXCHANGE = 555` — FCC-reserved fictional NANP exchange; exclude from
+      real-phone detection; use for synthetic data generation in `phi-scan fix`
+    - `FICTIONAL_PHONE_SUBSCRIBER_MIN = 100` — start of FCC fictional subscriber range (555-0100)
+    - `FICTIONAL_PHONE_SUBSCRIBER_MAX = 199` — end of FCC fictional subscriber range (555-0199)
+    - `ZIP_CODE_SAFE_HARBOR_POPULATION_MIN = 20_000` — minimum census population for a 3-digit
+      ZIP prefix to qualify as safe harbor under §164.514(b)(2)(i)
   - `HIPAA_REMEDIATION_GUIDANCE` — dict mapping each `PhiCategory` member to specific
     remediation text; must cover all members including the two extended ones above
   - `SCHEMA_VERSION = 1` — audit DB schema version for migration tracking
@@ -628,16 +646,22 @@ and can be wired in before or alongside the detection engine.
     linked to a patient record — flag at medium confidence. **Type 2 (organization NPI):** public
     identifier, not PHI — do not flag when context is clearly organizational (e.g., assigned to a
     hospital object, not a patient record). Distinguish via surrounding variable/key name context.
-  - **MBI (Medicare Beneficiary Identifier)** — 11-character alphanumeric pattern
-    `[1-9][AC-HJ-KM-NP-RT-Y][AC-HJ-KM-NP-RT-Y0-9][0-9][AC-HJ-KM-NP-RT-Y][AC-HJ-KM-NP-RT-Y0-9]
+  - **MBI (Medicare Beneficiary Identifier)** — `MBI_CHARACTER_COUNT`-character alphanumeric
+    pattern `[1-9][AC-HJ-KM-NP-RT-Y][AC-HJ-KM-NP-RT-Y0-9][0-9][AC-HJ-KM-NP-RT-Y][AC-HJ-KM-NP-RT-Y0-9]
     [0-9][AC-HJ-KM-NP-RT-Y][AC-HJ-KM-NP-RT-Y][0-9][0-9]`. This is the primary Medicare identifier
     since 2019, replacing the SSN-based HICN. High-confidence when the pattern matches exactly.
-  - **DEA number** — 2-letter prefix + 7 digits with checksum: sum of digits 1+3+5 + 2×(2+4+6)
-    must equal last digit mod 10. Validate checksum to eliminate false positives.
+    The regex quantifier must reference `MBI_CHARACTER_COUNT` via an f-string or pre-compiled
+    constant — never use the literal `11` inline.
+  - **DEA number** — 2-letter prefix + `DEA_NUMBER_DIGIT_COUNT` digits with checksum:
+    sum of digits 1+3+5 + 2×(2+4+6) must equal last digit mod 10. Validate checksum to
+    eliminate false positives. Never use the literal `7` in the regex quantifier.
   - **HICN (legacy Medicare)** — 9-digit SSN base + 1-2 suffix characters (A, B, C, D, T, etc.);
     lower confidence than MBI; flag only in Medicare-suggestive variable context
   - **Phone numbers** — NANP `(NXX) NXX-XXXX`, dotted `NXX.NXX.XXXX`, dashed `NXX-NXX-XXXX`,
-    E.164 `+1XXXXXXXXXX`, international `+[1-9][0-9]{6,14}`; exclude test ranges (555-0100–555-0199)
+    E.164 `+1XXXXXXXXXX`, international `+[1-9][0-9]{6,14}`; exclude the FCC fictional NANP range
+    where the exchange equals `FICTIONAL_PHONE_EXCHANGE` and the subscriber falls within
+    `FICTIONAL_PHONE_SUBSCRIBER_MIN`–`FICTIONAL_PHONE_SUBSCRIBER_MAX` (inclusive). Never use
+    the literals `555`, `100`, or `199` inline in exclusion logic.
   - **Fax numbers** — same patterns as phone; flag at same confidence level
   - **Email addresses** — RFC 5321 compliant; exclude documentation domains (`@example.com`,
     `@example.org`, `@example.net`, `@test.com`) per RFC 2606 as synthetic-safe
@@ -650,13 +674,17 @@ and can be wired in before or alongside the detection engine.
     `MM/DD/YYYY`, `DD-Mon-YYYY`, `Month DD, YYYY`); bare year-only values are safe under
     HIPAA Safe Harbor (§164.514(b)(2)(i)) and must NOT be flagged; flag only dates with
     month and/or day precision
-  - **Ages >90** — numeric values ≥90 adjacent to age-suggestive variable names
-    (`patient_age`, `age_at_admission`, `age_in_years`, `years_old`, `dob_age`);
-    HIPAA §164.514(b)(2)(i) requires ages over 90 be generalized; flag at medium confidence
+  - **Ages restricted by HIPAA** — numeric values strictly greater than `HIPAA_AGE_RESTRICTION_THRESHOLD`
+    (i.e., ages 91 and above) adjacent to age-suggestive variable names (`patient_age`,
+    `age_at_admission`, `age_in_years`, `years_old`, `dob_age`). HIPAA §164.514(b)(2)(i)
+    requires ages "over 90" be generalized — "over 90" means strictly > 90, not ≥ 90.
+    Detection logic must use `detected_age > HIPAA_AGE_RESTRICTION_THRESHOLD`; the literal
+    `90` must not appear in logic code. Flag at medium confidence.
   - **ZIP codes** — 5-digit ZIP and ZIP+4 always flagged at medium confidence in patient
     context; 3-digit ZIP prefixes only flagged when the context is clearly patient-geographic
-    (§164.514(b)(2)(i): 3-digit prefixes are safe only for areas with >20,000 people — the
-    scanner cannot verify population, so flag and let the user decide)
+    (§164.514(b)(2)(i): 3-digit prefixes are safe only for areas with population
+    > `ZIP_CODE_SAFE_HARBOR_POPULATION_MIN` — the scanner cannot verify population, so flag
+    and let the user decide. Never use the literal `20000` or `20_000` in logic code.)
   - **Geographic sub-state data** — street addresses, city+state combinations, county names
     in patient-suggestive context; state abbreviations alone are NOT PHI under Safe Harbor
   - **URLs** — flag URLs containing path segments that encode patient identifiers
@@ -666,17 +694,20 @@ and can be wired in before or alongside the detection engine.
   - **Health plan numbers** — insurance subscriber IDs, group numbers, beneficiary IDs
   - **Certificate/license numbers** — medical license (state prefix + digits), nursing license,
     pharmacy license adjacent to license-suggestive variable names
-  - **Vehicle identifiers (VIN)** — 17-character ISO 3779 structure (WMI + VDS + VIS) with
-    check digit validation (position 9); never contains I, O, or Q
+  - **Vehicle identifiers (VIN)** — `VIN_CHARACTER_COUNT`-character ISO 3779 structure
+    (WMI + VDS + VIS) with check digit validation (position 9); never contains I, O, or Q.
+    Never use the literal `17` in the regex quantifier.
   - **Device identifiers** — FDA UDI format (device identifier + production identifier segments),
     GTIN-14 patterns in medical device context
   - **Biometric identifiers** — flag field names and JSON keys referencing:
     `fingerprint`, `iris_scan`, `retinal_scan`, `face_template`, `voiceprint`, `palm_print`,
     `gait_signature`, `dna_sequence`, `biometric_hash`; raw biometric data appears as large
     base64 or hex strings — flag high-entropy strings in biometric-named fields
-  - **Genetic identifiers** — `rs{7-9 digits}` (dbSNP SNP IDs), `ENSG{11 digits}` (Ensembl
-    gene IDs), VCF-format data (CHROM/POS/REF/ALT columns), gene panel names combined with
-    patient identifiers; protected under GINA (federal) and GDPR Article 9 (EU)
+  - **Genetic identifiers** — `rs{DBSNP_RS_ID_MIN_DIGITS` to `DBSNP_RS_ID_MAX_DIGITS` digits}`
+    (dbSNP SNP IDs), `ENSG{ENSEMBL_GENE_ID_DIGIT_COUNT` digits}` (Ensembl gene IDs), VCF-format
+    data (CHROM/POS/REF/ALT columns), gene panel names combined with patient identifiers;
+    protected under GINA (federal) and GDPR Article 9 (EU). Never use the literals `7`, `9`,
+    or `11` inline in regex quantifiers — build the pattern string from the named constants.
 - [ ] **2B.2** Implement confidence scoring for regex matches (high confidence for structured patterns)
 - [ ] **2B.3** Extract matched value, compute SHA-256 hash (never store raw value)
 - [ ] **2B.4** Wire regex layer into `detect_phi_in_text_content()` — scan line-by-line
@@ -730,14 +761,19 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   `hl7_scanner.py` module). All names must comply with the project naming standards — the
   plan proposes compliant names but does not grant exemptions from the standards:
   - `detect_hl7_message_format(file_content: str) -> bool` — returns True when content
-    contains a valid MSH segment header; used as the entry guard before parsing
+    contains a valid MSH segment header; used as the entry guard before parsing. Call sites
+    must store the return value in an `is_`-prefixed variable per the boolean naming rule:
+    `is_hl7_format = detect_hl7_message_format(file_content)`. Using the return value as
+    an anonymous expression without naming it is not permitted.
   - `detect_phi_in_hl7_segment(segment: hl7.Segment, segment_field_categories: Mapping[str, PhiCategory])
     -> list[ScanFinding]` — scans one parsed segment, returns findings; pure function,
     no side effects. `segment` is a parsed `hl7.Segment` instance, not a raw string.
     `segment_field_categories` is typed as `Mapping` (not `dict`) to enforce the read-only
     contract — the function must not mutate the lookup table it receives. The caller always
     passes a module-level constant defined in `hl7_scanner.py` (e.g. `_PID_FIELD_CATEGORIES`,
-    `_NK1_FIELD_CATEGORIES`) — never a caller-constructed dict built at call time.
+    `_NK1_FIELD_CATEGORIES`) — never a caller-constructed dict built at call time. These
+    per-segment lookup tables are module-private constants: the leading underscore is
+    mandatory, they must not appear in `__all__`, and no other module may import them.
   Parse and scan the following PHI-bearing segments using the `hl7` library:
   - **MSH** (Message Header) — MSH.4 (sending facility name can contain PHI in some systems)
   - **PID** (Patient Identification) — PID.3 (patient ID/MRN), PID.5 (patient name),
@@ -792,6 +828,11 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   described as "read a file and dispatch to the detector"; adding detection logic would
   require "and", which is banned. All four wire-in tasks below (2B.4, 2C.5, 2D.4, 2D.9)
   wire into `detect_phi_in_text_content()`, not `scan_file()`.
+  The body of `detect_phi_in_text_content()` must consist exclusively of delegated function
+  calls — one call per detection layer, one call to `detect_quasi_identifier_combination()`,
+  and one call to a deduplication function. No pattern matching, entity recognition, or
+  structural parsing logic may appear inline inside `detect_phi_in_text_content()`. If any
+  step requires conditional logic or iteration, it must be extracted to its own named function.
 - [ ] **2E.2** Add `.phi-scanignore` support — patterns evaluated at every traversal depth
 - [ ] **2E.3** Add content-aware scan strategy — detect file type from content/extension for optimal scanning:
   - Structured data (.json, .xml, .yaml) → parse structure + scan values
@@ -832,17 +873,31 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   `QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES` — a module-level `int` constant defined in
   `phi_scan/constants.py` and exported in its `__all__`; import it from `phi_scan.constants`.
   Never compare against the literal `50` directly.
-  - ZIP code + date of birth + sex/gender → re-identification risk (Sweeney: 87% of US population
+  Each combination rule is a separate function delegated to from the coordinator — this keeps
+  `detect_quasi_identifier_combination()` under 30 lines and gives each rule a testable name:
+  - `evaluate_zip_dob_sex_combination(findings: list[ScanFinding]) -> ScanFinding | None`
+    ZIP code + date of birth + sex/gender → re-identification risk (Sweeney: 87% of US population
     uniquely identified by these three fields alone); boost combined confidence to HIGH even if
     each field alone would be MEDIUM or LOW
-  - Name + any date → HIGH combined confidence regardless of individual scores
-  - Age >89 + any geographic data → HIGH (HIPAA specifically restricts ages over 90)
-  - Two or more identifiers in the same JSON object or data structure → elevated risk level
-  - Report combined quasi-identifier findings as a single `PhiCategory.QUASI_IDENTIFIER_COMBINATION`
-    finding with a note listing which fields triggered the combination rule.
-    `QUASI_IDENTIFIER_COMBINATION` is a distinct enum member added in this phase — do not
-    reuse `PhiCategory.UNIQUE_ID`, which is reserved for the HIPAA Safe Harbor category #18
-    (unique identifying numbers). Conflating the two would break compliance mapping at Layer 4.
+  - `evaluate_name_date_combination(findings: list[ScanFinding]) -> ScanFinding | None`
+    Name + any date → HIGH combined confidence regardless of individual scores
+  - `evaluate_age_geographic_combination(findings: list[ScanFinding]) -> ScanFinding | None`
+    Age > `HIPAA_AGE_RESTRICTION_THRESHOLD` (ages 91+) + any geographic finding → HIGH;
+    HIPAA §164.514(b)(2)(i) restricts ages "over 90" specifically because they re-identify
+    when combined with geographic data. Never compare against the literal `90` — reference
+    `HIPAA_AGE_RESTRICTION_THRESHOLD` and check with `>`, not `>=`.
+  - `evaluate_colocated_identifier_combination(findings: list[ScanFinding]) -> ScanFinding | None`
+    ≥ `MINIMUM_QUASI_IDENTIFIER_COUNT` distinct identifier categories present in the same
+    JSON object or data structure → elevated risk level. Never use the literal `2` — reference
+    `MINIMUM_QUASI_IDENTIFIER_COUNT`.
+  `detect_quasi_identifier_combination()` calls each evaluator in the order above and returns
+  the first non-None result, or None if no combination rule fires. No combination rule logic
+  may be implemented inline in the coordinator.
+  Report the finding as a single `PhiCategory.QUASI_IDENTIFIER_COMBINATION` finding with a
+  note listing which fields triggered the rule. `QUASI_IDENTIFIER_COMBINATION` is a distinct
+  enum member — do not reuse `PhiCategory.UNIQUE_ID`, which is reserved for HIPAA Safe Harbor
+  category #18 (unique identifying numbers). Conflating the two would break compliance mapping
+  at Layer 4.
 
 ### 2F — Auto-Fix Engine (`phi-scan fix`)
 
