@@ -275,8 +275,17 @@ class RiskLevel(StrEnum):
 
 
 class PhiCategory(StrEnum):
-    """The 18 HIPAA-defined PHI identifier categories (45 CFR §164.514(b)(2))."""
+    """PHI and regulated-data identifier categories.
 
+    The first 18 members are the HIPAA Safe Harbor categories (45 CFR §164.514(b)(2)).
+    Members below the Safe Harbor block are additional regulatory categories that require
+    distinct treatment at compliance-mapping time and must not be aliased to a Safe Harbor
+    member — doing so would create a semantic collision that breaks Layer 4 compliance mapping.
+    """
+
+    # -------------------------------------------------------------------------
+    # HIPAA Safe Harbor — 45 CFR §164.514(b)(2) — 18 named identifiers
+    # -------------------------------------------------------------------------
     NAME = "name"
     GEOGRAPHIC = "geographic"
     DATE = "date"
@@ -295,6 +304,21 @@ class PhiCategory(StrEnum):
     BIOMETRIC = "biometric"
     PHOTO = "photo"
     UNIQUE_ID = "unique_id"
+
+    # -------------------------------------------------------------------------
+    # Extended regulatory categories — distinct statutes, distinct consent rules
+    # -------------------------------------------------------------------------
+
+    # 42 CFR Part 2: Substance Use Disorder records. Stricter than HIPAA — requires
+    # explicit patient consent even for treatment referrals and prohibits re-disclosure.
+    # Must not be aliased to UNIQUE_ID or any Safe Harbor member.
+    SUBSTANCE_USE_DISORDER = "substance_use_disorder"
+
+    # Re-identification risk from quasi-identifier combinations (ZIP + DOB + sex, etc.).
+    # Not a HIPAA Safe Harbor category — a finding of this type means that individually
+    # non-identifying fields are present together in a configuration known to re-identify
+    # individuals. Must not be aliased to UNIQUE_ID.
+    QUASI_IDENTIFIER_COMBINATION = "quasi_identifier_combination"
 
 
 # ---------------------------------------------------------------------------
@@ -373,5 +397,22 @@ HIPAA_REMEDIATION_GUIDANCE: dict[PhiCategory, str] = {
     PhiCategory.UNIQUE_ID: (
         "Replace unique identifying numbers with synthetic values. "
         "Any number that uniquely identifies a person is a HIPAA identifier."
+    ),
+    PhiCategory.SUBSTANCE_USE_DISORDER: (
+        "Substance Use Disorder records are governed by 42 CFR Part 2, which imposes "
+        "stricter protections than HIPAA. Remove all SUD-related field names, diagnosis "
+        "codes, treatment program references, and medication names (methadone, buprenorphine, "
+        "naloxone) from source code and test fixtures. Disclosure without explicit written "
+        "patient consent — even for treatment — violates federal law. Never commit SUD data "
+        "to version control under any circumstances."
+    ),
+    PhiCategory.QUASI_IDENTIFIER_COMBINATION: (
+        "This finding indicates that multiple individually low-risk fields are present "
+        "together in a configuration known to re-identify individuals (e.g., ZIP code + "
+        "date of birth + sex can re-identify 87%% of the US population). Remove or "
+        "generalize at least one of the quasi-identifiers: use only the first 3 digits of "
+        "the ZIP code, replace the full date of birth with birth year only, or remove the "
+        "combination entirely from test fixtures. Do not rely on any single field being "
+        "'safe' — the risk is in the combination."
     ),
 }

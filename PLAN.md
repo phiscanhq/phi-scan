@@ -608,7 +608,7 @@ and can be wired in before or alongside the detection engine.
   alert fatigue; under-flagging is a HIPAA violation risk:
   - **SSN** (XXX-XX-XXXX) — must exclude reserved ranges to suppress false positives on order
     IDs and version strings: `000-XX-XXXX`, `XXX-00-XXXX`, `XXX-XX-0000`, `666-XX-XXXX`,
-    `900–999-XX-XXXX` (§205.20 SSA regulations; these area/group/serial combos are never
+    `900-XX-XXXX` through `999-XX-XXXX` (§205.20 SSA regulations; these area/group/serial combos are never
     assigned). Do not flag these ranges.
   - **MRN** — 6-10 digit numeric adjacent to MRN-suggestive variable names (`mrn`, `medical_record`,
     `patient_id`, `chart_number`); bare 6-10 digit strings without context are low-confidence only
@@ -714,7 +714,17 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
 
 - [ ] **2D.6** Detect HL7 v2 message files — identify by MSH segment header (`MSH|^~\&|`)
   in file content regardless of file extension (.hl7, .msg, .txt, .dat)
-- [ ] **2D.7** Parse and scan the following PHI-bearing segments using the `hl7` library:
+- [ ] **2D.7** Implement HL7 v2 scanning functions in `scanner.py` (or a dedicated
+  `hl7_scanner.py` module). Required function signatures — these names are pre-approved
+  to avoid banned patterns at implementation time:
+  - `identify_hl7_message_format(file_content: str) -> bool` — returns True when content
+    contains a valid MSH segment header; used as the entry guard before parsing
+  - `detect_phi_in_hl7_segment(segment: hl7.Segment, category_map: dict[str, PhiCategory])
+    -> list[ScanFinding]` — scans one parsed segment, returns findings; pure function,
+    no side effects. `segment` is a parsed `hl7.Segment` instance, not a raw string.
+  - Do NOT name these `parse_and_scan_segments`, `process_hl7_message`, `handle_hl7`,
+    or `scan_hl7` — all violate the verb-noun or banned-name rules.
+  Parse and scan the following PHI-bearing segments using the `hl7` library:
   - **MSH** (Message Header) — MSH.4 (sending facility name can contain PHI in some systems)
   - **PID** (Patient Identification) — PID.3 (patient ID/MRN), PID.5 (patient name),
     PID.7 (date of birth), PID.8 (sex), PID.11 (address), PID.13/PID.14 (phone),
@@ -732,8 +742,22 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   - PID.5 → PhiCategory.NAME; PID.7 → PhiCategory.DATE; PID.19 → PhiCategory.SSN
   - PID.11 → PhiCategory.GEOGRAPHIC; PID.13/14 → PhiCategory.PHONE; etc.
 - [ ] **2D.9** Wire HL7 v2 detection into `scan_file()` — activated when MSH segment detected
-- [ ] **2D.10** Graceful degradation: if `hl7` library not installed, log warning and skip with
-  message "Install phi-scan[hl7] to enable HL7 v2 scanning"
+- [ ] **2D.10** Graceful degradation: if `hl7` library not installed, raise
+  `MissingOptionalDependencyError` (added to `exceptions.py` in Phase 1B.3 — see below)
+  at the point of first use, then catch it one level up to skip HL7 scanning and log a
+  structured WARNING: "HL7 v2 scanning disabled — install phi-scan[hl7] to enable".
+  Do NOT use `except ImportError: pass` — a bare `pass` silences the error and violates
+  the "Never silence errors" rule. The correct pattern is:
+  ```python
+  try:
+      import hl7
+  except ImportError as import_error:
+      raise MissingOptionalDependencyError(
+          "hl7 is required for HL7 v2 scanning — install with: pip install phi-scan[hl7]"
+      ) from import_error
+  ```
+  The caller catches `MissingOptionalDependencyError` specifically, logs the warning,
+  and continues with other detection layers — it never catches bare `Exception`.
 - [ ] **2D.11** Add `hl7` to `[project.optional-dependencies]` in `pyproject.toml`:
   `hl7 = ["hl7>=0.4"]`; update `full` extra to include it
 
@@ -766,8 +790,11 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   - Name + any date → HIGH combined confidence regardless of individual scores
   - Age >89 + any geographic data → HIGH (HIPAA specifically restricts ages over 90)
   - Two or more identifiers in the same JSON object or data structure → elevated risk level
-  - Report combined quasi-identifier findings as a single `PhiCategory.UNIQUE_ID` finding
-    with a note listing which fields triggered the combination rule
+  - Report combined quasi-identifier findings as a single `PhiCategory.QUASI_IDENTIFIER_COMBINATION`
+    finding with a note listing which fields triggered the combination rule.
+    `QUASI_IDENTIFIER_COMBINATION` is a distinct enum member added in this phase — do not
+    reuse `PhiCategory.UNIQUE_ID`, which is reserved for the HIPAA Safe Harbor category #18
+    (unique identifying numbers). Conflating the two would break compliance mapping at Layer 4.
 - [ ] **2E.9** Archive inspection — scan embedded plaintext resources inside Java archives:
   - File types: .jar, .war, .zip (Python `zipfile` module — no external dependencies)
   - Scan embedded text resources only: .properties, .xml, .yaml, .yml, .json, .conf
@@ -845,9 +872,12 @@ reflected in the Phase 4 documentation and compliance mapping.
   explicit consent for disclosure even for treatment. The scanner must flag field names and
   data patterns suggestive of SUD records: `substance_use`, `addiction_treatment`,
   `sud_diagnosis`, `alcohol_abuse`, `opioid_treatment`, `methadone`, `buprenorphine`,
-  `naloxone`, treatment program names. Map detections to `PhiCategory.UNIQUE_ID` with a note
-  citing 42 CFR Part 2. Add `PHI_CATEGORY_42_CFR_PART2` constant to `constants.py` in Phase 2
-  or Phase 4 when compliance mapping is built.
+  `naloxone`, treatment program names. Map detections to `PhiCategory.SUBSTANCE_USE_DISORDER`
+  — a dedicated enum member added to `PhiCategory` in Phase 1B.2 (constants.py), not reused
+  from an existing category. Do NOT map to `PhiCategory.UNIQUE_ID`; SUD records are a distinct
+  regulatory category under a different statute with different consent requirements. Reusing
+  UNIQUE_ID would cause a semantic collision that forces runtime disambiguation via free-text
+  note fields — fragile and undetectable by the type checker.
 - [ ] **2H.1d** GINA (Genetic Information Nondiscrimination Act) — genetic information
   (test results, family history, genomic data) is a protected category. Genetic identifier
   patterns from 2B.1 cover this; document GINA applicability in compliance mapping.

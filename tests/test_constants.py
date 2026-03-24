@@ -117,3 +117,23 @@ def test_ai_layer_adjustment_max_is_below_high_floor() -> None:
     # Ensures the AI layer cannot push a LOW-confidence finding into HIGH territory
     # on its own — a delta this small requires a pre-existing high base score.
     assert AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX < CONFIDENCE_HIGH_FLOOR
+
+
+def test_phi_category_substance_use_disorder_resolves_by_value() -> None:
+    assert PhiCategory("substance_use_disorder") is PhiCategory.SUBSTANCE_USE_DISORDER
+
+
+def test_phi_category_quasi_identifier_combination_resolves_by_value() -> None:
+    assert PhiCategory("quasi_identifier_combination") is PhiCategory.QUASI_IDENTIFIER_COMBINATION
+
+
+def test_substance_use_disorder_is_not_unique_id() -> None:
+    # 42 CFR Part 2 is a distinct regulatory category. Aliasing to UNIQUE_ID would
+    # collapse two different statutes into one enum value and break compliance mapping.
+    assert PhiCategory.SUBSTANCE_USE_DISORDER is not PhiCategory.UNIQUE_ID
+
+
+def test_quasi_identifier_combination_is_not_unique_id() -> None:
+    # Quasi-identifier combination risk is a distinct concept from HIPAA Safe Harbor
+    # category #18 (unique identifying numbers). They must remain separate enum members.
+    assert PhiCategory.QUASI_IDENTIFIER_COMBINATION is not PhiCategory.UNIQUE_ID

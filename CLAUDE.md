@@ -245,7 +245,7 @@ Device identifiers, URLs, IP addresses, Biometric identifiers, Full-face photos,
 - Quasi-identifier combinations — ZIP + DOB + sex together → HIGH risk regardless of individual scores
 
 **SSN reserved ranges — do NOT flag (reduces false positives on version numbers):**
-`000-XX-XXXX`, `XXX-00-XXXX`, `XXX-XX-0000`, `666-XX-XXXX`, `900–999-XX-XXXX`
+`000-XX-XXXX`, `XXX-00-XXXX`, `XXX-XX-0000`, `666-XX-XXXX`, `900-XX-XXXX` through `999-XX-XXXX`
 
 **NPI distinction:**
 - Type 1 (individual provider) — PHI in patient context; flag
