@@ -14,7 +14,7 @@ from phi_scan.exceptions import PhiScanLoggingError
 __all__ = [
     "LOGGER_NAME",
     "LOG_FORMAT",
-    "configure_logger_handlers",
+    "replace_logger_handlers",
     "get_logger",
 ]
 
@@ -46,15 +46,15 @@ def get_logger(name: str | None = None) -> logging.Logger:
     return logging.getLogger(f"{LOGGER_NAME}.{name}")
 
 
-def configure_logger_handlers(
+def replace_logger_handlers(
     console_level: int = _DEFAULT_CONSOLE_LEVEL,
     log_file_path: Path | None = None,
     is_quiet: bool = False,
 ) -> None:
-    """Configure the phi_scan logger with console and optional file handlers.
+    """Replace all phi_scan logger handlers with a fresh console and optional file handler.
 
-    Must be called once at CLI startup before any scanning begins. Calling it
-    a second time replaces all existing handlers on the phi_scan logger.
+    Clears any existing handlers and attaches new ones. Calling this a second
+    time fully replaces the first configuration.
 
     Args:
         console_level: Logging level for the console handler. Ignored when
@@ -97,34 +97,76 @@ def _build_console_handler(level: int) -> logging.StreamHandler[TextIO]:
 
 
 def _build_file_handler(log_file_path: Path) -> logging.handlers.RotatingFileHandler:
-    """Build a RotatingFileHandler, creating the parent directory if needed.
+    """Build a RotatingFileHandler, rejecting symlinks and creating the directory.
 
     Args:
-        log_file_path: Absolute path to the log file. The parent directory is
-            created with mode _LOG_DIRECTORY_MODE if it does not already exist.
+        log_file_path: Path to the log file. Expanded, normalized, and validated
+            before the handler is created.
 
     Returns:
         A configured RotatingFileHandler at DEBUG level.
 
     Raises:
-        PhiScanLoggingError: If log_file_path is a symlink, if any parent
-            directory component is a symlink, or if the log directory cannot
-            be created due to a permissions or OS error.
+        PhiScanLoggingError: If log_file_path or any parent component is a
+            symlink, or if the log directory cannot be created.
     """
     expanded_path = log_file_path.expanduser()
     if expanded_path.is_symlink():
         raise PhiScanLoggingError(_SYMLINK_LOG_PATH_ERROR.format(path=expanded_path))
-    _reject_symlinked_parents(expanded_path)
-    normalized_path = Path(os.path.normpath(str(expanded_path.absolute())))
-    try:
-        normalized_path.parent.mkdir(mode=_LOG_DIRECTORY_MODE, parents=True, exist_ok=True)
-    except OSError as error:
-        raise PhiScanLoggingError(
-            _LOG_DIRECTORY_CREATION_ERROR.format(path=normalized_path.parent)
-        ) from error
+    normalized_path = Path(os.path.normpath(expanded_path.absolute()))
+    _reject_symlinked_parents(normalized_path)
+    _create_log_directory(normalized_path.parent)
+    return _build_rotating_handler(normalized_path)
 
+
+def _reject_symlinked_parents(normalized_path: Path) -> None:
+    """Raise PhiScanLoggingError if any existing path component is a symlink.
+
+    Expects a pre-normalized path (.. already collapsed) so that crafted paths
+    cannot hide a symlinked component by placing it after a .. segment.
+
+    Args:
+        normalized_path: The log file path after expanduser() and normpath()
+            have been applied. Caller is responsible for pre-normalization.
+
+    Raises:
+        PhiScanLoggingError: If any existing component of normalized_path is
+            a symlink.
+    """
+    cumulative = Path(normalized_path.anchor)
+    for path_component in normalized_path.parts[1:]:
+        cumulative = cumulative / path_component
+        if cumulative.exists() and cumulative.is_symlink():
+            raise PhiScanLoggingError(_SYMLINK_LOG_PARENT_ERROR.format(path=normalized_path))
+
+
+def _create_log_directory(directory: Path) -> None:
+    """Create directory and all parents with restricted permissions.
+
+    Args:
+        directory: The directory path to create.
+
+    Raises:
+        PhiScanLoggingError: If the directory cannot be created due to a
+            permissions or OS error.
+    """
+    try:
+        directory.mkdir(mode=_LOG_DIRECTORY_MODE, parents=True, exist_ok=True)
+    except OSError as error:
+        raise PhiScanLoggingError(_LOG_DIRECTORY_CREATION_ERROR.format(path=directory)) from error
+
+
+def _build_rotating_handler(log_file_path: Path) -> logging.handlers.RotatingFileHandler:
+    """Build and configure a RotatingFileHandler at DEBUG level.
+
+    Args:
+        log_file_path: Normalized, validated path to the log file.
+
+    Returns:
+        A configured RotatingFileHandler.
+    """
     handler = logging.handlers.RotatingFileHandler(
-        normalized_path,
+        log_file_path,
         maxBytes=_MAX_LOG_FILE_BYTES,
         backupCount=_LOG_FILE_BACKUP_COUNT,
         encoding="utf-8",
@@ -132,24 +174,3 @@ def _build_file_handler(log_file_path: Path) -> logging.handlers.RotatingFileHan
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter(LOG_FORMAT))
     return handler
-
-
-def _reject_symlinked_parents(expanded_path: Path) -> None:
-    """Raise PhiScanLoggingError if any existing parent component is a symlink.
-
-    Normalises .. segments via os.path.normpath before walking so that crafted
-    paths containing .. cannot hide a symlinked component by placing it after
-    a .. segment in the path string.
-
-    Args:
-        expanded_path: The log file path after expanduser() has been applied.
-
-    Raises:
-        PhiScanLoggingError: If any existing parent directory is a symlink.
-    """
-    normalized_path = Path(os.path.normpath(str(expanded_path.absolute())))
-    cumulative = Path(normalized_path.anchor)
-    for part in normalized_path.parts[1:]:
-        cumulative = cumulative / part
-        if cumulative.exists() and cumulative.is_symlink():
-            raise PhiScanLoggingError(_SYMLINK_LOG_PARENT_ERROR.format(path=expanded_path))
