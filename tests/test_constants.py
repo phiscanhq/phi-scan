@@ -17,6 +17,7 @@ from phi_scan.constants import (
     KNOWN_BINARY_EXTENSIONS,
     MAX_FILE_SIZE_BYTES,
     MAX_FILE_SIZE_MB,
+    QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES,
     OutputFormat,
     PhiCategory,
     RiskLevel,
@@ -137,3 +138,10 @@ def test_quasi_identifier_combination_is_not_unique_id() -> None:
     # Quasi-identifier combination risk is a distinct concept from HIPAA Safe Harbor
     # category #18 (unique identifying numbers). They must remain separate enum members.
     assert PhiCategory.QUASI_IDENTIFIER_COMBINATION is not PhiCategory.UNIQUE_ID
+
+
+def test_quasi_identifier_proximity_window_lines_is_positive_int() -> None:
+    # Guards against the constant being accidentally set to zero or negative, which
+    # would disable combination detection entirely without raising an error.
+    assert isinstance(QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES, int)
+    assert QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES > 0

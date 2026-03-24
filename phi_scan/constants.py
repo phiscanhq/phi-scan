@@ -28,6 +28,7 @@ __all__ = [
     "DetectionLayer",
     "EXIT_CODE_CLEAN",
     "EXIT_CODE_VIOLATION",
+    "QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES",
     "HIPAA_REMEDIATION_GUIDANCE",
     "KNOWN_BINARY_EXTENSIONS",
     "BYTES_PER_MEGABYTE",
@@ -192,6 +193,15 @@ AUDIT_RETENTION_DAYS: int = (
 
 EXIT_CODE_CLEAN: int = 0
 EXIT_CODE_VIOLATION: int = 1
+
+# ---------------------------------------------------------------------------
+# Detection parameters
+# ---------------------------------------------------------------------------
+
+# Maximum line distance between two identifiers in the same file for them to
+# be considered a quasi-identifier combination (2E.11). Never compare against
+# the literal 50 in logic code — always reference this constant.
+QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES: int = 50
 
 # ---------------------------------------------------------------------------
 # Database schema versions

@@ -715,15 +715,15 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
 - [ ] **2D.6** Detect HL7 v2 message files — identify by MSH segment header (`MSH|^~\&|`)
   in file content regardless of file extension (.hl7, .msg, .txt, .dat)
 - [ ] **2D.7** Implement HL7 v2 scanning functions in `scanner.py` (or a dedicated
-  `hl7_scanner.py` module). Required function signatures — these names are pre-approved
-  to avoid banned patterns at implementation time:
+  `hl7_scanner.py` module). All names must comply with the project naming standards — the
+  plan proposes compliant names but does not grant exemptions from the standards:
   - `identify_hl7_message_format(file_content: str) -> bool` — returns True when content
     contains a valid MSH segment header; used as the entry guard before parsing
-  - `detect_phi_in_hl7_segment(segment: hl7.Segment, category_map: dict[str, PhiCategory])
+  - `detect_phi_in_hl7_segment(segment: hl7.Segment, segment_field_categories: Mapping[str, PhiCategory])
     -> list[ScanFinding]` — scans one parsed segment, returns findings; pure function,
     no side effects. `segment` is a parsed `hl7.Segment` instance, not a raw string.
-  - Do NOT name these `parse_and_scan_segments`, `process_hl7_message`, `handle_hl7`,
-    or `scan_hl7` — all violate the verb-noun or banned-name rules.
+    `segment_field_categories` is typed as `Mapping` (not `dict`) to enforce the read-only
+    contract — the function must not mutate the lookup table it receives.
   Parse and scan the following PHI-bearing segments using the `hl7` library:
   - **MSH** (Message Header) — MSH.4 (sending facility name can contain PHI in some systems)
   - **PID** (Patient Identification) — PID.3 (patient ID/MRN), PID.5 (patient name),
@@ -782,19 +782,6 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
 - [ ] **2E.6** Integrate scan cache from 2A.2 — skip unchanged files
 - [ ] **2E.7** Tune confidence thresholds — benchmark recall vs false positive rate
 - [ ] **2E.8** Target: >90% recall, <10% false positive rate on synthetic test dataset
-- [ ] **2E.10** Quasi-identifier combination detection — flag files where multiple
-  lower-risk identifiers appear together within a proximity window (same file, within 50 lines):
-  - ZIP code + date of birth + sex/gender → re-identification risk (Sweeney: 87% of US population
-    uniquely identified by these three fields alone); boost combined confidence to HIGH even if
-    each field alone would be MEDIUM or LOW
-  - Name + any date → HIGH combined confidence regardless of individual scores
-  - Age >89 + any geographic data → HIGH (HIPAA specifically restricts ages over 90)
-  - Two or more identifiers in the same JSON object or data structure → elevated risk level
-  - Report combined quasi-identifier findings as a single `PhiCategory.QUASI_IDENTIFIER_COMBINATION`
-    finding with a note listing which fields triggered the combination rule.
-    `QUASI_IDENTIFIER_COMBINATION` is a distinct enum member added in this phase — do not
-    reuse `PhiCategory.UNIQUE_ID`, which is reserved for the HIPAA Safe Harbor category #18
-    (unique identifying numbers). Conflating the two would break compliance mapping at Layer 4.
 - [ ] **2E.9** Archive inspection — scan embedded plaintext resources inside Java archives:
   - File types: .jar, .war, .zip (Python `zipfile` module — no external dependencies)
   - Scan embedded text resources only: .properties, .xml, .yaml, .yml, .json, .conf
@@ -808,6 +795,22 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   - Graceful degradation: if zipfile extraction fails, log warning and skip the archive
   - Remove .jar and .war from KNOWN_BINARY_EXTENSIONS in constants.py when this ships
   - Update `.phi-scanignore` Format Specification in PLAN.md to note archive inspection live
+- [ ] **2E.11** Quasi-identifier combination detection — flag files where multiple
+  lower-risk identifiers appear together within a proximity window. The window size must be
+  defined as `QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES: int = 50` in `constants.py` — never
+  as an inline literal. Implementation code must read `QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES`,
+  not compare against `50` directly.
+  - ZIP code + date of birth + sex/gender → re-identification risk (Sweeney: 87% of US population
+    uniquely identified by these three fields alone); boost combined confidence to HIGH even if
+    each field alone would be MEDIUM or LOW
+  - Name + any date → HIGH combined confidence regardless of individual scores
+  - Age >89 + any geographic data → HIGH (HIPAA specifically restricts ages over 90)
+  - Two or more identifiers in the same JSON object or data structure → elevated risk level
+  - Report combined quasi-identifier findings as a single `PhiCategory.QUASI_IDENTIFIER_COMBINATION`
+    finding with a note listing which fields triggered the combination rule.
+    `QUASI_IDENTIFIER_COMBINATION` is a distinct enum member added in this phase — do not
+    reuse `PhiCategory.UNIQUE_ID`, which is reserved for the HIPAA Safe Harbor category #18
+    (unique identifying numbers). Conflating the two would break compliance mapping at Layer 4.
 
 ### 2F — Auto-Fix Engine (`phi-scan fix`)
 
