@@ -14,6 +14,7 @@ __all__ = [
     "MissingOptionalDependencyError",
     "PhiDetectionError",
     "PhiScanError",
+    "PhiScanLoggingError",
     "SchemaMigrationError",
     "TraversalError",
 ]
@@ -84,6 +85,18 @@ class MissingOptionalDependencyError(PhiScanError):
     Args:
         message: Description of the missing dependency including the package name
             and the install command that will resolve it.
+    """
+
+
+class PhiScanLoggingError(PhiScanError):
+    """Raised when the logging system cannot be configured safely.
+
+    Examples include a log file path that resolves to a symlink, which could
+    allow an attacker to redirect log output to an arbitrary file.
+
+    Args:
+        message: Description of the unsafe configuration including the path
+            and the reason it was rejected.
     """
 
 
