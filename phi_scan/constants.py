@@ -25,18 +25,35 @@ __all__ = [
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_CONFIG_FILENAME",
     "DEFAULT_IGNORE_FILENAME",
+    "DBSNP_RS_ID_MAX_DIGITS",
+    "DBSNP_RS_ID_MIN_DIGITS",
+    "DEA_NUMBER_DIGIT_COUNT",
     "DetectionLayer",
+    "ENSEMBL_GENE_ID_DIGIT_COUNT",
     "EXIT_CODE_CLEAN",
     "EXIT_CODE_VIOLATION",
+    "FICTIONAL_PHONE_EXCHANGE",
+    "FICTIONAL_PHONE_SUBSCRIBER_DISPLAY_PREFIX",
+    "FICTIONAL_PHONE_SUBSCRIBER_MAX",
+    "FICTIONAL_PHONE_SUBSCRIBER_MIN",
+    "HIPAA_AGE_RESTRICTION_THRESHOLD",
     "HIPAA_REMEDIATION_GUIDANCE",
     "KNOWN_BINARY_EXTENSIONS",
     "BYTES_PER_MEGABYTE",
     "MAX_FILE_SIZE_BYTES",
     "MAX_FILE_SIZE_MB",
+    "MBI_ALLOWED_LETTERS",
+    "MBI_CHARACTER_COUNT",
+    "MINIMUM_QUASI_IDENTIFIER_COUNT",
     "OutputFormat",
     "PhiCategory",
+    "QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES",
     "RiskLevel",
     "SeverityLevel",
+    "SSN_EXCLUDED_AREA_NUMBERS",
+    "SUD_FIELD_NAME_PATTERNS",
+    "VIN_CHARACTER_COUNT",
+    "ZIP_CODE_SAFE_HARBOR_POPULATION_MIN",
 ]
 
 # ---------------------------------------------------------------------------
@@ -194,6 +211,114 @@ EXIT_CODE_CLEAN: int = 0
 EXIT_CODE_VIOLATION: int = 1
 
 # ---------------------------------------------------------------------------
+# Detection parameters
+# ---------------------------------------------------------------------------
+
+# Maximum line distance between two identifiers in the same file for them to
+# be considered a quasi-identifier combination (2E.11). Never compare against
+# the literal 50 in logic code — always reference this constant.
+QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES: int = 50
+
+# Minimum number of distinct quasi-identifier categories that must be present
+# within QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES of each other to trigger a
+# combination finding. The literal 2 must never appear in detection logic —
+# always import and reference this constant.
+MINIMUM_QUASI_IDENTIFIER_COUNT: int = 2
+
+# HIPAA §164.514(b)(2)(i) requires ages "over 90" to be generalized (reported
+# as "90 or older"). "Over 90" means strictly greater than 90, i.e., ages 91+.
+# Logic code must use: age > HIPAA_AGE_RESTRICTION_THRESHOLD.
+# Never compare against the literal 90 in detection logic.
+HIPAA_AGE_RESTRICTION_THRESHOLD: int = 90
+
+# ---------------------------------------------------------------------------
+# Identifier structure constants
+# ---------------------------------------------------------------------------
+# These constants encode the structural properties of specific PHI identifiers.
+# They are used by the regex layer (Phase 2B) to construct patterns without
+# embedding magic numbers. Never use the literal values inline in logic code.
+
+# Medicare Beneficiary Identifier (MBI) — fixed-length alphanumeric format
+# introduced in 2019 to replace the SSN-based HICN.
+MBI_CHARACTER_COUNT: int = 11
+
+# DEA registration number — 2-letter prefix followed by exactly this many digits,
+# validated by a checksum over digits 1, 3, 5, 2, 4, 6.
+DEA_NUMBER_DIGIT_COUNT: int = 7
+
+# Vehicle Identification Number — fixed-length per ISO 3779 (WMI + VDS + VIS).
+# Position 9 is a check digit; I, O, Q are never used.
+VIN_CHARACTER_COUNT: int = 17
+
+# dbSNP rs-ID digit bounds — rs-IDs currently range from 7 to 9 digits after
+# the "rs" prefix. Both ends are needed to construct the regex quantifier.
+DBSNP_RS_ID_MIN_DIGITS: int = 7
+DBSNP_RS_ID_MAX_DIGITS: int = 9
+
+# Ensembl gene ID — "ENSG" prefix followed by exactly this many zero-padded digits.
+ENSEMBL_GENE_ID_DIGIT_COUNT: int = 11
+
+# FCC-reserved fictional NANP telephone exchange and subscriber range.
+# Numbers in this range (555-0100 through 555-0199) are never assigned to real
+# subscribers and are safe for use in synthetic test data. The scanner excludes
+# this range to avoid false positives on test fixtures.
+FICTIONAL_PHONE_EXCHANGE: int = 555
+# NANP subscriber numbers are displayed as 4 digits. The integer constants
+# FICTIONAL_PHONE_SUBSCRIBER_MIN (100) and FICTIONAL_PHONE_SUBSCRIBER_MAX (199)
+# represent the numeric values, but the display format requires a leading zero
+# (0100–0199). Use this prefix when building strings, not a bare "0" literal.
+FICTIONAL_PHONE_SUBSCRIBER_DISPLAY_PREFIX: str = "0"
+FICTIONAL_PHONE_SUBSCRIBER_MIN: int = 100
+FICTIONAL_PHONE_SUBSCRIBER_MAX: int = 199
+
+# HIPAA Safe Harbor §164.514(b)(2)(i): a 3-digit ZIP code prefix is safe only
+# when the geographic unit it represents contains at least this many people.
+# The scanner cannot verify population counts, so it flags 3-digit prefixes
+# in patient-geographic context and defers the decision to the user.
+ZIP_CODE_SAFE_HARBOR_POPULATION_MIN: int = 20_000
+
+# ---------------------------------------------------------------------------
+# Regex pattern string constants
+# ---------------------------------------------------------------------------
+# These string/set constants encode structured pattern components. Using named
+# constants instead of inline string literals prevents copy-paste errors and
+# makes the compliance rationale traceable to its regulatory source.
+
+# CMS-approved letter set for MBI positions 2, 3, 5, 6, 8, and 9.
+# CMS excludes S, L, O, I, B, Z to avoid visual ambiguity with digits.
+# Use this in regex character classes: f"[{MBI_ALLOWED_LETTERS}]"
+# Never embed "AC-HJ-KM-NP-RT-Y" as an inline string in detection code.
+MBI_ALLOWED_LETTERS: str = "AC-HJ-KM-NP-RT-Y"
+
+# SSN area numbers that SSA has never assigned and never will (§205.20 regulations).
+# Area 000, group 00, and serial 0000 are additional exclusions but are enforced
+# structurally by the regex (zero fields), not by membership in this set.
+# Use this set to construct the area-number exclusion branch of the SSN regex.
+# Never embed 666, 900, or 999 as literals in pattern strings.
+SSN_EXCLUDED_AREA_NUMBERS: frozenset[int] = frozenset({666, *range(900, 1000)})
+
+# 42 CFR Part 2 substance use disorder field name patterns.
+# The scanner flags any variable name, JSON key, or column name that matches
+# a member of this set as a potential SUD record under 42 CFR Part 2.
+# Detection logic must iterate this constant — never embed these strings inline.
+SUD_FIELD_NAME_PATTERNS: frozenset[str] = frozenset(
+    {
+        "substance_use",
+        "addiction_treatment",
+        "sud_diagnosis",
+        "alcohol_abuse",
+        "opioid_treatment",
+        "methadone",
+        "buprenorphine",
+        "naloxone",
+        "substance_use_disorder",
+        "drug_treatment",
+        "detox_program",
+        "mat_program",
+    }
+)
+
+# ---------------------------------------------------------------------------
 # Database schema versions
 # ---------------------------------------------------------------------------
 
@@ -275,8 +400,17 @@ class RiskLevel(StrEnum):
 
 
 class PhiCategory(StrEnum):
-    """The 18 HIPAA-defined PHI identifier categories (45 CFR §164.514(b)(2))."""
+    """PHI and regulated-data identifier categories.
 
+    The first 18 members are the HIPAA Safe Harbor categories (45 CFR §164.514(b)(2)).
+    Members below the Safe Harbor block are additional regulatory categories that require
+    distinct treatment at compliance-mapping time and must not be aliased to a Safe Harbor
+    member — doing so would create a semantic collision that breaks Layer 4 compliance mapping.
+    """
+
+    # -------------------------------------------------------------------------
+    # HIPAA Safe Harbor — 45 CFR §164.514(b)(2) — 18 named identifiers
+    # -------------------------------------------------------------------------
     NAME = "name"
     GEOGRAPHIC = "geographic"
     DATE = "date"
@@ -295,6 +429,21 @@ class PhiCategory(StrEnum):
     BIOMETRIC = "biometric"
     PHOTO = "photo"
     UNIQUE_ID = "unique_id"
+
+    # -------------------------------------------------------------------------
+    # Extended regulatory categories — distinct statutes, distinct consent rules
+    # -------------------------------------------------------------------------
+
+    # 42 CFR Part 2: Substance Use Disorder records. Stricter than HIPAA — requires
+    # explicit patient consent even for treatment referrals and prohibits re-disclosure.
+    # Must not be aliased to UNIQUE_ID or any Safe Harbor member.
+    SUBSTANCE_USE_DISORDER = "substance_use_disorder"
+
+    # Re-identification risk from quasi-identifier combinations (ZIP + DOB + sex, etc.).
+    # Not a HIPAA Safe Harbor category — a finding of this type means that individually
+    # non-identifying fields are present together in a configuration known to re-identify
+    # individuals. Must not be aliased to UNIQUE_ID.
+    QUASI_IDENTIFIER_COMBINATION = "quasi_identifier_combination"
 
 
 # ---------------------------------------------------------------------------
@@ -373,5 +522,22 @@ HIPAA_REMEDIATION_GUIDANCE: dict[PhiCategory, str] = {
     PhiCategory.UNIQUE_ID: (
         "Replace unique identifying numbers with synthetic values. "
         "Any number that uniquely identifies a person is a HIPAA identifier."
+    ),
+    PhiCategory.SUBSTANCE_USE_DISORDER: (
+        "Substance Use Disorder records are governed by 42 CFR Part 2, which imposes "
+        "stricter protections than HIPAA. Remove all SUD-related field names, diagnosis "
+        "codes, treatment program references, and medication names (methadone, buprenorphine, "
+        "naloxone) from source code and test fixtures. Disclosure without explicit written "
+        "patient consent — even for treatment — violates federal law. Never commit SUD data "
+        "to version control under any circumstances."
+    ),
+    PhiCategory.QUASI_IDENTIFIER_COMBINATION: (
+        "This finding indicates that multiple individually low-risk fields are present "
+        "together in a configuration known to re-identify individuals (e.g., ZIP code + "
+        "date of birth + sex can re-identify 87%% of the US population). Remove or "
+        "generalize at least one of the quasi-identifiers: use only the first 3 digits of "
+        "the ZIP code, replace the full date of birth with birth year only, or remove the "
+        "combination entirely from test fixtures. Do not rely on any single field being "
+        "'safe' — the risk is in the combination."
     ),
 }

@@ -11,6 +11,7 @@ from __future__ import annotations
 __all__ = [
     "AuditLogError",
     "ConfigurationError",
+    "MissingOptionalDependencyError",
     "PhiDetectionError",
     "PhiScanError",
     "SchemaMigrationError",
@@ -70,6 +71,19 @@ class PhiDetectionError(PhiScanError):
     Args:
         message: Description of the invariant that was violated, including the
             bad value and the expected range or format.
+    """
+
+
+class MissingOptionalDependencyError(PhiScanError):
+    """Raised when an optional dependency required for a feature is not installed.
+
+    The caller catches this exception to disable the feature gracefully and log
+    a structured warning. Never silence it with a bare except or pass clause —
+    re-raise as this type so callers can handle it specifically.
+
+    Args:
+        message: Description of the missing dependency including the package name
+            and the install command that will resolve it.
     """
 
 
