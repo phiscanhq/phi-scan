@@ -4,24 +4,28 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import os
 from pathlib import Path
 from typing import TextIO
 
+from phi_scan.constants import BYTES_PER_MEGABYTE
 from phi_scan.exceptions import PhiScanLoggingError
 
 __all__ = [
     "LOGGER_NAME",
     "LOG_FORMAT",
-    "configure_log_output",
+    "configure_logger_handlers",
     "get_logger",
 ]
 
 LOGGER_NAME: str = "phi_scan"
 LOG_FORMAT: str = "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
 _DEFAULT_CONSOLE_LEVEL: int = logging.WARNING
-_MAX_LOG_FILE_BYTES: int = 10 * 1024 * 1024
+_MAX_LOG_FILE_MEGABYTES: int = 10
+_MAX_LOG_FILE_BYTES: int = _MAX_LOG_FILE_MEGABYTES * BYTES_PER_MEGABYTE
 _LOG_FILE_BACKUP_COUNT: int = 5
 _SILENCED_LOG_LEVEL: int = logging.CRITICAL + 1
+_LOG_DIRECTORY_MODE: int = 0o700
 _SYMLINK_LOG_PATH_ERROR: str = "Log file path must not be a symlink: {path}"
 _SYMLINK_LOG_PARENT_ERROR: str = "Log file path resolves through a symlink: {path}"
 _LOG_DIRECTORY_CREATION_ERROR: str = "Cannot create log directory: {path}"
@@ -42,7 +46,7 @@ def get_logger(name: str | None = None) -> logging.Logger:
     return logging.getLogger(f"{LOGGER_NAME}.{name}")
 
 
-def configure_log_output(
+def configure_logger_handlers(
     console_level: int = _DEFAULT_CONSOLE_LEVEL,
     log_file_path: Path | None = None,
     is_quiet: bool = False,
@@ -97,7 +101,7 @@ def _build_file_handler(log_file_path: Path) -> logging.handlers.RotatingFileHan
 
     Args:
         log_file_path: Absolute path to the log file. The parent directory is
-            created with mode 0o700 if it does not already exist.
+            created with mode _LOG_DIRECTORY_MODE if it does not already exist.
 
     Returns:
         A configured RotatingFileHandler at DEBUG level.
@@ -110,20 +114,17 @@ def _build_file_handler(log_file_path: Path) -> logging.handlers.RotatingFileHan
     expanded_path = log_file_path.expanduser()
     if expanded_path.is_symlink():
         raise PhiScanLoggingError(_SYMLINK_LOG_PATH_ERROR.format(path=expanded_path))
-    absolute_path = expanded_path.absolute()
-    for parent in absolute_path.parents:
-        if parent.exists() and parent.is_symlink():
-            raise PhiScanLoggingError(_SYMLINK_LOG_PARENT_ERROR.format(path=expanded_path))
-    resolved_path = absolute_path.resolve()
+    _reject_symlinked_parents(expanded_path)
+    normalized_path = Path(os.path.normpath(str(expanded_path.absolute())))
     try:
-        resolved_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        normalized_path.parent.mkdir(mode=_LOG_DIRECTORY_MODE, parents=True, exist_ok=True)
     except OSError as error:
         raise PhiScanLoggingError(
-            _LOG_DIRECTORY_CREATION_ERROR.format(path=resolved_path.parent)
+            _LOG_DIRECTORY_CREATION_ERROR.format(path=normalized_path.parent)
         ) from error
 
     handler = logging.handlers.RotatingFileHandler(
-        resolved_path,
+        normalized_path,
         maxBytes=_MAX_LOG_FILE_BYTES,
         backupCount=_LOG_FILE_BACKUP_COUNT,
         encoding="utf-8",
@@ -131,3 +132,24 @@ def _build_file_handler(log_file_path: Path) -> logging.handlers.RotatingFileHan
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter(LOG_FORMAT))
     return handler
+
+
+def _reject_symlinked_parents(expanded_path: Path) -> None:
+    """Raise PhiScanLoggingError if any existing parent component is a symlink.
+
+    Normalises .. segments via os.path.normpath before walking so that crafted
+    paths containing .. cannot hide a symlinked component by placing it after
+    a .. segment in the path string.
+
+    Args:
+        expanded_path: The log file path after expanduser() has been applied.
+
+    Raises:
+        PhiScanLoggingError: If any existing parent directory is a symlink.
+    """
+    normalized_path = Path(os.path.normpath(str(expanded_path.absolute())))
+    cumulative = Path(normalized_path.anchor)
+    for part in normalized_path.parts[1:]:
+        cumulative = cumulative / part
+        if cumulative.exists() and cumulative.is_symlink():
+            raise PhiScanLoggingError(_SYMLINK_LOG_PARENT_ERROR.format(path=expanded_path))
