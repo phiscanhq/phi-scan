@@ -150,7 +150,46 @@ and explain commands deferred to Phase 2).
   - `EXIT_CODE_CLEAN = 0`, `EXIT_CODE_VIOLATION = 1`
   - Enums: `OutputFormat` (TABLE, JSON, SARIF, CSV, PDF, HTML, JUNIT, CODEQUALITY, GITLAB_SAST), `SeverityLevel` (LOW, MEDIUM, HIGH)
   - Enum: `RiskLevel` (CRITICAL, HIGH, MODERATE, LOW, CLEAN)
-  - `HIPAA_REMEDIATION_GUIDANCE` — dict mapping each HIPAA category to specific remediation text
+  - Enum: `PhiCategory` — 18 HIPAA Safe Harbor members (NAME through UNIQUE_ID) plus two
+    extended regulatory members that must be added here and not deferred:
+    - `SUBSTANCE_USE_DISORDER = "substance_use_disorder"` — 42 CFR Part 2 scope; distinct
+      statute with stricter consent rules; must not be aliased to UNIQUE_ID
+    - `QUASI_IDENTIFIER_COMBINATION = "quasi_identifier_combination"` — re-identification
+      risk from field combinations; not a Safe Harbor category; must not be aliased to UNIQUE_ID
+    Both members must also have entries in `HIPAA_REMEDIATION_GUIDANCE` in this same task.
+  - `QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES = 50` — module-level constant; referenced by
+    `detect_quasi_identifier_combination()` in Phase 2E.11
+  - `MINIMUM_QUASI_IDENTIFIER_COUNT = 2` — minimum distinct quasi-identifier categories
+    required to trigger a combination finding; the literal `2` must never appear in logic code
+  - `HIPAA_AGE_RESTRICTION_THRESHOLD = 90` — HIPAA §164.514(b)(2)(i) restricts ages "over
+    90" (strictly greater than 90 = ages 91+); logic code uses `age > HIPAA_AGE_RESTRICTION_THRESHOLD`;
+    the literal `90` must never appear in detection logic
+  - Identifier structure constants (prevent magic values in regex pattern construction):
+    - `MBI_CHARACTER_COUNT = 11` — fixed character count of a Medicare Beneficiary Identifier
+    - `DEA_NUMBER_DIGIT_COUNT = 7` — digit count in a DEA number (2-letter prefix + 7 digits)
+    - `VIN_CHARACTER_COUNT = 17` — fixed character count of a VIN (ISO 3779)
+    - `DBSNP_RS_ID_MIN_DIGITS = 7` — minimum digit count in a dbSNP rs-ID
+    - `DBSNP_RS_ID_MAX_DIGITS = 9` — maximum digit count in a dbSNP rs-ID
+    - `ENSEMBL_GENE_ID_DIGIT_COUNT = 11` — digit count in an Ensembl gene ID (ENSG + 11 digits)
+    - `FICTIONAL_PHONE_EXCHANGE = 555` — FCC-reserved fictional NANP exchange; exclude from
+      real-phone detection; use for synthetic data generation in `phi-scan fix`
+    - `FICTIONAL_PHONE_SUBSCRIBER_DISPLAY_PREFIX = "0"` — leading zero required to render
+      4-digit NANP subscribers (100 → "0100"); must not appear as a bare `"0"` literal
+    - `FICTIONAL_PHONE_SUBSCRIBER_MIN = 100` — start of FCC fictional subscriber range (0100)
+    - `FICTIONAL_PHONE_SUBSCRIBER_MAX = 199` — end of FCC fictional subscriber range (0199)
+    - `ZIP_CODE_SAFE_HARBOR_POPULATION_MIN = 20_000` — minimum census population for a 3-digit
+      ZIP prefix to qualify as safe harbor under §164.514(b)(2)(i)
+  - Regex pattern string constants (prevent magic string literals in detection logic):
+    - `MBI_ALLOWED_LETTERS = "AC-HJ-KM-NP-RT-Y"` — CMS-approved letters for MBI positions
+      2, 3, 5, 6, 8, 9 (excludes S, L, O, I, B, Z per CMS specification); used to build
+      the MBI regex — never embed `AC-HJ-KM-NP-RT-Y` inline in any pattern string
+    - `SSN_EXCLUDED_AREA_NUMBERS: frozenset[int]` — SSA area numbers never assigned per
+      §205.20 regulations: `frozenset({666, *range(900, 1000)})`; used to build SSN exclusion
+      regex — never embed `666`, `900`, or `999` as literals in pattern strings
+    - `SUD_FIELD_NAME_PATTERNS: frozenset[str]` — 42 CFR Part 2 SUD-suggestive field names;
+      detection logic iterates this set — never embed the strings inline in detection code
+  - `HIPAA_REMEDIATION_GUIDANCE` — dict mapping each `PhiCategory` member to specific
+    remediation text; must cover all members including the two extended ones above
   - `SCHEMA_VERSION = 1` — audit DB schema version for migration tracking
   - `CACHE_SCHEMA_VERSION = 1` — cache DB schema version
 - [x] **1B.3** `exceptions.py` — `PhiScanError` (base), `ConfigurationError`, `TraversalError`, `AuditLogError`, `SchemaMigrationError`
@@ -531,6 +570,9 @@ from Phase 1 becomes a working scanner that finds real PHI. Also adds the deferr
 Phase 1 features: suppression system, scan cache, and explain commands.
 
 **Dependencies:** Phase 1 complete. `scan_file()` placeholder replaced with real detection.
+`scan_file()`'s single responsibility is "return the PHI findings for a given file path."
+Detection logic never lives directly in `scan_file()` — it delegates entirely to
+`detect_phi_in_text_content()`.
 
 **Version on completion: 0.2.0**
 
@@ -541,6 +583,7 @@ Phase 1 features: suppression system, scan cache, and explain commands.
 - `spacy` (3.7+) — NLP backbone
 - `en_core_web_lg` — spaCy model (downloaded via `phi-scan setup` or `python -m spacy download`)
 - `fhir.resources` (7.x) — FHIR R4 schema awareness
+- `hl7` (0.4.x) — HL7 v2 message parsing (core, not a plugin — HL7 v2 is the dominant live transaction format in production hospital systems and must be detected natively)
 
 ### 2A — Deferred Phase 1 Features (Suppression, Cache, Explain)
 
@@ -602,17 +645,89 @@ and can be wired in before or alongside the detection engine.
 
 ### 2B — Layer 1: Regex / Pattern Matching
 
-- [ ] **2B.1** Build regex pattern registry for all 18 HIPAA identifiers:
-  - SSN (XXX-XX-XXXX), MRN (6-10 digit), NPI (10-digit), DEA number
-  - Phone numbers (multiple formats), fax numbers
-  - Email addresses, IP addresses (v4 and v6)
-  - Dates (DOB, admission, discharge — not bare year)
-  - URLs containing patient context
-  - Account numbers, health plan numbers, cert/license numbers
-  - Vehicle identifiers (VIN pattern), device identifiers
+- [ ] **2B.1** Build regex pattern registry for all 18 HIPAA identifiers plus additional high-value
+  healthcare identifiers. Precision requirements are listed per pattern — over-flagging causes
+  alert fatigue; under-flagging is a HIPAA violation risk:
+  - **SSN** (XXX-XX-XXXX) — must exclude reserved ranges to suppress false positives on order
+    IDs and version strings (§205.20 SSA regulations; these area/group/serial combos are never
+    assigned): area `000`, group `00`, serial `0000`, and all area numbers in
+    `SSN_EXCLUDED_AREA_NUMBERS` (which contains 666 and the range 900–999). The exclusion
+    regex must be constructed from `SSN_EXCLUDED_AREA_NUMBERS` — never embed `666`, `900`, or
+    `999` as literals in pattern strings.
+  - **MRN** — 6-10 digit numeric adjacent to MRN-suggestive variable names (`mrn`, `medical_record`,
+    `patient_id`, `chart_number`); bare 6-10 digit strings without context are low-confidence only
+  - **NPI** — 10-digit with Luhn check digit validation. **Type 1 (individual provider):** PHI when
+    linked to a patient record — flag at medium confidence. **Type 2 (organization NPI):** public
+    identifier, not PHI — do not flag when context is clearly organizational (e.g., assigned to a
+    hospital object, not a patient record). Distinguish via surrounding variable/key name context.
+  - **MBI (Medicare Beneficiary Identifier)** — `MBI_CHARACTER_COUNT`-character alphanumeric
+    pattern built from `MBI_ALLOWED_LETTERS` (the CMS-approved letter set, excluding S, L, O,
+    I, B, Z). The structural pattern is:
+    `[1-9][{L}][{L}0-9][0-9][{L}][{L}0-9][0-9][{L}][{L}][0-9][0-9]` where `{L}` expands
+    to `MBI_ALLOWED_LETTERS`. This is the primary Medicare identifier since 2019, replacing
+    the SSN-based HICN. High-confidence when the pattern matches exactly.
+    Neither `MBI_CHARACTER_COUNT` nor the character class string `AC-HJ-KM-NP-RT-Y` may
+    appear as inline literals in detection logic — both must reference named constants.
+  - **DEA number** — 2-letter prefix + `DEA_NUMBER_DIGIT_COUNT` digits with checksum:
+    sum of digits 1+3+5 + 2×(2+4+6) must equal last digit mod 10. Validate checksum to
+    eliminate false positives. Never use the literal `7` in the regex quantifier.
+  - **HICN (legacy Medicare)** — 9-digit SSN base + 1-2 suffix characters (A, B, C, D, T, etc.);
+    lower confidence than MBI; flag only in Medicare-suggestive variable context
+  - **Phone numbers** — NANP `(NXX) NXX-XXXX`, dotted `NXX.NXX.XXXX`, dashed `NXX-NXX-XXXX`,
+    E.164 `+1XXXXXXXXXX`, international `+[1-9][0-9]{6,14}`; exclude the FCC fictional NANP range
+    where the exchange equals `FICTIONAL_PHONE_EXCHANGE` and the subscriber falls within
+    `FICTIONAL_PHONE_SUBSCRIBER_MIN`–`FICTIONAL_PHONE_SUBSCRIBER_MAX` (inclusive). Never use
+    the literals `555`, `100`, or `199` inline in exclusion logic.
+  - **Fax numbers** — same patterns as phone; flag at same confidence level
+  - **Email addresses** — RFC 5321 compliant; exclude documentation domains (`@example.com`,
+    `@example.org`, `@example.net`, `@test.com`) per RFC 2606 as synthetic-safe
+  - **IP addresses (v4)** — exclude RFC 5737 TEST-NET ranges (`192.0.2.x`, `198.51.100.x`,
+    `203.0.113.x`) and RFC 1918 private ranges (`10.x`, `172.16–31.x`, `192.168.x`) as
+    lower-confidence; public IPs in patient-context variables are high-confidence
+  - **IP addresses (v6)** — full and compressed notation; exclude loopback (`::1`) and
+    documentation ranges (`2001:db8::/32`)
+  - **Dates** — DOB, admission date, discharge date, date of death patterns (`YYYY-MM-DD`,
+    `MM/DD/YYYY`, `DD-Mon-YYYY`, `Month DD, YYYY`); bare year-only values are safe under
+    HIPAA Safe Harbor (§164.514(b)(2)(i)) and must NOT be flagged; flag only dates with
+    month and/or day precision
+  - **Ages restricted by HIPAA** — numeric values strictly greater than `HIPAA_AGE_RESTRICTION_THRESHOLD`
+    (i.e., ages 91 and above) adjacent to age-suggestive variable names (`patient_age`,
+    `age_at_admission`, `age_in_years`, `years_old`, `dob_age`). HIPAA §164.514(b)(2)(i)
+    requires ages "over 90" be generalized — "over 90" means strictly > 90, not ≥ 90.
+    Detection logic must use `detected_age > HIPAA_AGE_RESTRICTION_THRESHOLD`; the literal
+    `90` must not appear in logic code. Flag at medium confidence.
+  - **ZIP codes** — 5-digit ZIP and ZIP+4 always flagged at medium confidence in patient
+    context; 3-digit ZIP prefixes only flagged when the context is clearly patient-geographic
+    (§164.514(b)(2)(i): 3-digit prefixes are safe only for areas with population
+    > `ZIP_CODE_SAFE_HARBOR_POPULATION_MIN` — the scanner cannot verify population, so flag
+    and let the user decide. Never use the literal `20000` or `20_000` in logic code.)
+  - **Geographic sub-state data** — street addresses, city+state combinations, county names
+    in patient-suggestive context; state abbreviations alone are NOT PHI under Safe Harbor
+  - **URLs** — flag URLs containing path segments that encode patient identifiers
+    (e.g., `/patient/12345`, `/record/mrn-67890`, `/member/abc123`)
+  - **Account numbers** — patient account numbers, insurance member IDs, HSA/FSA account
+    numbers adjacent to account-suggestive variable names
+  - **Health plan numbers** — insurance subscriber IDs, group numbers, beneficiary IDs
+  - **Certificate/license numbers** — medical license (state prefix + digits), nursing license,
+    pharmacy license adjacent to license-suggestive variable names
+  - **Vehicle identifiers (VIN)** — `VIN_CHARACTER_COUNT`-character ISO 3779 structure
+    (WMI + VDS + VIS) with check digit validation (position 9); never contains I, O, or Q.
+    Never use the literal `17` in the regex quantifier.
+  - **Device identifiers** — FDA UDI format (device identifier + production identifier segments),
+    GTIN-14 patterns in medical device context
+  - **Biometric identifiers** — flag field names and JSON keys referencing:
+    `fingerprint`, `iris_scan`, `retinal_scan`, `face_template`, `voiceprint`, `palm_print`,
+    `gait_signature`, `dna_sequence`, `biometric_hash`; raw biometric data appears as large
+    base64 or hex strings — flag high-entropy strings in biometric-named fields
+  - **Genetic identifiers** — `rs{DBSNP_RS_ID_MIN_DIGITS` to `DBSNP_RS_ID_MAX_DIGITS` digits}`
+    (dbSNP SNP IDs), `ENSG{ENSEMBL_GENE_ID_DIGIT_COUNT` digits}` (Ensembl gene IDs), VCF-format
+    data (CHROM/POS/REF/ALT columns), gene panel names combined with patient identifiers;
+    protected under GINA (federal) and GDPR Article 9 (EU). Never use the literals `7`, `9`,
+    or `11` inline in regex quantifiers — build the pattern string from the named constants.
 - [ ] **2B.2** Implement confidence scoring for regex matches (high confidence for structured patterns)
 - [ ] **2B.3** Extract matched value, compute SHA-256 hash (never store raw value)
-- [ ] **2B.4** Wire regex layer into `scan_file()` — scan line-by-line
+- [ ] **2B.4** Implement `detect_phi_with_regex(file_content: str, file_path: Path) -> list[ScanFinding]`
+  — the Layer 1 delegated function; scans line-by-line using the pattern registry from 2B.1
 
 ### 2C — Layer 2: NLP Named Entity Recognition
 
@@ -620,25 +735,186 @@ and can be wired in before or alongside the detection engine.
 - [ ] **2C.2** Configure Presidio recognizers for: PERSON, GPE, DATE, ORG, LOCATION
 - [ ] **2C.3** Map Presidio entity types to HIPAA categories (Names → #1, Geographic → #2, etc.)
 - [ ] **2C.4** Set confidence thresholds — medium confidence findings flagged differently from high
-- [ ] **2C.5** Wire NLP layer into `scan_file()` — runs after regex layer
+- [ ] **2C.5** Implement `detect_phi_with_nlp(file_content: str, file_path: Path) -> list[ScanFinding]`
+  — the Layer 2 delegated function; runs after regex layer; applies Presidio NLP recognition
 - [ ] **2C.6** Graceful degradation: if spaCy model not installed, skip NLP layer with warning log and suggest `phi-scan setup`
 
-### 2D — Layer 3: FHIR Schema Awareness
+### 2D — Layer 3: Structured Healthcare Formats (FHIR R4 + HL7 v2)
 
-- [ ] **2D.1** Create `fhir_recognizer.py` — custom FHIR R4 pattern detector
+This layer detects PHI in structured healthcare data formats. FHIR R4 covers modern REST
+APIs; HL7 v2 covers the legacy transaction format still dominant in live hospital integrations
+(ADT feeds, lab results, pharmacy orders). Both must be supported natively — HL7 v2 is not
+a plugin because it appears in production healthcare codebases at least as often as FHIR.
+
+#### 2D-FHIR — FHIR R4 Schema Awareness
+
+- [ ] **2D.1** Create `fhir_recognizer.py` — custom FHIR R4 pattern detector; its detection logic
+  is called from `detect_phi_in_structured_content(file_content: str, file_path: Path) -> list[ScanFinding]`,
+  the Layer 3 delegated function that consolidates both FHIR and HL7 detection
 - [ ] **2D.2** Detect PHI-bearing FHIR field names in JSON/XML:
-  - Patient: name, birthDate, address, telecom, identifier, photo
+  - Patient: name, birthDate, address, telecom, identifier, photo, deceasedDateTime
   - Practitioner: name, identifier (NPI, DEA), telecom, address
-  - Observation: subject (Patient reference), performer
-  - DiagnosticReport: subject, performer, result
-  - Encounter: subject, participant, period
-  - Coverage: beneficiary, subscriber, subscriberId
+  - RelatedPerson: name, birthDate, address, telecom, relationship
+  - Observation: subject (Patient reference), performer, valueString, component
+  - DiagnosticReport: subject, performer, result, presentedForm
+  - Encounter: subject, participant, period, hospitalization
+  - Coverage: beneficiary, subscriber, subscriberId, payor
+  - Condition: subject, asserter, note (free-text diagnosis notes)
+  - MedicationRequest: subject, requester, note
+  - Procedure: subject, performer, note
+  - AllergyIntolerance: patient, asserter, note
+  - ImagingStudy: subject, referrer (DICOM metadata path — flag field presence, not binary)
 - [ ] **2D.3** Flag FHIR fields only when they contain non-synthetic/non-null values
-- [ ] **2D.4** Wire FHIR layer into `scan_file()` — runs on .json and .xml files
+- [ ] **2D.4** Wire FHIR detection into `detect_phi_in_structured_content()` — the Layer 3
+  delegated function attempts FHIR structure detection on content that does not match HL7 format
+- [ ] **2D.5** Detect FHIR Bundle resources — scan all `entry.resource` objects within a Bundle
+  regardless of resource type; Bundles are the transport envelope for all FHIR operations
+
+#### 2D-HL7 — HL7 v2 Message Segment Scanning
+
+HL7 v2 is a pipe-delimited message format used in ADT feeds, lab orders, pharmacy messages,
+and billing transactions. Nearly every hospital system generates HL7 v2 today. Files ending
+in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common sources of PHI.
+
+- [ ] **2D.6** Add `Hl7ScanContext` dataclass to `models.py` before implementing any HL7
+  scanning functions. This dataclass is the pre-approved container for HL7 attribution
+  context — it exists so `detect_phi_in_hl7_segment()` can accept attribution metadata
+  as a single third argument without violating the 3-argument limit at the call site:
+  ```python
+  @dataclass(frozen=True)
+  class Hl7ScanContext:
+      file_path: Path        # source file the HL7 message was read from
+      segment_index: int     # 0-based position of this segment in the message
+  ```
+  `frozen=True` enforces immutability — the context is read-only attribution data.
+  This dataclass must be defined before 2D.7 is implemented. If `detect_phi_in_hl7_segment()`
+  later requires attribution context, the signature becomes:
+  `detect_phi_in_hl7_segment(segment, segment_field_categories, context: Hl7ScanContext)`
+  — still 3 arguments and compliant. A fourth argument must never be added; add a field
+  to `Hl7ScanContext` instead.
+- [ ] **2D.7** Detect HL7 v2 message files — identify by MSH segment header (`MSH|^~\&|`)
+  in file content regardless of file extension (.hl7, .msg, .txt, .dat)
+- [ ] **2D.8** Implement HL7 v2 scanning functions in `scanner.py` (or a dedicated
+  `hl7_scanner.py` module). All names must comply with the project naming standards — the
+  plan proposes compliant names but does not grant exemptions from the standards:
+  - `is_hl7_message_format(file_content: str) -> bool` — returns True when content
+    contains a valid MSH segment header; used as the entry guard before HL7 parsing.
+    Naming rules satisfied: (1) the `is_` prefix satisfies the boolean-naming rule;
+    (2) the name reads as a predicate — "is [this content in] HL7 message format?" —
+    which satisfies the verb-noun pair requirement because `is_` acts as the predicate
+    verb and `hl7_message_format` is the noun phrase being tested. Both rules are met
+    without conflict. Call sites may use it directly in a conditional
+    (`if is_hl7_message_format(file_content):`) or store it
+    (`is_hl7_format = is_hl7_message_format(file_content)`) — both are compliant.
+    This function must be called only from within the HL7 detection delegated function,
+    not from `scan_file()` or `detect_phi_in_text_content()` directly.
+  - `detect_phi_in_hl7_segment(segment: hl7.Segment, segment_field_categories: Mapping[str, PhiCategory])
+    -> list[ScanFinding]` — scans one parsed segment, returns findings; pure function,
+    no side effects. `segment` is a parsed `hl7.Segment` instance, not a raw string.
+    `segment_field_categories` is typed as `Mapping` (not `dict`) to enforce the read-only
+    contract — the function must not mutate the lookup table it receives. The caller always
+    passes a module-level constant defined in `hl7_scanner.py` (e.g. `_PID_FIELD_CATEGORIES`,
+    `_NK1_FIELD_CATEGORIES`) — never a caller-constructed dict built at call time. These
+    per-segment lookup tables are module-private constants and must follow `UPPER_SNAKE_CASE`
+    with a leading underscore: `_PID_FIELD_CATEGORIES`, not `_pid_field_categories`. The
+    leading underscore is mandatory; they must not appear in `__all__`; no other module
+    may import them. The UPPER_SNAKE_CASE rule for module-level constants is not relaxed
+    for module-private names — only the leading underscore signals private scope.
+    **Attribution creep notice:** this signature is currently 2 arguments and compliant.
+    If `file_path` or `line_number` attribution context is ever needed inside this function,
+    a `@dataclass Hl7ScanContext` must be introduced before a third argument is added —
+    the 3-argument limit would be reached immediately. Do not add a third positional argument;
+    introduce the dataclass first.
+  Parse and scan the following PHI-bearing segments using the `hl7` library:
+  - **MSH** (Message Header) — MSH.4 (sending facility name can contain PHI in some systems)
+  - **PID** (Patient Identification) — PID.3 (patient ID/MRN), PID.5 (patient name),
+    PID.7 (date of birth), PID.8 (sex), PID.11 (address), PID.13/PID.14 (phone),
+    PID.19 (SSN), PID.20 (driver's license)
+  - **PD1** (Patient Additional Demographics) — PD1.3 (patient primary care provider name/NPI)
+  - **NK1** (Next of Kin) — NK1.2 (name), NK1.4 (address), NK1.5 (phone)
+  - **IN1/IN2** (Insurance) — IN1.2 (insurance plan ID), IN1.16 (insured name),
+    IN2.1 (insured employee ID), IN2.8 (military ID), IN2.61 (mother's maiden name)
+  - **OBX** (Observation) — OBX.5 (observation value — can contain lab result free text
+    with patient context); flag only when OBX.3 observation identifier suggests PHI
+  - **DG1** (Diagnosis) — DG1.3 (diagnosis code + description in patient context)
+  - **GT1** (Guarantor) — GT1.3 (guarantor name), GT1.5 (address), GT1.6 (phone)
+  - **AL1** (Allergy) — AL1.3 (allergy code/description in patient context)
+- [ ] **2D.9** Map HL7 v2 segment fields to HIPAA Safe Harbor categories:
+  - PID.5 → PhiCategory.NAME; PID.7 → PhiCategory.DATE; PID.19 → PhiCategory.SSN
+  - PID.11 → PhiCategory.GEOGRAPHIC; PID.13/14 → PhiCategory.PHONE; etc.
+- [ ] **2D.10** Wire HL7 v2 detection into `detect_phi_in_structured_content()` — the Layer 3
+  delegated function calls `is_hl7_message_format()` internally to decide whether to parse
+  as HL7; if True, it dispatches to the HL7 segment scanner; otherwise it attempts FHIR detection
+- [ ] **2D.11** Graceful degradation: if `hl7` library not installed, raise
+  `MissingOptionalDependencyError` at the point of first use inside the function that
+  needs the library. The import must be lazy (inside the function body), not at module
+  level — a module-level `ImportError` causes the entire `hl7_scanner` module to fail
+  to load and gives no function-level caller the chance to catch it.
+  Implement a private helper that encapsulates the lazy import exactly once:
+  ```python
+  def _import_hl7_library() -> types.ModuleType:
+      try:
+          import hl7  # noqa: PLC0415 (intentional lazy import)
+          return hl7
+      except ImportError as import_error:
+          raise MissingOptionalDependencyError(
+              "hl7 is required for HL7 v2 scanning"
+              " — install with: pip install phi-scan[hl7]"
+          ) from import_error
+  ```
+  Each HL7 function that needs the library calls `hl7_lib = _import_hl7_library()`
+  as its first statement. The caller of the HL7 detection delegated function catches
+  `MissingOptionalDependencyError` specifically, logs a structured WARNING
+  ("HL7 v2 scanning disabled — install phi-scan[hl7] to enable"), and continues with
+  other detection layers. Never catch bare `Exception`; never use `except ImportError: pass`.
+- [ ] **2D.12** Add `hl7` to `[project.optional-dependencies]` in `pyproject.toml`:
+  `hl7 = ["hl7>=0.4"]`; update `full` extra to include it
 
 ### 2E — Detection Integration
 
-- [ ] **2E.1** Combine all three layers in `scan_file()` — deduplicate overlapping findings
+- [ ] **2E.1** Define a coordinator function `detect_phi_in_text_content(file_content: str,
+  file_path: Path) -> list[ScanFinding]` that orchestrates all detection layers in order
+  (regex → NLP → FHIR/HL7 → quasi-identifier combination) and deduplicates overlapping
+  findings before returning. `file_path` is attribution metadata only — each returned
+  `ScanFinding` records it as its source file. `detect_phi_in_text_content()` must not
+  inspect `file_path` for any dispatch or routing decision.
+  `scan_file()`'s single responsibility is "return the PHI findings for a given file path."
+  The how — reading file bytes, decoding to text, calling `detect_phi_in_text_content()` —
+  is implementation detail, not a second responsibility. The function must not dispatch by
+  format (HL7 vs FHIR vs plain text) before calling the coordinator; doing so adds a
+  second named responsibility that violates the single-responsibility rule.
+  All format-detection gating lives inside each detection layer's
+  delegated function: the HL7 delegated function calls `is_hl7_message_format()` internally;
+  the FHIR delegated function examines content structure to decide whether to apply; the
+  regex and NLP layers apply to all text content unconditionally.
+  The layer implementation tasks (2B.4, 2C.5, 2D.4, 2D.10) produce the three
+  delegated functions; all three wire into `detect_phi_in_text_content()` via the
+  coordinator skeleton above, not directly into `scan_file()`.
+  The body of `detect_phi_in_text_content()` must consist exclusively of delegated function
+  calls. No pattern matching, entity recognition, or structural parsing logic may appear
+  inline. The 30-line maximum applies — "only makes delegated calls" is not an exemption.
+  The delegated layer functions (which must be named as specified here) are:
+  - `detect_phi_with_regex(file_content: str, file_path: Path) -> list[ScanFinding]` — Layer 1
+  - `detect_phi_with_nlp(file_content: str, file_path: Path) -> list[ScanFinding]` — Layer 2
+  - `detect_phi_in_structured_content(file_content: str, file_path: Path) -> list[ScanFinding]`
+    — Layer 3; internally calls `is_hl7_message_format()` and FHIR content detection to
+    decide which structured-format path to apply; consolidates HL7 and FHIR into one delegated call
+  The proposed body that verifies the 30-line claim (shown as a skeleton; docstring and
+  type imports are additional lines but do not count toward the 30-line function body limit):
+  ```python
+  def detect_phi_in_text_content(
+      file_content: str, file_path: Path
+  ) -> list[ScanFinding]:
+      all_findings: list[ScanFinding] = []
+      all_findings.extend(detect_phi_with_regex(file_content, file_path))
+      all_findings.extend(detect_phi_with_nlp(file_content, file_path))
+      all_findings.extend(detect_phi_in_structured_content(file_content, file_path))
+      all_findings.extend(detect_quasi_identifier_combination(all_findings))
+      return deduplicate_overlapping_findings(all_findings)
+  ```
+  This skeleton is 7 body lines. The 30-line limit is met with significant headroom.
+  If adding a future layer would exceed the limit, extract the `.extend()` accumulation
+  pattern into a named helper rather than inlining more calls.
 - [ ] **2E.2** Add `.phi-scanignore` support — patterns evaluated at every traversal depth
 - [ ] **2E.3** Add content-aware scan strategy — detect file type from content/extension for optimal scanning:
   - Structured data (.json, .xml, .yaml) → parse structure + scan values
@@ -670,6 +946,54 @@ and can be wired in before or alongside the detection engine.
   - Graceful degradation: if zipfile extraction fails, log warning and skip the archive
   - Remove .jar and .war from KNOWN_BINARY_EXTENSIONS in constants.py when this ships
   - Update `.phi-scanignore` Format Specification in PLAN.md to note archive inspection live
+- [ ] **2E.11** Quasi-identifier combination detection — implement as
+  `detect_quasi_identifier_combination(findings: list[ScanFinding]) -> list[ScanFinding]`.
+  Returns a list containing a single `PhiCategory.QUASI_IDENTIFIER_COMBINATION` finding when
+  a combination rule fires, or an empty list when no combination risk is present. An empty
+  list is the sentinel for "no match" — never return `None`. This return type is intentionally
+  consistent with every other detection function, which allows the coordinator to accumulate
+  results with `all_findings.extend(...)` without a None guard. Called at the end of
+  `detect_phi_in_text_content()` after all layer findings are collected. Pure function —
+  no side effects, no I/O. The proximity window must be read from
+  `QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES` — a module-level `int` constant defined in
+  `phi_scan/constants.py` and exported in its `__all__`; import it from `phi_scan.constants`.
+  Never compare against the literal `50` directly.
+  Each combination rule is a separate function delegated to from the coordinator — this keeps
+  `detect_quasi_identifier_combination()` under 30 lines and gives each rule a testable name.
+  Sub-evaluators use the same `list[ScanFinding]` return convention (empty = no match):
+  - `evaluate_zip_dob_sex_combination(findings: list[ScanFinding]) -> list[ScanFinding]`
+    ZIP code + date of birth + sex/gender → re-identification risk (Sweeney: 87% of US
+    population uniquely identified by these three fields alone); return a finding at HIGH
+    confidence even if each field alone would be MEDIUM or LOW
+  - `evaluate_name_date_combination(findings: list[ScanFinding]) -> list[ScanFinding]`
+    Name + any date → return a HIGH confidence finding regardless of individual scores
+  - `evaluate_age_geographic_combination(findings: list[ScanFinding]) -> list[ScanFinding]`
+    Age > `HIPAA_AGE_RESTRICTION_THRESHOLD` (ages 91+) + any geographic finding → HIGH.
+    HIPAA §164.514(b)(2)(i) restricts ages "over 90" specifically because they re-identify
+    when combined with geographic data. Never compare against the literal `90` — reference
+    `HIPAA_AGE_RESTRICTION_THRESHOLD` and check with `>`, not `>=`.
+  - `evaluate_colocated_identifier_combination(findings: list[ScanFinding]) -> list[ScanFinding]`
+    ≥ `MINIMUM_QUASI_IDENTIFIER_COUNT` distinct identifier categories present in the same
+    JSON object or data structure → elevated risk level. Never use the literal `2` — reference
+    `MINIMUM_QUASI_IDENTIFIER_COUNT`.
+  `detect_quasi_identifier_combination()` calls each evaluator in order, extends its result
+  list, and returns. No combination rule logic may be implemented inline in the coordinator.
+  The proposed body that verifies the 30-line claim:
+  ```python
+  def detect_quasi_identifier_combination(
+      findings: list[ScanFinding],
+  ) -> list[ScanFinding]:
+      combination_findings: list[ScanFinding] = []
+      combination_findings.extend(evaluate_zip_dob_sex_combination(findings))
+      combination_findings.extend(evaluate_name_date_combination(findings))
+      combination_findings.extend(evaluate_age_geographic_combination(findings))
+      combination_findings.extend(evaluate_colocated_identifier_combination(findings))
+      return combination_findings
+  ```
+  This skeleton is 7 body lines. The 30-line limit is met with significant headroom.
+  Each returned finding must be `PhiCategory.QUASI_IDENTIFIER_COMBINATION` with a note
+  listing which fields triggered the rule. Do not reuse `PhiCategory.UNIQUE_ID` — conflating
+  the two breaks compliance mapping at Layer 4.
 
 ### 2F — Auto-Fix Engine (`phi-scan fix`)
 
@@ -682,7 +1006,10 @@ Generate a git-applicable patch that developers can review and apply in seconds.
   - SSN → synthetic range `000-00-XXXX` (reserved non-real range)
   - MRN → synthetic `MRN-000001` through `MRN-999999`
   - Email → `user{N}@example.com` (RFC 2606 safe domain)
-  - Phone → `555-0100` to `555-0199` (reserved fictional range)
+  - Phone → `{FICTIONAL_PHONE_EXCHANGE}-{FICTIONAL_PHONE_SUBSCRIBER_DISPLAY_PREFIX}{FICTIONAL_PHONE_SUBSCRIBER_MIN}`
+    to `{FICTIONAL_PHONE_EXCHANGE}-{FICTIONAL_PHONE_SUBSCRIBER_DISPLAY_PREFIX}{FICTIONAL_PHONE_SUBSCRIBER_MAX}`
+    (FCC reserved fictional range; the display prefix "0" pads the 4-digit subscriber
+    representation and must not appear as a bare string literal "0" in generation code)
   - DOB/Dates → synthetic dates within plausible range (1950–2000)
   - Geographic → faker `fake.address()` (synthetic addresses)
   - IP address → RFC 5737 test range `192.0.2.X`, `198.51.100.X`
@@ -716,6 +1043,60 @@ Generate a git-applicable patch that developers can review and apply in seconds.
 - [ ] **2G.13** Test graceful degradation: NLP layer skipped when spaCy model not installed
 - [ ] **2G.14** End-to-end integration: scan → detect → cache → re-scan (cache hit) → output → audit
 
+### 2H — Compliance Scope & Known Limitations
+
+These notes document the regulatory scope of the Phase 2 detection engine and must be
+reflected in the Phase 4 documentation and compliance mapping.
+
+#### 2H.1 — Regulatory Coverage
+
+- [ ] **2H.1a** HIPAA Safe Harbor (§164.514(b)(2)) — primary standard; all 18 identifiers
+  covered by Layers 1–3. The scanner implements Safe Harbor by design. Expert Determination
+  (§164.514(b)(1)) requires a qualified statistician's certification — the tool alone cannot
+  satisfy Expert Determination; document this limitation explicitly in `docs/de-identification.md`.
+- [ ] **2H.1b** HITECH Act (45 CFR §§164.400–414) — the scanner directly supports HITECH
+  breach assessment by identifying what PHI is exposed. Flag in `phi-scan explain hipaa` that
+  HITECH extended HIPAA to business associates and established breach notification thresholds.
+- [ ] **2H.1c** 42 CFR Part 2 (Substance Use Disorder) — stricter than HIPAA; requires
+  explicit consent for disclosure even for treatment. The scanner must flag field names and
+  data patterns defined in `SUD_FIELD_NAME_PATTERNS` (a `frozenset[str]` in `constants.py`
+  containing: `substance_use`, `addiction_treatment`, `sud_diagnosis`, `alcohol_abuse`,
+  `opioid_treatment`, `methadone`, `buprenorphine`, `naloxone`, and related treatment program
+  keywords). Detection logic must iterate over `SUD_FIELD_NAME_PATTERNS` — never embed these
+  strings as inline literals. Map detections to `PhiCategory.SUBSTANCE_USE_DISORDER`
+  — a dedicated enum member added to `PhiCategory` in Phase 1B.2 (constants.py), not reused
+  from an existing category. Do NOT map to `PhiCategory.UNIQUE_ID`; SUD records are a distinct
+  regulatory category under a different statute with different consent requirements. Reusing
+  UNIQUE_ID would cause a semantic collision that forces runtime disambiguation via free-text
+  note fields — fragile and undetectable by the type checker.
+- [ ] **2H.1d** GINA (Genetic Information Nondiscrimination Act) — genetic information
+  (test results, family history, genomic data) is a protected category. Genetic identifier
+  patterns from 2B.1 cover this; document GINA applicability in compliance mapping.
+- [ ] **2H.1e** NIST SP 800-122 (PII Confidentiality Guide) — the PII side of the scanner
+  (non-health personal information) aligns with this standard. PII categories covered include
+  name, SSN, date of birth, address, phone, email, financial account numbers, and biometrics.
+  Document alignment in Phase 4 compliance mapping.
+
+#### 2H.2 — Known Detection Gaps (Must Be Documented)
+
+The following file types contain PHI in healthcare codebases but are skipped as binary.
+Document these gaps in `docs/de-identification.md` and `docs/known-limitations.md`:
+
+- [ ] **2H.2a** **PDF files** — `.pdf` is in `KNOWN_BINARY_EXTENSIONS` and will be skipped.
+  Lab results, discharge summaries, and medical records are often committed as PDFs.
+  Phase 2 does not address this. A future phase should add `pdfminer.six` text extraction.
+  Document limitation: "PDF files are not scanned. Use `phi-scan[pdf]` when available."
+- [ ] **2H.2b** **DICOM files** — DICOM (`.dcm`) medical imaging files contain patient
+  metadata in header tags (Patient Name, DOB, MRN, Physician). Not scanned in any phase.
+  Document limitation and track as a post-1.0 feature.
+- [ ] **2H.2c** **Office documents** — `.docx`, `.xlsx`, `.pptx` are in
+  `KNOWN_BINARY_EXTENSIONS`. Clinical notes and patient rosters are often stored as Office
+  files in test fixtures. Document as a known gap. Post-1.0 phase to add `python-docx` /
+  `openpyxl` text extraction.
+- [ ] **2H.2d** **Compiled code** — `.class`, `.pyc`, `.pyo` bytecode files are skipped.
+  Hardcoded PHI in source code will be caught pre-compilation; post-compilation artifacts
+  are out of scope by design. Document this as an intentional scope boundary.
+
 ### Phase 2 Verification Checklist
 
 - [ ] `phi-scan scan tests/fixtures/` detects all planted PHI
@@ -736,6 +1117,18 @@ Generate a git-applicable patch that developers can review and apply in seconds.
 - [ ] `--no-cache` forces full re-scan
 - [ ] `phi-scan explain hipaa` renders all 18 identifiers in terminal
 - [ ] NLP layer degrades gracefully without spaCy model
+- [ ] HL7 v2 MSH-identified file → PID.5 name and PID.19 SSN detected
+- [ ] HL7 v2 layer degrades gracefully when `hl7` library not installed
+- [ ] MBI pattern matches valid MBI, rejects SSN-length strings
+- [ ] SSN regex does not flag reserved ranges (000-XX-XXXX, 666-XX-XXXX, 900-XXX-XXXX)
+- [ ] Age >90 detected adjacent to `patient_age`-style variable name
+- [ ] ZIP+4 flagged; bare 3-digit prefix only flagged in patient-geographic context
+- [ ] NPI Type 2 (org-context) not flagged; NPI Type 1 (patient-context) flagged
+- [ ] DEA number checksum validation eliminates false positives
+- [ ] Quasi-identifier combination: ZIP + DOB + sex in same file → HIGH combined confidence
+- [ ] `phi-scan explain hipaa` mentions HITECH Act and 42 CFR Part 2
+- [ ] SUD-related field names (`opioid_treatment`, `sud_diagnosis`) detected and mapped
+- [ ] Genetic identifiers (`rs1234567`, VCF-format data) detected in patient context
 - [ ] `make test` passes with all new detection tests
 - [ ] `make typecheck` passes with all new modules
 
@@ -966,15 +1359,55 @@ HIPAA is primary, but healthcare orgs rarely care about HIPAA alone.
 
 - [ ] **4B.1** `phi_scan/compliance.py` — compliance framework mapping engine
 - [ ] **4B.2** Framework mappings (each finding tagged with applicable controls):
-  - **HIPAA** — 45 CFR §164.514 (primary, always on)
-  - **SOC 2 Type II** — CC6.1 (logical access), CC6.7 (data classification)
-  - **HITRUST CSF** — 09.s (exchange of information), 01.v (information access restriction)
-  - **NIST 800-53** — SC-28 (protection of information at rest), SI-1 (system/info integrity)
-  - **GDPR** — Article 32 (security of processing), Article 4 (personal data definition)
-- [ ] **4B.3** `--framework hipaa,soc2,hitrust` flag — annotate findings with selected frameworks
+  - **HIPAA** — 45 CFR §164.514 (Safe Harbor de-identification, primary, always on);
+    §164.530(j) (audit log retention); §164.312 (technical safeguards)
+  - **HITECH Act** — 45 CFR §§164.400–414 (breach notification thresholds and BA obligations);
+    findings from this scanner directly inform HITECH breach risk assessment. Map HIGH-confidence
+    findings to HITECH "unsecured PHI" definition — these trigger breach notification obligations.
+  - **SOC 2 Type II** — CC6.1 (logical and physical access controls), CC6.7 (data transmission
+    and disposal), CC6.6 (logical access security measures — PHI in code is a CC6.6 violation)
+  - **HITRUST CSF v11** — 09.s (monitoring system use and exchange of information),
+    01.v (information access restriction), 07.a (inventory of assets — PHI in source is
+    an uncontrolled asset), 09.ab (monitoring system use)
+  - **NIST SP 800-53 Rev 5** — SC-28 (protection of information at rest), SI-1 (system and
+    information integrity policy), AU-3 (content of audit records), AU-9 (protection of audit
+    information — tamper-evident log required), AU-10 (non-repudiation),
+    PM-22 (personally identifiable information quality management),
+    PT-2 (authority to process PII), PT-3 (purposes of PII processing)
+  - **NIST SP 800-122** — PII confidentiality guide; governs the PII detection side of the
+    scanner (non-health personal information). Controls: 2.1 (identify PII), 2.2 (minimize
+    PII), 4.1 (apply appropriate safeguards based on PII confidentiality impact level)
+  - **GDPR** — Article 4(1) (personal data definition), Article 4(15) (health data definition),
+    **Article 9** (special categories: health data, genetic data, biometric data used for unique
+    identification — these require explicit consent and are the highest-risk GDPR category),
+    Article 32 (security of processing), Article 25 (data protection by design and by default)
+  - **42 CFR Part 2** — Substance Use Disorder record confidentiality (stricter than HIPAA;
+    prohibits re-disclosure without explicit consent). Flag findings where SUD-related field
+    names or patterns are detected with a `42 CFR Part 2` annotation and elevated risk level.
+  - **GINA** — Genetic Information Nondiscrimination Act; genetic identifier findings
+    (rs-IDs, VCF data, gene panel names) map to GINA Title II (employment) and HIPAA's
+    genetic information provisions (45 CFR §164.514(b)(1))
+  - **State Laws (configurable via `--framework` flag)**:
+    - **California CMIA** — Confidentiality of Medical Information Act; stricter than HIPAA
+      for health apps, digital health services; civil penalties up to $250,000 per violation
+    - **California SB 3 / AB 825** — genomic data protections; genetic data requires
+      explicit consent; flag all genetic identifier findings with CMIA annotation when enabled
+    - **Illinois BIPA** — Biometric Information Privacy Act; private right of action;
+      biometric identifier findings always flagged with BIPA annotation when `--framework bipa`
+    - **New York SHIELD Act** — expanded breach notification; broader definition of private
+      information than federal HIPAA
+    - **Texas MRPA** — Medical Records Privacy Act; covers all identifiable health information
+      including information not covered by HIPAA
+- [ ] **4B.3** `--framework hipaa,soc2,hitrust,nist,gdpr,42cfr2,gina,cmia,bipa` flag —
+  annotate findings with selected frameworks; `hipaa` always on; others opt-in
 - [ ] **4B.4** Report includes compliance matrix: which frameworks are violated by each finding
 - [ ] **4B.5** PDF/HTML reports include framework-specific sections when `--framework` is used
 - [ ] **4B.6** `phi-scan explain frameworks` — new explain topic listing all supported frameworks
+  with full regulatory citation, enforcement body, and penalty ranges
+- [ ] **4B.7** `phi-scan explain deidentification` — explain HIPAA Safe Harbor vs Expert
+  Determination methods; document that PhiScan implements Safe Harbor; document that Expert
+  Determination requires a qualified statistician's sign-off that the tool alone cannot provide;
+  document known detection gaps (PDF, DICOM, Office documents, compiled code)
 
 ### 4C — Full Documentation Suite
 
@@ -987,6 +1420,27 @@ HIPAA is primary, but healthcare orgs rarely care about HIPAA alone.
 - [ ] **4C.7** `CONTRIBUTING.md` — how to contribute, code standards, PR process
 - [ ] **4C.8** Update README.md — add terminal screenshots, enterprise report examples
 - [ ] **4C.9** `docs/plugin-developer-guide.md` — how to build custom recognizers, register via entry points, test, and publish
+- [ ] **4C.10** `docs/compliance-frameworks.md` — complete regulatory reference:
+  - All supported frameworks with full citations (HIPAA, HITECH, NIST 800-53, NIST 800-122,
+    GDPR, 42 CFR Part 2, GINA, SOC 2, HITRUST, state laws)
+  - Per-framework control mappings table (which PhiScan findings violate which controls)
+  - Penalty ranges per framework (HIPAA tiers $100–$50,000/violation; GDPR up to 4% global
+    revenue; BIPA private right of action $1,000–$5,000/violation)
+  - Enforcement bodies (OCR for HIPAA/HITECH, FTC for GINA, state AGs for state laws)
+  - How to use `--framework` flag with CI/CD pipeline examples per framework
+- [ ] **4C.11** `docs/de-identification.md` — HIPAA de-identification guide:
+  - Safe Harbor method (§164.514(b)(2)) — what PhiScan covers and how
+  - Expert Determination method (§164.514(b)(1)) — requires qualified statistician;
+    PhiScan is a supporting tool, not a substitute for Expert Determination certification
+  - Known detection gaps: PDF, DICOM, Office documents, compiled bytecode
+  - Quasi-identifier re-identification risk (Sweeney research; ZIP+DOB+sex combination)
+  - Recommended remediation workflow: scan → fix → verify → baseline → monitor
+- [ ] **4C.12** `docs/known-limitations.md` — explicit documentation of detection boundaries:
+  - File types not scanned (PDF, DICOM, DOCX, XLSX, PPTX, compiled bytecode)
+  - Safe Harbor scope (not Expert Determination)
+  - State law coverage is advisory — a finding annotated with CMIA is not a legal opinion
+  - 42 CFR Part 2 detection is pattern-based — legal advice required for compliance decisions
+  - PHI-in-context vs. PHI-in-isolation — the scanner flags identifiers, not legal PHI status
 
 ### 4D — Phase 4 Testing
 
@@ -1008,8 +1462,16 @@ HIPAA is primary, but healthcare orgs rarely care about HIPAA alone.
 - [ ] Charts accurately reflect findings data
 - [ ] `--output pdf` and `--output html` produce valid files
 - [ ] `--framework soc2` adds SOC 2 control mappings to findings
+- [ ] `--framework gdpr` annotates health data findings with Article 9 (special categories)
+- [ ] `--framework 42cfr2` annotates SUD-related findings with 42 CFR Part 2 notice
+- [ ] `--framework gina` annotates genetic identifier findings with GINA protections
+- [ ] `--framework bipa` annotates biometric findings with BIPA private right of action notice
 - [ ] PDF/HTML reports include multi-framework compliance sections
-- [ ] `phi-scan explain frameworks` lists all supported compliance frameworks
+- [ ] `phi-scan explain frameworks` lists all supported compliance frameworks with penalty ranges
+- [ ] `phi-scan explain deidentification` documents Safe Harbor vs Expert Determination gap
+- [ ] `docs/compliance-frameworks.md` complete with citations, controls, and penalties
+- [ ] `docs/de-identification.md` complete with known gaps (PDF, DICOM, Office docs)
+- [ ] `docs/known-limitations.md` complete and honest about detection boundaries
 - [ ] All documentation files complete and cross-linked
 - [ ] CONTRIBUTING.md merged to repo
 
@@ -1054,6 +1516,19 @@ SQLite audit log with HIPAA-compliant retention and immutability.
 - [ ] **5C.5** `phi-scan history` command — query by date range, repo, violation-only filter
 - [ ] **5C.6** `phi-scan report` command — display last scan with Rich formatting
 - [ ] **5C.7** Trend analysis queries — supply data for trend charts (findings over time, by repo, by category)
+- [ ] **5C.8** Hash chain tamper evidence — each `scan_events` row stores an HMAC-SHA256
+  chain hash: `row_chain_hash = HMAC-SHA256(key=audit_secret, msg=prev_chain_hash + row_content)`.
+  The first row uses a fixed genesis hash. On startup, `verify_audit_chain(database_path)`
+  recomputes the chain and raises `AuditLogError` if any row hash does not match.
+  Satisfies NIST SP 800-53 Rev 5 AU-9 (protection of audit information) and AU-10
+  (non-repudiation). Without this, a database file can be silently modified at the OS level
+  despite application-level INSERT-only guards — the chain detects retroactive tampering.
+  - `audit_secret` stored in `~/.phi-scanner/audit.key` (generated on first run, never committed)
+  - `phi-scan history --verify` runs chain verification and reports integrity status
+  - Schema addition: `row_chain_hash TEXT NOT NULL` column in `scan_events`
+- [ ] **5C.9** Audit log encryption at rest — encrypt `audit.db` using SQLCipher or
+  file-level encryption (`cryptography` package, AES-256-GCM). Key stored separately from
+  database. Document key management requirements in `docs/security.md`.
 
 ### 5D — Notification Testing
 
@@ -1071,6 +1546,9 @@ SQLite audit log with HIPAA-compliant retention and immutability.
 - [ ] `phi-scan history --last 30d` returns correct results
 - [ ] `phi-scan report` displays last scan with Rich formatting
 - [ ] Retention policy is HIPAA-compliant (6 years minimum)
+- [ ] `phi-scan history --verify` recomputes chain hash and reports PASS or FAIL
+- [ ] Tampered row detected: manually modifying a row causes `--verify` to fail with clear message
+- [ ] Audit log encrypted at rest; unencrypted file not readable without key
 
 ---
 

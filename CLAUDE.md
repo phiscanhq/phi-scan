@@ -189,12 +189,12 @@ than crashing:
 
 ## Detection Architecture (4 Layers)
 
-| Layer   | Approach                     | Strength                                       |
-| ------- | ---------------------------- | ---------------------------------------------- |
-| Layer 1 | Regex / Pattern Matching     | Fast, zero false-negatives on structured PHI   |
-| Layer 2 | NLP Named Entity Recognition | Context-aware, catches names/locations in code |
-| Layer 3 | FHIR Schema Awareness        | Detects PHI-bearing FHIR field names           |
-| Layer 4 | AI Augmentation (optional)   | Reduces false positives via confidence scoring |
+| Layer   | Approach                              | Strength                                                      |
+| ------- | ------------------------------------- | ------------------------------------------------------------- |
+| Layer 1 | Regex / Pattern Matching              | Fast, zero false-negatives on structured PHI                  |
+| Layer 2 | NLP Named Entity Recognition          | Context-aware, catches names/locations in code                |
+| Layer 3 | Structured Healthcare Formats         | FHIR R4 field names + HL7 v2 segment scanning (PID, NK1, IN1) |
+| Layer 4 | AI Augmentation (optional)            | Reduces false positives via confidence scoring                |
 
 ---
 
@@ -232,6 +232,29 @@ be scanned without exception.
 Names, Geographic data, Dates (except year), Phone numbers, Fax numbers, Email addresses,
 SSN, MRN, Health plan numbers, Account numbers, Cert/License numbers, Vehicle identifiers,
 Device identifiers, URLs, IP addresses, Biometric identifiers, Full-face photos, Unique IDs.
+
+**Additional identifiers beyond the 18 Safe Harbor categories (also required):**
+
+- MBI (Medicare Beneficiary Identifier) — post-2019 Medicare ID; 11-char alphanumeric
+- HICN (legacy Medicare Health Insurance Claim Number) — SSN-based; lower confidence
+- DEA number — 2-letter prefix + 7 digits with checksum validation
+- Age >90 — HIPAA §164.514(b)(2)(i) requires ages over 90 to be generalized; flag explicitly
+- ZIP codes — 5-digit and ZIP+4 always flagged; 3-digit prefix only in patient-geographic context
+- Genetic identifiers — rs-IDs (dbSNP), VCF-format data, gene panel names (GINA + GDPR Art. 9)
+- SUD-related field names — 42 CFR Part 2 scope (stricter than HIPAA)
+- Quasi-identifier combinations — ZIP + DOB + sex together → HIGH risk regardless of individual scores
+
+**SSN reserved ranges — do NOT flag (reduces false positives on version numbers):**
+`000-XX-XXXX`, `XXX-00-XXXX`, `XXX-XX-0000`, `666-XX-XXXX`, `900-XX-XXXX` through `999-XX-XXXX`
+
+**NPI distinction:**
+- Type 1 (individual provider) — PHI in patient context; flag
+- Type 2 (organization) — public identifier; do not flag
+
+**Known detection gaps (document, do not silently skip):**
+PDF, DICOM, DOCX/XLSX files are skipped as binary. Document this in `docs/known-limitations.md`.
+The scanner implements HIPAA Safe Harbor only — Expert Determination requires a qualified
+statistician and cannot be satisfied by the tool alone.
 
 ---
 

@@ -5,6 +5,7 @@ import pytest
 from phi_scan.exceptions import (
     AuditLogError,
     ConfigurationError,
+    MissingOptionalDependencyError,
     PhiScanError,
     SchemaMigrationError,
     TraversalError,
@@ -25,6 +26,9 @@ _SAMPLE_AUDIT_LOG_ERROR_MESSAGE: str = (
 )
 _SAMPLE_SCHEMA_MIGRATION_ERROR_MESSAGE: str = (
     "cannot migrate schema from version 1 to version 3: version 2 migration missing"
+)
+_SAMPLE_MISSING_DEPENDENCY_ERROR_MESSAGE: str = (
+    "hl7 is required for HL7 v2 scanning — install with: pip install phi-scan[hl7]"
 )
 
 
@@ -83,3 +87,20 @@ def test_phi_scan_error_is_catchable_as_exception() -> None:
         raise PhiScanError(_PLACEHOLDER_ERROR_MESSAGE)
 
     assert str(exc_info.value) == _PLACEHOLDER_ERROR_MESSAGE
+
+
+def test_missing_optional_dependency_error_is_phi_scan_error_subclass() -> None:
+    assert issubclass(MissingOptionalDependencyError, PhiScanError)
+
+
+def test_missing_optional_dependency_error_preserves_message() -> None:
+    raised_error = MissingOptionalDependencyError(_SAMPLE_MISSING_DEPENDENCY_ERROR_MESSAGE)
+
+    assert str(raised_error) == _SAMPLE_MISSING_DEPENDENCY_ERROR_MESSAGE
+
+
+def test_missing_optional_dependency_error_is_catchable_as_phi_scan_error() -> None:
+    # Callers that handle any PhiScan error with `except PhiScanError` must catch
+    # MissingOptionalDependencyError too — it must not escape as a bare ImportError.
+    with pytest.raises(PhiScanError):
+        raise MissingOptionalDependencyError(_SAMPLE_MISSING_DEPENDENCY_ERROR_MESSAGE)
