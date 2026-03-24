@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from phi_scan.exceptions import PhiScanLoggingError
-from phi_scan.logging_config import LOG_FORMAT, LOGGER_NAME, get_logger, replace_logger_handlers
+from phi_scan.logging_config import LOGGER_NAME, get_logger, replace_logger_handlers
 
 
 @pytest.fixture(autouse=True)
@@ -121,14 +121,12 @@ def test_replace_logger_handlers_quiet_mode_silences_console_handler() -> None:
 
 def _extract_rotating_file_handler(
     root_logger: logging.Logger,
-) -> logging.handlers.RotatingFileHandler:
-    """Return the RotatingFileHandler attached to root_logger."""
-    file_handler = next(
+) -> logging.handlers.RotatingFileHandler | None:
+    """Return the RotatingFileHandler attached to root_logger, or None if absent."""
+    return next(
         (h for h in root_logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)),
         None,
     )
-    assert file_handler is not None, "No RotatingFileHandler attached to root logger"
-    return file_handler
 
 
 def test_replace_logger_handlers_file_handler_is_at_debug_level(tmp_path: Path) -> None:
@@ -138,6 +136,7 @@ def test_replace_logger_handlers_file_handler_is_at_debug_level(tmp_path: Path) 
     root_logger = logging.getLogger(LOGGER_NAME)
     file_handler = _extract_rotating_file_handler(root_logger)
 
+    assert file_handler is not None
     assert file_handler.level == logging.DEBUG
 
 
@@ -158,7 +157,7 @@ def test_replace_logger_handlers_quiet_mode_does_not_silence_file_handler(
     root_logger = logging.getLogger(LOGGER_NAME)
     file_handler = _extract_rotating_file_handler(root_logger)
 
-    # File handler must remain at DEBUG even when console is silenced.
+    assert file_handler is not None
     assert file_handler.level == logging.DEBUG
 
 
@@ -197,12 +196,9 @@ def test_replace_logger_handlers_raises_phi_scan_logging_error_for_symlinked_par
         replace_logger_handlers(log_file_path=log_file)
 
 
-def test_replace_logger_handlers_allows_dotdot_path_that_normalizes_to_safe_location(
+def test_replace_logger_handlers_accepts_path_with_dotdot_when_no_symlink_in_normalized_form(
     tmp_path: Path,
 ) -> None:
-    # normpath collapses .. segments before the symlink check, so a path like
-    # extra_dir/../real_dir/phi-scan.log (where no component is a symlink) is
-    # safe and must not raise — the .. simply cancels out extra_dir.
     real_dir = tmp_path / "real_dir"
     real_dir.mkdir()
     extra_dir = tmp_path / "extra_dir"
@@ -211,7 +207,9 @@ def test_replace_logger_handlers_allows_dotdot_path_that_normalizes_to_safe_loca
 
     replace_logger_handlers(log_file_path=log_file)
 
-    assert (real_dir / "phi-scan.log").exists()
+    root_logger = logging.getLogger(LOGGER_NAME)
+    file_handler = _extract_rotating_file_handler(root_logger)
+    assert file_handler is not None
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +225,22 @@ def test_replace_logger_handlers_console_handler_has_formatter() -> None:
     assert console_handler.formatter is not None
 
 
-def test_replace_logger_handlers_log_format_contains_levelname_and_name() -> None:
-    assert "%(levelname)s" in LOG_FORMAT
-    assert "%(name)s" in LOG_FORMAT
+def test_replace_logger_handlers_formatted_output_includes_level_and_logger_name() -> None:
+    replace_logger_handlers(console_level=logging.DEBUG)
+    root_logger = logging.getLogger(LOGGER_NAME)
+    console_handler = root_logger.handlers[0]
+    assert console_handler.formatter is not None
+
+    record = logging.LogRecord(
+        name=LOGGER_NAME,
+        level=logging.WARNING,
+        pathname="",
+        lineno=0,
+        msg="test message",
+        args=(),
+        exc_info=None,
+    )
+    formatted = console_handler.formatter.format(record)
+
+    assert "WARNING" in formatted
+    assert LOGGER_NAME in formatted

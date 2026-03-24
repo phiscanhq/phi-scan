@@ -26,6 +26,7 @@ _MAX_LOG_FILE_BYTES: int = _MAX_LOG_FILE_MEGABYTES * BYTES_PER_MEGABYTE
 _LOG_FILE_BACKUP_COUNT: int = 5
 _SILENCED_LOG_LEVEL: int = logging.CRITICAL + 1
 _LOG_DIRECTORY_MODE: int = 0o700
+_LOG_FILE_ENCODING: str = "utf-8"
 _SYMLINK_LOG_PATH_ERROR: str = "Log file path must not be a symlink: {path}"
 _SYMLINK_LOG_PARENT_ERROR: str = "Log file path resolves through a symlink: {path}"
 _LOG_DIRECTORY_CREATION_ERROR: str = "Cannot create log directory: {path}"
@@ -51,10 +52,7 @@ def replace_logger_handlers(
     log_file_path: Path | None = None,
     is_quiet: bool = False,
 ) -> None:
-    """Replace all phi_scan logger handlers with a fresh console and optional file handler.
-
-    Clears any existing handlers and attaches new ones. Calling this a second
-    time fully replaces the first configuration.
+    """Apply an output configuration to the phi_scan logger, replacing any existing setup.
 
     Args:
         console_level: Logging level for the console handler. Ignored when
@@ -68,8 +66,7 @@ def replace_logger_handlers(
     """
     root_logger = logging.getLogger(LOGGER_NAME)
     root_logger.setLevel(logging.DEBUG)
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
+    _detach_all_handlers(root_logger)
 
     console_handler = _build_console_handler(
         level=_SILENCED_LOG_LEVEL if is_quiet else console_level,
@@ -79,6 +76,16 @@ def replace_logger_handlers(
     if log_file_path is not None:
         file_handler = _build_file_handler(log_file_path)
         root_logger.addHandler(file_handler)
+
+
+def _detach_all_handlers(root_logger: logging.Logger) -> None:
+    """Remove every handler from root_logger using the thread-safe removeHandler API.
+
+    Args:
+        root_logger: The logger whose handlers should be cleared.
+    """
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
 
 
 def _build_console_handler(level: int) -> logging.StreamHandler[TextIO]:
@@ -169,7 +176,7 @@ def _build_rotating_handler(log_file_path: Path) -> logging.handlers.RotatingFil
         log_file_path,
         maxBytes=_MAX_LOG_FILE_BYTES,
         backupCount=_LOG_FILE_BACKUP_COUNT,
-        encoding="utf-8",
+        encoding=_LOG_FILE_ENCODING,
     )
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter(LOG_FORMAT))
