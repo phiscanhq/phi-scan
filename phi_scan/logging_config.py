@@ -5,19 +5,24 @@ from __future__ import annotations
 import logging
 import logging.handlers
 from pathlib import Path
+from typing import TextIO
+
+from phi_scan.exceptions import PhiScanLoggingError
 
 __all__ = [
+    "LOG_FORMAT",
     "configure_logging",
     "get_logger",
 ]
 
 _LOGGER_NAME: str = "phi_scan"
-_LOG_FORMAT: str = "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
+LOG_FORMAT: str = "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
 _DEFAULT_LOG_DIRECTORY: Path = Path.home() / ".phi-scanner"
 _DEFAULT_LOG_FILENAME: str = "phi-scan.log"
 _DEFAULT_CONSOLE_LEVEL: int = logging.WARNING
-_MAX_LOG_FILE_BYTES: int = 10 * 1024 * 1024  # 10 MB per rotation slice
-_LOG_FILE_BACKUP_COUNT: int = 5  # keep 5 rotated files
+_MAX_LOG_FILE_BYTES: int = 10 * 1024 * 1024
+_LOG_FILE_BACKUP_COUNT: int = 5
+_SILENCED_LOG_LEVEL: int = logging.CRITICAL + 1
 
 
 def get_logger(name: str | None = None) -> logging.Logger:
@@ -60,7 +65,7 @@ def configure_logging(
     root_logger.handlers.clear()
 
     console_handler = _build_console_handler(
-        level=logging.CRITICAL + 1 if is_quiet else console_level,
+        level=_SILENCED_LOG_LEVEL if is_quiet else console_level,
     )
     root_logger.addHandler(console_handler)
 
@@ -69,7 +74,7 @@ def configure_logging(
         root_logger.addHandler(file_handler)
 
 
-def _build_console_handler(level: int) -> logging.StreamHandler:  # type: ignore[type-arg]
+def _build_console_handler(level: int) -> logging.StreamHandler[TextIO]:
     """Build a StreamHandler with the standard phi_scan log format.
 
     Args:
@@ -78,9 +83,9 @@ def _build_console_handler(level: int) -> logging.StreamHandler:  # type: ignore
     Returns:
         A configured StreamHandler writing to stderr.
     """
-    handler = logging.StreamHandler()
+    handler: logging.StreamHandler[TextIO] = logging.StreamHandler()
     handler.setLevel(level)
-    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
     return handler
 
 
@@ -93,8 +98,15 @@ def _build_file_handler(log_file_path: Path) -> logging.handlers.RotatingFileHan
 
     Returns:
         A configured RotatingFileHandler at DEBUG level.
+
+    Raises:
+        PhiScanLoggingError: If log_file_path resolves to a symlink. Following
+            symlinks during log writes could redirect output to arbitrary files.
     """
-    resolved_path = log_file_path.expanduser().resolve()
+    expanded_path = log_file_path.expanduser()
+    if expanded_path.is_symlink():
+        raise PhiScanLoggingError(f"Log file path must not be a symlink: {expanded_path}")
+    resolved_path = expanded_path.resolve()
     resolved_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
     handler = logging.handlers.RotatingFileHandler(
@@ -104,5 +116,5 @@ def _build_file_handler(log_file_path: Path) -> logging.handlers.RotatingFileHan
         encoding="utf-8",
     )
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
     return handler

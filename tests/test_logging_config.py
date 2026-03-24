@@ -5,9 +5,20 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from phi_scan.logging_config import configure_logging, get_logger
+import pytest
+
+from phi_scan.exceptions import PhiScanLoggingError
+from phi_scan.logging_config import LOG_FORMAT, configure_logging, get_logger
 
 _PHI_SCAN_LOGGER_NAME: str = "phi_scan"
+
+
+@pytest.fixture(autouse=True)
+def reset_phi_scan_logger() -> object:
+    """Ensure each test starts and ends with a clean phi_scan logger state."""
+    yield
+    logger = logging.getLogger(_PHI_SCAN_LOGGER_NAME)
+    logger.handlers.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -107,12 +118,21 @@ def test_configure_logging_quiet_mode_silences_console_handler() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _get_file_handler(
+    root_logger: logging.Logger,
+) -> logging.handlers.RotatingFileHandler:
+    """Return the RotatingFileHandler attached to root_logger."""
+    return next(
+        h for h in root_logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+    )
+
+
 def test_configure_logging_file_handler_is_at_debug_level(tmp_path: Path) -> None:
     log_file = tmp_path / "phi-scan.log"
 
     configure_logging(log_file_path=log_file)
     root_logger = logging.getLogger(_PHI_SCAN_LOGGER_NAME)
-    file_handler = root_logger.handlers[1]
+    file_handler = _get_file_handler(root_logger)
 
     assert file_handler.level == logging.DEBUG
 
@@ -132,7 +152,7 @@ def test_configure_logging_quiet_mode_does_not_silence_file_handler(
 
     configure_logging(log_file_path=log_file, is_quiet=True)
     root_logger = logging.getLogger(_PHI_SCAN_LOGGER_NAME)
-    file_handler = root_logger.handlers[1]
+    file_handler = _get_file_handler(root_logger)
 
     # File handler must remain at DEBUG even when console is silenced.
     assert file_handler.level == logging.DEBUG
@@ -143,9 +163,21 @@ def test_configure_logging_file_handler_is_rotating_type(tmp_path: Path) -> None
 
     configure_logging(log_file_path=log_file)
     root_logger = logging.getLogger(_PHI_SCAN_LOGGER_NAME)
-    file_handler = root_logger.handlers[1]
+    file_handler = _get_file_handler(root_logger)
 
     assert isinstance(file_handler, logging.handlers.RotatingFileHandler)
+
+
+def test_configure_logging_raises_phi_scan_logging_error_for_symlinked_log_path(
+    tmp_path: Path,
+) -> None:
+    real_file = tmp_path / "real.log"
+    real_file.touch()
+    symlink_path = tmp_path / "phi-scan.log"
+    symlink_path.symlink_to(real_file)
+
+    with pytest.raises(PhiScanLoggingError):
+        configure_logging(log_file_path=symlink_path)
 
 
 # ---------------------------------------------------------------------------
@@ -162,11 +194,5 @@ def test_configure_logging_console_handler_has_formatter() -> None:
 
 
 def test_configure_logging_log_format_contains_levelname_and_name() -> None:
-    configure_logging()
-    root_logger = logging.getLogger(_PHI_SCAN_LOGGER_NAME)
-    formatter = root_logger.handlers[0].formatter
-    assert formatter is not None
-    fmt = formatter._fmt  # type: ignore[union-attr]
-
-    assert "%(levelname)s" in fmt
-    assert "%(name)s" in fmt
+    assert "%(levelname)s" in LOG_FORMAT
+    assert "%(name)s" in LOG_FORMAT
