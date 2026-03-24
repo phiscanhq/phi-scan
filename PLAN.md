@@ -531,6 +531,8 @@ from Phase 1 becomes a working scanner that finds real PHI. Also adds the deferr
 Phase 1 features: suppression system, scan cache, and explain commands.
 
 **Dependencies:** Phase 1 complete. `scan_file()` placeholder replaced with real detection.
+`scan_file()` delegates to `detect_phi_in_text_content()` — detection logic never lives
+directly in `scan_file()`.
 
 **Version on completion: 0.2.0**
 
@@ -667,7 +669,7 @@ and can be wired in before or alongside the detection engine.
     patient identifiers; protected under GINA (federal) and GDPR Article 9 (EU)
 - [ ] **2B.2** Implement confidence scoring for regex matches (high confidence for structured patterns)
 - [ ] **2B.3** Extract matched value, compute SHA-256 hash (never store raw value)
-- [ ] **2B.4** Wire regex layer into `scan_file()` — scan line-by-line
+- [ ] **2B.4** Wire regex layer into `detect_phi_in_text_content()` — scan line-by-line
 
 ### 2C — Layer 2: NLP Named Entity Recognition
 
@@ -675,7 +677,7 @@ and can be wired in before or alongside the detection engine.
 - [ ] **2C.2** Configure Presidio recognizers for: PERSON, GPE, DATE, ORG, LOCATION
 - [ ] **2C.3** Map Presidio entity types to HIPAA categories (Names → #1, Geographic → #2, etc.)
 - [ ] **2C.4** Set confidence thresholds — medium confidence findings flagged differently from high
-- [ ] **2C.5** Wire NLP layer into `scan_file()` — runs after regex layer
+- [ ] **2C.5** Wire NLP layer into `detect_phi_in_text_content()` — runs after regex layer
 - [ ] **2C.6** Graceful degradation: if spaCy model not installed, skip NLP layer with warning log and suggest `phi-scan setup`
 
 ### 2D — Layer 3: Structured Healthcare Formats (FHIR R4 + HL7 v2)
@@ -702,7 +704,7 @@ a plugin because it appears in production healthcare codebases at least as often
   - AllergyIntolerance: patient, asserter, note
   - ImagingStudy: subject, referrer (DICOM metadata path — flag field presence, not binary)
 - [ ] **2D.3** Flag FHIR fields only when they contain non-synthetic/non-null values
-- [ ] **2D.4** Wire FHIR layer into `scan_file()` — runs on .json and .xml files
+- [ ] **2D.4** Wire FHIR layer into `detect_phi_in_text_content()` — runs on .json and .xml files
 - [ ] **2D.5** Detect FHIR Bundle resources — scan all `entry.resource` objects within a Bundle
   regardless of resource type; Bundles are the transport envelope for all FHIR operations
 
@@ -741,7 +743,8 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
 - [ ] **2D.8** Map HL7 v2 segment fields to HIPAA Safe Harbor categories:
   - PID.5 → PhiCategory.NAME; PID.7 → PhiCategory.DATE; PID.19 → PhiCategory.SSN
   - PID.11 → PhiCategory.GEOGRAPHIC; PID.13/14 → PhiCategory.PHONE; etc.
-- [ ] **2D.9** Wire HL7 v2 detection into `scan_file()` — activated when MSH segment detected
+- [ ] **2D.9** Wire HL7 v2 detection into `detect_phi_in_text_content()` — activated when
+  `identify_hl7_message_format()` returns True for the file content
 - [ ] **2D.10** Graceful degradation: if `hl7` library not installed, raise
   `MissingOptionalDependencyError` (added to `exceptions.py` in Phase 1B.3 — see below)
   at the point of first use, then catch it one level up to skip HL7 scanning and log a
@@ -763,7 +766,16 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
 
 ### 2E — Detection Integration
 
-- [ ] **2E.1** Combine all three layers in `scan_file()` — deduplicate overlapping findings
+- [ ] **2E.1** Define a coordinator function `detect_phi_in_text_content(file_content: str,
+  file_path: Path) -> list[ScanFinding]` that orchestrates all detection layers in order
+  (regex → NLP → FHIR/HL7 → quasi-identifier combination) and deduplicates overlapping
+  findings before returning. `scan_file()` is responsible only for file I/O and format
+  dispatch — it reads the file, selects the appropriate branch (HL7, FHIR, plain text),
+  and delegates to `detect_phi_in_text_content()`. `scan_file()` must not contain any
+  detection logic itself. This separation is required by the single-responsibility rule:
+  `scan_file()` can be described as "read a file and dispatch to the detector"; adding
+  detection logic would require "and", which is banned. All four wire-in tasks below
+  (2B.4, 2C.5, 2D.4, 2D.9) wire into `detect_phi_in_text_content()`, not `scan_file()`.
 - [ ] **2E.2** Add `.phi-scanignore` support — patterns evaluated at every traversal depth
 - [ ] **2E.3** Add content-aware scan strategy — detect file type from content/extension for optimal scanning:
   - Structured data (.json, .xml, .yaml) → parse structure + scan values
@@ -795,11 +807,13 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   - Graceful degradation: if zipfile extraction fails, log warning and skip the archive
   - Remove .jar and .war from KNOWN_BINARY_EXTENSIONS in constants.py when this ships
   - Update `.phi-scanignore` Format Specification in PLAN.md to note archive inspection live
-- [ ] **2E.11** Quasi-identifier combination detection — flag files where multiple
-  lower-risk identifiers appear together within a proximity window. The window size must be
-  defined as `QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES: int = 50` in `constants.py` — never
-  as an inline literal. Implementation code must read `QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES`,
-  not compare against `50` directly.
+- [ ] **2E.11** Quasi-identifier combination detection — implement as
+  `evaluate_quasi_identifier_combination(findings: list[ScanFinding]) -> ScanFinding | None`.
+  Returns a single `PhiCategory.QUASI_IDENTIFIER_COMBINATION` finding when the proximity and
+  category conditions are met, or None when no combination risk is present. Called at the end
+  of `detect_phi_in_text_content()` after all layer findings are collected. Pure function —
+  no side effects, no I/O. The proximity window must be read from
+  `QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES` — never compare against the literal `50` directly.
   - ZIP code + date of birth + sex/gender → re-identification risk (Sweeney: 87% of US population
     uniquely identified by these three fields alone); boost combined confidence to HIGH even if
     each field alone would be MEDIUM or LOW
