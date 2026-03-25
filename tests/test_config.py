@@ -21,6 +21,7 @@ from phi_scan.exceptions import ConfigurationError
 from phi_scan.models import ScanConfig
 
 _SUPPORTED_VERSION: int = 1
+_CUSTOM_MAX_FILE_SIZE_MB: int = 25
 
 
 def _write_config(tmp_path: Path, content: dict[str, object]) -> Path:
@@ -101,12 +102,12 @@ def test_load_config_maps_severity_threshold_high_to_severity_level(
 
 def test_load_config_maps_max_file_size_mb_from_yaml(tmp_path: Path) -> None:
     config = _minimal_config()
-    config["scan"] = {"max_file_size_mb": 25}
+    config["scan"] = {"max_file_size_mb": _CUSTOM_MAX_FILE_SIZE_MB}
 
     config_file = _write_config(tmp_path, config)
     result = load_config(config_file)
 
-    assert result.max_file_size_mb == 25
+    assert result.max_file_size_mb == _CUSTOM_MAX_FILE_SIZE_MB
 
 
 def test_load_config_maps_exclude_paths_from_yaml(tmp_path: Path) -> None:

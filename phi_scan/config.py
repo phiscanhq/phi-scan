@@ -148,11 +148,11 @@ def load_config(config_path: Path) -> ScanConfig:
         ConfigurationError: If the file cannot be read, cannot be parsed as
             YAML, contains an unsupported version, or any field value is invalid.
     """
-    raw_config = _read_config_file(config_path)
-    _reject_unsupported_version(raw_config)
-    scan_section: dict[str, Any] = raw_config.get(_YAML_SECTION_SCAN, {})
-    output_section: dict[str, Any] = raw_config.get(_YAML_SECTION_OUTPUT, {})
-    audit_section: dict[str, Any] = raw_config.get(_YAML_SECTION_AUDIT, {})
+    parsed_yaml = _read_config_file(config_path)
+    _reject_unsupported_version(parsed_yaml)
+    scan_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_SCAN, {})
+    output_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_OUTPUT, {})
+    audit_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_AUDIT, {})
     _reject_follow_symlinks_enabled(scan_section)
     output_format = _parse_output_format(output_section)
     database_path = _parse_database_path(audit_section)
