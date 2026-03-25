@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from phi_scan.config import create_default_config, load_config
+from phi_scan.config import _CONFIG_FILE_ENCODING, create_default_config, load_config
 from phi_scan.constants import (
     AUDIT_RETENTION_DAYS,
     DEFAULT_CONFIDENCE_THRESHOLD,
@@ -26,7 +26,7 @@ _SUPPORTED_VERSION: int = 1
 def _write_config(tmp_path: Path, content: dict[str, object]) -> Path:
     """Write a minimal valid config dict as YAML and return the file path."""
     config_file = tmp_path / ".phi-scanner.yml"
-    config_file.write_text(yaml.dump(content), encoding="utf-8")
+    config_file.write_text(yaml.dump(content), encoding=_CONFIG_FILE_ENCODING)
     return config_file
 
 
@@ -272,6 +272,30 @@ def test_load_config_raises_configuration_error_for_non_string_database_path(
 ) -> None:
     config = _minimal_config()
     config["audit"] = {"database_path": 12345}
+
+    config_file = _write_config(tmp_path, config)
+
+    with pytest.raises(ConfigurationError):
+        load_config(config_file)
+
+
+def test_load_config_raises_configuration_error_for_confidence_threshold_above_maximum(
+    tmp_path: Path,
+) -> None:
+    config = _minimal_config()
+    config["scan"] = {"confidence_threshold": 1.1}
+
+    config_file = _write_config(tmp_path, config)
+
+    with pytest.raises(ConfigurationError):
+        load_config(config_file)
+
+
+def test_load_config_raises_configuration_error_for_confidence_threshold_below_minimum(
+    tmp_path: Path,
+) -> None:
+    config = _minimal_config()
+    config["scan"] = {"confidence_threshold": -0.1}
 
     config_file = _write_config(tmp_path, config)
 

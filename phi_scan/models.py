@@ -44,6 +44,8 @@ _MINIMUM_INCLUDE_EXTENSIONS_COUNT: int = 1
 # Extensions must start with a dot so they match pathlib.Path.suffix values
 # (e.g. ".py", not "py"). Bare extensions silently match nothing.
 _EXTENSION_DOT_PREFIX: str = "."
+_INVALID_OUTPUT_FORMAT_ERROR: str = "output_format must be an OutputFormat member, got {value!r}"
+_INVALID_DATABASE_PATH_ERROR: str = "database_path must be a Path, got {value!r}"
 
 
 class _ConfigField(StrEnum):
@@ -380,14 +382,12 @@ def _validate_include_extensions(include_extensions: object) -> None:
 
 def _validate_output_format(output_format: object) -> None:
     if not isinstance(output_format, OutputFormat):
-        raise ConfigurationError(
-            f"output_format must be an OutputFormat member, got {output_format!r}"
-        )
+        raise ConfigurationError(_INVALID_OUTPUT_FORMAT_ERROR.format(value=output_format))
 
 
 def _validate_database_path(database_path: object) -> None:
     if not isinstance(database_path, Path):
-        raise ConfigurationError(f"database_path must be a Path, got {database_path!r}")
+        raise ConfigurationError(_INVALID_DATABASE_PATH_ERROR.format(value=database_path))
 
 
 # Dispatch table for ScanConfig.__setattr__ — maps each field name to its validator.

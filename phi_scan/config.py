@@ -9,6 +9,8 @@ import yaml
 
 from phi_scan.constants import (
     AUDIT_RETENTION_DAYS,
+    CONFIDENCE_SCORE_MAXIMUM,
+    CONFIDENCE_SCORE_MINIMUM,
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_CONFIG_FILENAME,
     DEFAULT_DATABASE_PATH,
@@ -63,7 +65,11 @@ _INVALID_SEVERITY_ERROR: str = (
 )
 _INVALID_DATABASE_PATH_ERROR: str = "audit.database_path must be a string, got {value!r}"
 _INVALID_CONFIDENCE_THRESHOLD_ERROR: str = "scan.confidence_threshold {value!r} must be a number"
+_CONFIDENCE_THRESHOLD_RANGE_ERROR: str = (
+    "scan.confidence_threshold {value!r} is outside the valid range [{minimum}, {maximum}]"
+)
 _INVALID_MAX_FILE_SIZE_MB_ERROR: str = "scan.max_file_size_mb {value!r} must be an integer"
+_SYMLINK_TRAVERSAL_DISABLED: bool = False
 
 # ---------------------------------------------------------------------------
 # Default config template — written by create_default_config
@@ -295,13 +301,20 @@ def _parse_confidence_threshold(scan_section: dict[str, Any]) -> float:
         The confidence threshold as a float.
 
     Raises:
-        ConfigurationError: If the value cannot be coerced to float.
+        ConfigurationError: If the value cannot be coerced to float or is outside [0.0, 1.0].
     """
     raw = scan_section.get(_YAML_KEY_CONFIDENCE_THRESHOLD, DEFAULT_CONFIDENCE_THRESHOLD)
     try:
-        return float(raw)
+        value = float(raw)
     except (TypeError, ValueError) as error:
         raise ConfigurationError(_INVALID_CONFIDENCE_THRESHOLD_ERROR.format(value=raw)) from error
+    if not CONFIDENCE_SCORE_MINIMUM <= value <= CONFIDENCE_SCORE_MAXIMUM:
+        raise ConfigurationError(
+            _CONFIDENCE_THRESHOLD_RANGE_ERROR.format(
+                value=value, minimum=CONFIDENCE_SCORE_MINIMUM, maximum=CONFIDENCE_SCORE_MAXIMUM
+            )
+        )
+    return value
 
 
 def _parse_severity_level(scan_section: dict[str, Any]) -> SeverityLevel:
@@ -365,7 +378,7 @@ def _build_scan_config(
         confidence_threshold=_parse_confidence_threshold(scan_section),
         severity_threshold=_parse_severity_level(scan_section),
         max_file_size_mb=_parse_max_file_size_mb(scan_section),
-        should_follow_symlinks=False,
+        should_follow_symlinks=_SYMLINK_TRAVERSAL_DISABLED,
         include_extensions=scan_section.get(_YAML_KEY_INCLUDE_EXTENSIONS),
         exclude_paths=list(scan_section.get(_YAML_KEY_EXCLUDE_PATHS, [])),
         output_format=output_format,
