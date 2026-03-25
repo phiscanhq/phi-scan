@@ -14,6 +14,7 @@ from phi_scan.constants import (
     BYTES_PER_MEGABYTE,
     KNOWN_BINARY_EXTENSIONS,
     MAX_FILE_SIZE_MB,
+    PathspecMatchStyle,
     RiskLevel,
     SeverityLevel,
 )
@@ -32,12 +33,12 @@ _TEST_FILE_ENCODING: str = "utf-8"
 _SAMPLE_TEXT_CONTENT: str = "name = 'hello world'\n"
 _SAMPLE_IGNORE_PATTERN: str = "*.log"
 _IGNORE_COMMENT_LINE: str = "# this is a comment"
-_GITIGNORE_MATCH_STYLE: str = "gitignore"
 # Extension guaranteed to be in KNOWN_BINARY_EXTENSIONS — sorted for determinism.
-# The assertion below ensures a missing entry fails at import time with a clear message
-# rather than a cryptic StopIteration from next().
-assert KNOWN_BINARY_EXTENSIONS, "KNOWN_BINARY_EXTENSIONS must not be empty"
-_KNOWN_BINARY_EXTENSION: str = next(iter(sorted(KNOWN_BINARY_EXTENSIONS)))
+# If the constant is empty, _KNOWN_BINARY_EXTENSION falls back to "" so that
+# test_known_binary_extensions_is_not_empty fails with a clear message rather
+# than a cryptic StopIteration at import time.
+_SORTED_BINARY_EXTENSIONS: list[str] = sorted(KNOWN_BINARY_EXTENSIONS)
+_KNOWN_BINARY_EXTENSION: str = _SORTED_BINARY_EXTENSIONS[0] if _SORTED_BINARY_EXTENSIONS else ""
 # File size exactly one byte over the default limit — guaranteed to be skipped.
 _OVERSIZED_FILE_SIZE_BYTES: int = MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE + 1
 # Number of files created in multi-file execute_scan tests.
@@ -48,7 +49,7 @@ _MINIMUM_SCAN_DURATION: float = 0.0
 
 def _build_exclusion_spec(patterns: list[str]) -> pathspec.PathSpec:
     """Return a compiled PathSpec from the given pattern list."""
-    return pathspec.PathSpec.from_lines(_GITIGNORE_MATCH_STYLE, patterns)
+    return pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, patterns)
 
 
 def _build_default_config() -> ScanConfig:
@@ -114,6 +115,18 @@ def test_load_ignore_patterns_logs_info_when_file_not_found(
         load_ignore_patterns(missing_path)
 
     assert any("not found" in record.message for record in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# KNOWN_BINARY_EXTENSIONS guard
+# ---------------------------------------------------------------------------
+
+
+def test_known_binary_extensions_is_not_empty_for_binary_detection() -> None:
+    # _KNOWN_BINARY_EXTENSION is derived from KNOWN_BINARY_EXTENSIONS at module
+    # level. If the constant is ever emptied, this test fails with a diagnostic
+    # message before the binary-detection tests fail for confusing reasons.
+    assert KNOWN_BINARY_EXTENSIONS, "KNOWN_BINARY_EXTENSIONS must not be empty"
 
 
 # ---------------------------------------------------------------------------
@@ -334,19 +347,19 @@ def test_collect_scan_targets_skips_binary_files(tmp_path: Path) -> None:
     assert binary_file not in scan_targets
 
 
-def test_collect_scan_targets_skips_file_on_permission_error(tmp_path: Path) -> None:
-    # Raise PermissionError during read_bytes (binary check) — this fires
-    # after symlink/dir/exclusion checks, so root traversal is unaffected.
+def test_collect_scan_targets_skips_file_on_os_error(tmp_path: Path) -> None:
+    # Raise OSError during binary detection — fires after symlink/dir/exclusion
+    # checks, so root_path traversal is unaffected.
     text_file = tmp_path / "restricted.py"
     text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
 
-    with patch.object(Path, "read_bytes", side_effect=PermissionError("access denied")):
+    with patch("phi_scan.scanner.is_binary_file", side_effect=OSError("I/O error")):
         scan_targets = collect_scan_targets(tmp_path, [], _build_default_config())
 
     assert text_file not in scan_targets
 
 
-def test_collect_scan_targets_logs_warning_on_permission_error(
+def test_collect_scan_targets_logs_warning_on_os_error(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -355,11 +368,11 @@ def test_collect_scan_targets_logs_warning_on_permission_error(
 
     with (
         caplog.at_level(logging.WARNING, logger="phi_scan.scanner"),
-        patch.object(Path, "read_bytes", side_effect=PermissionError("access denied")),
+        patch("phi_scan.scanner.is_binary_file", side_effect=OSError("I/O error")),
     ):
         collect_scan_targets(tmp_path, [], _build_default_config())
 
-    assert any("permission denied" in record.message.lower() for record in caplog.records)
+    assert any("os error" in record.message.lower() for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +387,21 @@ def test_scan_file_returns_empty_list_for_any_file(tmp_path: Path) -> None:
     findings = scan_file(text_file, _build_default_config())
 
     assert findings == []
+
+
+def test_scan_file_logs_stub_warning(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Phase 1B stub must emit a WARNING so it cannot silently survive into
+    # Phase 2 wiring without the integration failure being visible in logs.
+    text_file = tmp_path / "source.py"
+    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+
+    with caplog.at_level(logging.WARNING, logger="phi_scan.scanner"):
+        scan_file(text_file, _build_default_config())
+
+    assert any("stub" in record.message.lower() for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------

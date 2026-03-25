@@ -26,6 +26,7 @@ __all__ = [
     "DEFAULT_CONFIG_FILENAME",
     "DEFAULT_DATABASE_PATH",
     "DEFAULT_IGNORE_FILENAME",
+    "DEFAULT_TEXT_ENCODING",
     "DBSNP_RS_ID_MAX_DIGITS",
     "DBSNP_RS_ID_MIN_DIGITS",
     "DEA_NUMBER_DIGIT_COUNT",
@@ -47,6 +48,7 @@ __all__ = [
     "MBI_CHARACTER_COUNT",
     "MINIMUM_QUASI_IDENTIFIER_COUNT",
     "OutputFormat",
+    "PathspecMatchStyle",
     "PhiCategory",
     "QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES",
     "RiskLevel",
@@ -64,6 +66,9 @@ __all__ = [
 DEFAULT_CONFIG_FILENAME: str = ".phi-scanner.yml"
 DEFAULT_DATABASE_PATH: str = "~/.phi-scanner/audit.db"
 DEFAULT_IGNORE_FILENAME: str = ".phi-scanignore"
+# UTF-8 is the only encoding PhiScan reads or writes. Centralised here so
+# every module imports the same constant rather than embedding "utf-8" inline.
+DEFAULT_TEXT_ENCODING: str = "utf-8"
 
 # ---------------------------------------------------------------------------
 # Binary file detection
@@ -333,6 +338,18 @@ CACHE_SCHEMA_VERSION: int = 1
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
+
+
+class PathspecMatchStyle(StrEnum):
+    """Match-style tokens accepted by pathspec.PathSpec.from_lines.
+
+    GITIGNORE is the current canonical token (replaces the deprecated
+    gitwildmatch alias). Only one style is used by PhiScan, but an Enum
+    prevents the token from being duplicated as bare string literals across
+    modules.
+    """
+
+    GITIGNORE = "gitignore"
 
 
 class OutputFormat(StrEnum):

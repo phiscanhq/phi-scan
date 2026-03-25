@@ -12,7 +12,9 @@ import pathspec
 from phi_scan.constants import (
     BINARY_CHECK_BYTE_COUNT,
     BYTES_PER_MEGABYTE,
+    DEFAULT_TEXT_ENCODING,
     KNOWN_BINARY_EXTENSIONS,
+    PathspecMatchStyle,
     PhiCategory,
     RiskLevel,
     SeverityLevel,
@@ -43,10 +45,13 @@ _OVERSIZED_FILE_SKIPPED_WARNING: str = "Skipping {path!r} — size exceeds the {
 _BINARY_FILE_SKIPPED_INFO: str = "Skipping {path!r} — detected as binary"
 _EXTENSION_SKIPPED_DEBUG: str = "Skipping {path!r} — extension not in include_extensions"
 _EXCLUDED_PATH_DEBUG: str = "Skipping {path!r} — matched exclusion pattern"
-_PERMISSION_DENIED_WARNING: str = "Skipping {path!r} — permission denied"
+_FILE_OS_ERROR_WARNING: str = "Skipping {path!r} — OS error: {error}"
 _IGNORE_FILE_MISSING_INFO: str = "Ignore file {path!r} not found — no patterns loaded"
-_IGNORE_FILE_ENCODING: str = "utf-8"
-_PATHSPEC_MATCH_STYLE: str = "gitignore"
+# Phase 1B stub — emitted once per call to scan_file to prevent silent integration
+# failures if the placeholder is accidentally left in place during Phase 2 wiring.
+_SCAN_FILE_STUB_WARNING: str = (
+    "scan_file is a Phase 1B stub — no PHI detection performed on {path!r}"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +76,7 @@ def load_ignore_patterns(ignore_file_path: Path) -> list[str]:
     if not ignore_file_path.exists():
         _logger.info(_IGNORE_FILE_MISSING_INFO.format(path=ignore_file_path))
         return []
-    raw_lines = ignore_file_path.read_text(encoding=_IGNORE_FILE_ENCODING).splitlines()
+    raw_lines = ignore_file_path.read_text(encoding=DEFAULT_TEXT_ENCODING).splitlines()
     return [line for line in raw_lines if line.strip() and not line.startswith("#")]
 
 
@@ -107,7 +112,10 @@ def is_binary_file(file_path: Path) -> bool:
     """
     if file_path.suffix.lower() in KNOWN_BINARY_EXTENSIONS:
         return True
-    file_header = file_path.read_bytes()[:BINARY_CHECK_BYTE_COUNT]
+    # open("rb").read(N) reads only the first N bytes — read_bytes() would load the
+    # entire file before slicing, wasting memory on large files near the size limit.
+    with file_path.open("rb") as binary_reader:
+        file_header = binary_reader.read(BINARY_CHECK_BYTE_COUNT)
     return b"\x00" in file_header
 
 
@@ -127,8 +135,8 @@ def collect_scan_targets(
     5. Skip files exceeding config.max_file_size_mb (log WARNING).
     6. Skip binary files (log INFO).
 
-    A PermissionError on any individual file is caught, logged as a WARNING,
-    and skipped. The scan continues with remaining files.
+    An OSError on any individual file (including PermissionError) is caught,
+    logged as a WARNING, and skipped. The scan continues with remaining files.
 
     Args:
         root_path: Root directory to scan recursively via rglob("*").
@@ -143,7 +151,7 @@ def collect_scan_targets(
         TraversalError: If root_path does not exist or is not a directory.
     """
     _reject_nonexistent_root(root_path)
-    exclusion_spec = pathspec.PathSpec.from_lines(_PATHSPEC_MATCH_STYLE, excluded_patterns)
+    exclusion_spec = pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, excluded_patterns)
     max_file_size_bytes = config.max_file_size_mb * BYTES_PER_MEGABYTE
     scan_targets: list[Path] = []
     for candidate in root_path.rglob("*"):
@@ -162,8 +170,11 @@ def collect_scan_targets(
             if _skip_binary_file(candidate):
                 continue
             scan_targets.append(candidate)
-        except PermissionError:
-            _logger.warning(_PERMISSION_DENIED_WARNING.format(path=candidate))
+        except OSError as file_error:
+            # Catches PermissionError and other OS-level errors (e.g. I/O errors
+            # from networked or fuse filesystems). Each file is isolated — one
+            # unreadable file must never abort the entire scan.
+            _logger.warning(_FILE_OS_ERROR_WARNING.format(path=candidate, error=file_error))
     return scan_targets
 
 
@@ -171,7 +182,8 @@ def scan_file(file_path: Path, config: ScanConfig) -> list[ScanFinding]:
     """Scan a single file for PHI/PII findings.
 
     Phase 1B placeholder — detection layers are implemented in Phase 2.
-    Always returns an empty list.
+    Always returns an empty list. A WARNING is logged on every call so that
+    the stub cannot silently survive into Phase 2 wiring without detection.
 
     Args:
         file_path: Path to the file to scan.
@@ -180,6 +192,7 @@ def scan_file(file_path: Path, config: ScanConfig) -> list[ScanFinding]:
     Returns:
         An empty list. Detection logic is added in Phase 2B.
     """
+    _logger.warning(_SCAN_FILE_STUB_WARNING.format(path=file_path))
     return []
 
 
