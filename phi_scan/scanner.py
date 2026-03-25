@@ -52,6 +52,9 @@ _IGNORE_FILE_MISSING_INFO: str = "Ignore file {path!r} not found — no patterns
 _SCAN_FILE_STUB_WARNING: str = (
     "scan_file is a Phase 1B stub — no PHI detection performed on {path!r}"
 )
+# Binary file detection constants — never embed these literals in logic code.
+_NULL_BYTE: bytes = b"\x00"
+_BINARY_READ_MODE: str = "rb"
 
 
 # ---------------------------------------------------------------------------
@@ -112,11 +115,11 @@ def is_binary_file(file_path: Path) -> bool:
     """
     if file_path.suffix.lower() in KNOWN_BINARY_EXTENSIONS:
         return True
-    # open("rb").read(N) reads only the first N bytes — read_bytes() would load the
-    # entire file before slicing, wasting memory on large files near the size limit.
-    with file_path.open("rb") as binary_reader:
+    # open(_BINARY_READ_MODE).read(N) reads only the first N bytes — read_bytes()
+    # would load the entire file before slicing, wasting memory on files near the limit.
+    with file_path.open(_BINARY_READ_MODE) as binary_reader:
         file_header = binary_reader.read(BINARY_CHECK_BYTE_COUNT)
-    return b"\x00" in file_header
+    return _NULL_BYTE in file_header
 
 
 def collect_scan_targets(
@@ -150,24 +153,24 @@ def collect_scan_targets(
     Raises:
         TraversalError: If root_path does not exist or is not a directory.
     """
-    _reject_nonexistent_root(root_path)
+    _reject_invalid_scan_root(root_path)
     exclusion_spec = pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, excluded_patterns)
     max_file_size_bytes = config.max_file_size_mb * BYTES_PER_MEGABYTE
     scan_targets: list[Path] = []
     for candidate in root_path.rglob("*"):
         try:
-            if _skip_symlink_candidate(candidate):
+            if _should_skip_symlink_candidate(candidate):
                 continue
             if candidate.is_dir():
                 continue
             relative_path = candidate.relative_to(root_path)
-            if _skip_excluded_candidate(relative_path, exclusion_spec):
+            if _should_skip_excluded_candidate(relative_path, exclusion_spec):
                 continue
-            if _skip_wrong_extension(candidate, config.include_extensions):
+            if _should_skip_wrong_extension(candidate, config.include_extensions):
                 continue
-            if _skip_oversized_file(candidate, max_file_size_bytes):
+            if _should_skip_oversized_file(candidate, max_file_size_bytes):
                 continue
-            if _skip_binary_file(candidate):
+            if _should_skip_binary_file(candidate):
                 continue
             scan_targets.append(candidate)
         except OSError as file_error:
@@ -197,10 +200,10 @@ def scan_file(file_path: Path, config: ScanConfig) -> list[ScanFinding]:
 
 
 def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
-    """Execute a full scan over the given file list and return aggregated results.
+    """Scan every file in scan_targets and return the aggregated ScanResult.
 
-    Calls scan_file on each target, aggregates findings, and builds the
-    ScanResult. Wall-clock duration is measured via time.monotonic().
+    Responsibility: run the scan loop. Result construction is delegated to
+    _build_scan_result so this function is describable in one sentence.
 
     Args:
         scan_targets: Ordered list of files to scan, as returned by
@@ -216,19 +219,44 @@ def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
     for file_path in scan_targets:
         file_findings = scan_file(file_path, config)
         all_findings.extend(file_findings)
-    findings_tuple = tuple(all_findings)
     scan_duration = time.monotonic() - scan_start
-    is_clean = len(findings_tuple) == 0
-    files_with_findings = len({f.file_path for f in findings_tuple})
+    return _build_scan_result(tuple(all_findings), len(scan_targets), scan_duration)
+
+
+# ---------------------------------------------------------------------------
+# Private helpers — scan execution
+# ---------------------------------------------------------------------------
+
+
+def _build_scan_result(
+    findings: tuple[ScanFinding, ...],
+    files_scanned: int,
+    scan_duration: float,
+) -> ScanResult:
+    """Construct a ScanResult from aggregated scan data.
+
+    Computes is_clean, files_with_findings, risk level, and count mappings
+    from the findings tuple so execute_scan is responsible only for the loop.
+
+    Args:
+        findings: All findings produced by the scan.
+        files_scanned: Total number of files passed to scan_file.
+        scan_duration: Wall-clock seconds measured by execute_scan.
+
+    Returns:
+        A fully populated, immutable ScanResult.
+    """
+    is_clean = len(findings) == 0
+    files_with_findings = len({f.file_path for f in findings})
     return ScanResult(
-        findings=findings_tuple,
-        files_scanned=len(scan_targets),
+        findings=findings,
+        files_scanned=files_scanned,
         files_with_findings=files_with_findings,
         scan_duration=scan_duration,
         is_clean=is_clean,
-        risk_level=_derive_risk_level(findings_tuple),
-        severity_counts=_count_by_severity(findings_tuple),
-        category_counts=_count_by_category(findings_tuple),
+        risk_level=_derive_risk_level(findings),
+        severity_counts=_count_by_severity(findings),
+        category_counts=_count_by_category(findings),
     )
 
 
@@ -237,8 +265,11 @@ def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
 # ---------------------------------------------------------------------------
 
 
-def _reject_nonexistent_root(root_path: Path) -> None:
-    """Raise TraversalError if root_path does not exist or is not a directory.
+def _reject_invalid_scan_root(root_path: Path) -> None:
+    """Raise TraversalError if root_path is not a readable, existing directory.
+
+    Covers two distinct invalid states: a path that does not exist, and a path
+    that exists but is not a directory (e.g. a file passed where a root was expected).
 
     Args:
         root_path: The scan root to validate.
@@ -252,7 +283,7 @@ def _reject_nonexistent_root(root_path: Path) -> None:
         raise TraversalError(_ROOT_PATH_NOT_DIRECTORY_ERROR.format(path=root_path))
 
 
-def _skip_symlink_candidate(candidate: Path) -> bool:
+def _should_skip_symlink_candidate(candidate: Path) -> bool:
     """Return True and log a warning if candidate is a symlink.
 
     Args:
@@ -267,7 +298,7 @@ def _skip_symlink_candidate(candidate: Path) -> bool:
     return False
 
 
-def _skip_excluded_candidate(
+def _should_skip_excluded_candidate(
     relative_path: Path,
     exclusion_spec: pathspec.PathSpec,
 ) -> bool:
@@ -286,7 +317,7 @@ def _skip_excluded_candidate(
     return False
 
 
-def _skip_wrong_extension(candidate: Path, include_extensions: list[str] | None) -> bool:
+def _should_skip_wrong_extension(candidate: Path, include_extensions: list[str] | None) -> bool:
     """Return True and log a debug message if candidate's extension is not in the allowlist.
 
     Args:
@@ -305,7 +336,7 @@ def _skip_wrong_extension(candidate: Path, include_extensions: list[str] | None)
     return False
 
 
-def _skip_oversized_file(candidate: Path, max_file_size_bytes: int) -> bool:
+def _should_skip_oversized_file(candidate: Path, max_file_size_bytes: int) -> bool:
     """Return True and log a warning if candidate's size exceeds the configured limit.
 
     The megabyte value shown in the log message is derived from max_file_size_bytes
@@ -325,7 +356,7 @@ def _skip_oversized_file(candidate: Path, max_file_size_bytes: int) -> bool:
     return False
 
 
-def _skip_binary_file(candidate: Path) -> bool:
+def _should_skip_binary_file(candidate: Path) -> bool:
     """Return True and log an info message if candidate is a binary file.
 
     Args:
@@ -387,10 +418,10 @@ def _count_by_severity(
     Returns:
         An immutable mapping from SeverityLevel to finding count.
     """
-    counts: dict[SeverityLevel, int] = {level: 0 for level in SeverityLevel}
+    severity_counts: dict[SeverityLevel, int] = {level: 0 for level in SeverityLevel}
     for finding in findings:
-        counts[finding.severity] += 1
-    return MappingProxyType(counts)
+        severity_counts[finding.severity] += 1
+    return MappingProxyType(severity_counts)
 
 
 def _count_by_category(
@@ -407,7 +438,7 @@ def _count_by_category(
     Returns:
         An immutable mapping from PhiCategory to finding count.
     """
-    counts: dict[PhiCategory, int] = {category: 0 for category in PhiCategory}
+    category_counts: dict[PhiCategory, int] = {category: 0 for category in PhiCategory}
     for finding in findings:
-        counts[finding.hipaa_category] += 1
-    return MappingProxyType(counts)
+        category_counts[finding.hipaa_category] += 1
+    return MappingProxyType(category_counts)

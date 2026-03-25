@@ -12,6 +12,7 @@ import pytest
 from phi_scan.constants import (
     BINARY_CHECK_BYTE_COUNT,
     BYTES_PER_MEGABYTE,
+    DEFAULT_TEXT_ENCODING,
     KNOWN_BINARY_EXTENSIONS,
     MAX_FILE_SIZE_MB,
     PathspecMatchStyle,
@@ -29,7 +30,6 @@ from phi_scan.scanner import (
     scan_file,
 )
 
-_TEST_FILE_ENCODING: str = "utf-8"
 _SAMPLE_TEXT_CONTENT: str = "name = 'hello world'\n"
 _SAMPLE_IGNORE_PATTERN: str = "*.log"
 _IGNORE_COMMENT_LINE: str = "# this is a comment"
@@ -64,7 +64,7 @@ def _build_default_config() -> ScanConfig:
 
 def test_load_ignore_patterns_returns_pattern_lines_from_file(tmp_path: Path) -> None:
     ignore_file = tmp_path / ".phi-scanignore"
-    ignore_file.write_text(_SAMPLE_IGNORE_PATTERN, encoding=_TEST_FILE_ENCODING)
+    ignore_file.write_text(_SAMPLE_IGNORE_PATTERN, encoding=DEFAULT_TEXT_ENCODING)
 
     patterns = load_ignore_patterns(ignore_file)
 
@@ -75,7 +75,7 @@ def test_load_ignore_patterns_skips_blank_lines(tmp_path: Path) -> None:
     ignore_file = tmp_path / ".phi-scanignore"
     ignore_file.write_text(
         f"{_SAMPLE_IGNORE_PATTERN}\n\n*.tmp\n",
-        encoding=_TEST_FILE_ENCODING,
+        encoding=DEFAULT_TEXT_ENCODING,
     )
 
     patterns = load_ignore_patterns(ignore_file)
@@ -88,7 +88,7 @@ def test_load_ignore_patterns_skips_comment_lines(tmp_path: Path) -> None:
     ignore_file = tmp_path / ".phi-scanignore"
     ignore_file.write_text(
         f"{_IGNORE_COMMENT_LINE}\n{_SAMPLE_IGNORE_PATTERN}\n",
-        encoding=_TEST_FILE_ENCODING,
+        encoding=DEFAULT_TEXT_ENCODING,
     )
 
     patterns = load_ignore_patterns(ignore_file)
@@ -179,7 +179,7 @@ def test_is_binary_file_returns_true_when_null_byte_present(tmp_path: Path) -> N
 
 def test_is_binary_file_returns_false_for_plain_text_file(tmp_path: Path) -> None:
     text_file = tmp_path / "hello.py"
-    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     assert is_binary_file(text_file) is False
 
@@ -217,7 +217,7 @@ def test_collect_scan_targets_raises_traversal_error_when_root_is_a_file(
     tmp_path: Path,
 ) -> None:
     file_root = tmp_path / "not_a_dir.py"
-    file_root.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    file_root.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     with pytest.raises(TraversalError):
         collect_scan_targets(file_root, [], _build_default_config())
@@ -238,7 +238,7 @@ def test_collect_scan_targets_returns_empty_list_for_empty_directory(
 
 def test_collect_scan_targets_returns_text_file_in_root(tmp_path: Path) -> None:
     text_file = tmp_path / "source.py"
-    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     scan_targets = collect_scan_targets(tmp_path, [], _build_default_config())
 
@@ -249,7 +249,7 @@ def test_collect_scan_targets_recurses_into_subdirectories(tmp_path: Path) -> No
     nested_dir = tmp_path / "src" / "module"
     nested_dir.mkdir(parents=True)
     nested_file = nested_dir / "deep.py"
-    nested_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    nested_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     scan_targets = collect_scan_targets(tmp_path, [], _build_default_config())
 
@@ -265,7 +265,7 @@ def test_collect_scan_targets_excludes_file_matching_exclusion_pattern(
     tmp_path: Path,
 ) -> None:
     excluded_file = tmp_path / "debug.log"
-    excluded_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    excluded_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     scan_targets = collect_scan_targets(tmp_path, ["*.log"], _build_default_config())
 
@@ -278,7 +278,7 @@ def test_collect_scan_targets_excludes_directory_matching_exclusion_pattern(
     node_modules = tmp_path / "node_modules"
     node_modules.mkdir()
     js_file = node_modules / "index.js"
-    js_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    js_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     scan_targets = collect_scan_targets(tmp_path, ["node_modules/"], _build_default_config())
 
@@ -287,9 +287,9 @@ def test_collect_scan_targets_excludes_directory_matching_exclusion_pattern(
 
 def test_collect_scan_targets_respects_include_extensions_filter(tmp_path: Path) -> None:
     py_file = tmp_path / "source.py"
-    py_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    py_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
     js_file = tmp_path / "source.js"
-    js_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    js_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     config = ScanConfig(include_extensions=[".py"])
     scan_targets = collect_scan_targets(tmp_path, [], config)
@@ -305,7 +305,7 @@ def test_collect_scan_targets_respects_include_extensions_filter(tmp_path: Path)
 
 def test_collect_scan_targets_skips_symlinks(tmp_path: Path) -> None:
     real_file = tmp_path / "real.py"
-    real_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    real_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
     symlink_file = tmp_path / "link.py"
     symlink_file.symlink_to(real_file)
 
@@ -319,7 +319,7 @@ def test_collect_scan_targets_logs_warning_when_symlink_skipped(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     real_file = tmp_path / "real.py"
-    real_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    real_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
     symlink_file = tmp_path / "link.py"
     symlink_file.symlink_to(real_file)
 
@@ -351,7 +351,7 @@ def test_collect_scan_targets_skips_file_on_os_error(tmp_path: Path) -> None:
     # Raise OSError during binary detection — fires after symlink/dir/exclusion
     # checks, so root_path traversal is unaffected.
     text_file = tmp_path / "restricted.py"
-    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     with patch("phi_scan.scanner.is_binary_file", side_effect=OSError("I/O error")):
         scan_targets = collect_scan_targets(tmp_path, [], _build_default_config())
@@ -364,7 +364,7 @@ def test_collect_scan_targets_logs_warning_on_os_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     text_file = tmp_path / "restricted.py"
-    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     with (
         caplog.at_level(logging.WARNING, logger="phi_scan.scanner"),
@@ -382,7 +382,7 @@ def test_collect_scan_targets_logs_warning_on_os_error(
 
 def test_scan_file_returns_empty_list_for_any_file(tmp_path: Path) -> None:
     text_file = tmp_path / "source.py"
-    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     findings = scan_file(text_file, _build_default_config())
 
@@ -396,7 +396,7 @@ def test_scan_file_logs_stub_warning(
     # Phase 1B stub must emit a WARNING so it cannot silently survive into
     # Phase 2 wiring without the integration failure being visible in logs.
     text_file = tmp_path / "source.py"
-    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     with caplog.at_level(logging.WARNING, logger="phi_scan.scanner"):
         scan_file(text_file, _build_default_config())
@@ -418,7 +418,7 @@ def test_execute_scan_returns_scan_result_instance(tmp_path: Path) -> None:
 def test_execute_scan_files_scanned_matches_target_count(tmp_path: Path) -> None:
     text_files = [tmp_path / f"file_{index}.py" for index in range(_MULTI_FILE_SCAN_COUNT)]
     for text_file in text_files:
-        text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
+        text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
     scan_result = execute_scan(text_files, _build_default_config())
 
