@@ -157,7 +157,7 @@ def collect_scan_targets(
                 continue
             if _skip_wrong_extension(candidate, config.include_extensions):
                 continue
-            if _skip_oversized_file(candidate, max_file_size_bytes, config.max_file_size_mb):
+            if _skip_oversized_file(candidate, max_file_size_bytes):
                 continue
             if _skip_binary_file(candidate):
                 continue
@@ -267,7 +267,7 @@ def _skip_excluded_candidate(
     Returns:
         True if the path matches at least one exclusion pattern.
     """
-    if exclusion_spec.match_file(str(relative_path)):
+    if is_path_excluded(relative_path, exclusion_spec):
         _logger.debug(_EXCLUDED_PATH_DEBUG.format(path=relative_path))
         return True
     return False
@@ -292,25 +292,22 @@ def _skip_wrong_extension(candidate: Path, include_extensions: list[str] | None)
     return False
 
 
-def _skip_oversized_file(
-    candidate: Path,
-    max_file_size_bytes: int,
-    max_file_size_mb: int,
-) -> bool:
+def _skip_oversized_file(candidate: Path, max_file_size_bytes: int) -> bool:
     """Return True and log a warning if candidate's size exceeds the configured limit.
+
+    The megabyte value shown in the log message is derived from max_file_size_bytes
+    to guarantee consistency — there is no separate MB parameter that could diverge.
 
     Args:
         candidate: The file to check.
         max_file_size_bytes: Maximum allowed size in bytes.
-        max_file_size_mb: Maximum allowed size in megabytes (used in the log message).
 
     Returns:
         True if the file is larger than max_file_size_bytes.
     """
     if candidate.stat().st_size > max_file_size_bytes:
-        _logger.warning(
-            _OVERSIZED_FILE_SKIPPED_WARNING.format(path=candidate, limit_mb=max_file_size_mb)
-        )
+        limit_mb = max_file_size_bytes // BYTES_PER_MEGABYTE
+        _logger.warning(_OVERSIZED_FILE_SKIPPED_WARNING.format(path=candidate, limit_mb=limit_mb))
         return True
     return False
 

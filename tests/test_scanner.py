@@ -33,11 +33,17 @@ _SAMPLE_TEXT_CONTENT: str = "name = 'hello world'\n"
 _SAMPLE_IGNORE_PATTERN: str = "*.log"
 _IGNORE_COMMENT_LINE: str = "# this is a comment"
 _GITIGNORE_MATCH_STYLE: str = "gitignore"
-# Extension guaranteed to be in KNOWN_BINARY_EXTENSIONS — used to avoid
-# hardcoding a specific extension that could be removed from the constant.
+# Extension guaranteed to be in KNOWN_BINARY_EXTENSIONS — sorted for determinism.
+# The assertion below ensures a missing entry fails at import time with a clear message
+# rather than a cryptic StopIteration from next().
+assert KNOWN_BINARY_EXTENSIONS, "KNOWN_BINARY_EXTENSIONS must not be empty"
 _KNOWN_BINARY_EXTENSION: str = next(iter(sorted(KNOWN_BINARY_EXTENSIONS)))
 # File size exactly one byte over the default limit — guaranteed to be skipped.
 _OVERSIZED_FILE_SIZE_BYTES: int = MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE + 1
+# Number of files created in multi-file execute_scan tests.
+_MULTI_FILE_SCAN_COUNT: int = 3
+# Minimum acceptable scan duration — time.monotonic() guarantees non-negative values.
+_MINIMUM_SCAN_DURATION: float = 0.0
 
 
 def _build_exclusion_spec(patterns: list[str]) -> pathspec.PathSpec:
@@ -382,7 +388,7 @@ def test_execute_scan_returns_scan_result_instance(tmp_path: Path) -> None:
 
 
 def test_execute_scan_files_scanned_matches_target_count(tmp_path: Path) -> None:
-    text_files = [tmp_path / f"file_{index}.py" for index in range(3)]
+    text_files = [tmp_path / f"file_{index}.py" for index in range(_MULTI_FILE_SCAN_COUNT)]
     for text_file in text_files:
         text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=_TEST_FILE_ENCODING)
 
@@ -412,7 +418,7 @@ def test_execute_scan_files_with_findings_is_zero_for_clean_scan(tmp_path: Path)
 def test_execute_scan_scan_duration_is_non_negative(tmp_path: Path) -> None:
     scan_result = execute_scan([], _build_default_config())
 
-    assert scan_result.scan_duration >= 0.0
+    assert scan_result.scan_duration >= _MINIMUM_SCAN_DURATION
 
 
 def test_execute_scan_findings_is_empty_tuple_for_clean_scan() -> None:
