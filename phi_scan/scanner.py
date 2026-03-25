@@ -19,7 +19,7 @@ from phi_scan.constants import (
     RiskLevel,
     SeverityLevel,
 )
-from phi_scan.exceptions import TraversalError
+from phi_scan.exceptions import PhiDetectionError, TraversalError
 from phi_scan.logging_config import get_logger
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 
@@ -52,7 +52,11 @@ _IGNORE_FILE_MISSING_INFO: str = "Ignore file {path!r} not found — no patterns
 _SCAN_FILE_STUB_WARNING: str = (
     "scan_file is a Phase 1B stub — no PHI detection performed on {path!r}"
 )
+_UNMAPPED_SEVERITY_LEVELS_ERROR: str = (
+    "No RiskLevel mapping for severity levels {levels!r} — update _derive_risk_level"
+)
 # Binary file detection constants — never embed these literals in logic code.
+_RGLOB_ALL_FILES_PATTERN: str = "*"
 _NULL_BYTE: bytes = b"\x00"
 _BINARY_READ_MODE: str = "rb"
 
@@ -157,7 +161,7 @@ def collect_scan_targets(
     exclusion_spec = pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, excluded_patterns)
     max_file_size_bytes = config.max_file_size_mb * BYTES_PER_MEGABYTE
     scan_targets: list[Path] = []
-    for candidate in root_path.rglob("*"):
+    for candidate in root_path.rglob(_RGLOB_ALL_FILES_PATTERN):
         try:
             if _should_skip_symlink_candidate(candidate):
                 continue
@@ -233,10 +237,11 @@ def _build_scan_result(
     files_scanned: int,
     scan_duration: float,
 ) -> ScanResult:
-    """Construct a ScanResult from aggregated scan data.
+    """Construct and return a fully populated ScanResult from aggregated scan data.
 
-    Computes is_clean, files_with_findings, risk level, and count mappings
-    from the findings tuple so execute_scan is responsible only for the loop.
+    Derives all computed fields (is_clean, files_with_findings, risk_level,
+    severity_counts, category_counts) from the findings tuple so that
+    execute_scan owns only the scan loop and nothing else.
 
     Args:
         findings: All findings produced by the scan.
@@ -401,7 +406,9 @@ def _derive_risk_level(findings: tuple[ScanFinding, ...]) -> RiskLevel:
         return RiskLevel.HIGH
     if SeverityLevel.LOW in severity_levels:
         return RiskLevel.MODERATE
-    return RiskLevel.LOW
+    if SeverityLevel.INFO in severity_levels:
+        return RiskLevel.LOW
+    raise PhiDetectionError(_UNMAPPED_SEVERITY_LEVELS_ERROR.format(levels=severity_levels))
 
 
 def _count_by_severity(

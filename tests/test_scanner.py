@@ -38,7 +38,9 @@ _IGNORE_COMMENT_LINE: str = "# this is a comment"
 # test_known_binary_extensions_is_not_empty fails with a clear message rather
 # than a cryptic StopIteration at import time.
 _SORTED_BINARY_EXTENSIONS: list[str] = sorted(KNOWN_BINARY_EXTENSIONS)
-_KNOWN_BINARY_EXTENSION: str = _SORTED_BINARY_EXTENSIONS[0] if _SORTED_BINARY_EXTENSIONS else ""
+if not _SORTED_BINARY_EXTENSIONS:
+    raise RuntimeError("KNOWN_BINARY_EXTENSIONS is empty — binary detection tests cannot run")
+_KNOWN_BINARY_EXTENSION: str = _SORTED_BINARY_EXTENSIONS[0]
 # File size exactly one byte over the default limit — guaranteed to be skipped.
 _OVERSIZED_FILE_SIZE_BYTES: int = MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE + 1
 # Number of files created in multi-file execute_scan tests.
