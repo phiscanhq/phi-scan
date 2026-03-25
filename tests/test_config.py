@@ -209,7 +209,7 @@ def test_load_config_raises_configuration_error_for_invalid_yaml(
     tmp_path: Path,
 ) -> None:
     config_file = tmp_path / ".phi-scanner.yml"
-    config_file.write_text("key: [unclosed", encoding="utf-8")
+    config_file.write_text("key: [unclosed", encoding=_CONFIG_FILE_ENCODING)
 
     with pytest.raises(ConfigurationError):
         load_config(config_file)
@@ -219,7 +219,7 @@ def test_load_config_raises_configuration_error_when_yaml_is_not_a_mapping(
     tmp_path: Path,
 ) -> None:
     config_file = tmp_path / ".phi-scanner.yml"
-    config_file.write_text("- item1\n- item2\n", encoding="utf-8")
+    config_file.write_text("- item1\n- item2\n", encoding=_CONFIG_FILE_ENCODING)
 
     with pytest.raises(ConfigurationError):
         load_config(config_file)
@@ -331,7 +331,7 @@ def test_create_default_config_output_is_valid_yaml(tmp_path: Path) -> None:
 
     create_default_config(output_path)
 
-    config_document = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+    config_document = yaml.safe_load(output_path.read_text(encoding=_CONFIG_FILE_ENCODING))
     assert isinstance(config_document, dict)
 
 
@@ -340,7 +340,7 @@ def test_create_default_config_output_has_supported_version(tmp_path: Path) -> N
 
     create_default_config(output_path)
 
-    config_document = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+    config_document = yaml.safe_load(output_path.read_text(encoding=_CONFIG_FILE_ENCODING))
     assert config_document["version"] == _SUPPORTED_VERSION
 
 
@@ -351,7 +351,7 @@ def test_create_default_config_output_has_follow_symlinks_false(
 
     create_default_config(output_path)
 
-    config_document = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+    config_document = yaml.safe_load(output_path.read_text(encoding=_CONFIG_FILE_ENCODING))
     assert config_document["scan"]["follow_symlinks"] is False
 
 
@@ -362,7 +362,7 @@ def test_create_default_config_output_sets_retention_days_to_hipaa_minimum(
 
     create_default_config(output_path)
 
-    config_document = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+    config_document = yaml.safe_load(output_path.read_text(encoding=_CONFIG_FILE_ENCODING))
     assert config_document["audit"]["retention_days"] == AUDIT_RETENTION_DAYS
 
 

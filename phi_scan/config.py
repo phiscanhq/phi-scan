@@ -69,7 +69,6 @@ _CONFIDENCE_THRESHOLD_RANGE_ERROR: str = (
     "scan.confidence_threshold {value!r} is outside the valid range [{minimum}, {maximum}]"
 )
 _INVALID_MAX_FILE_SIZE_MB_ERROR: str = "scan.max_file_size_mb {value!r} must be an integer"
-_SYMLINK_TRAVERSAL_DISABLED: bool = False
 
 # ---------------------------------------------------------------------------
 # Default config template — written by create_default_config
@@ -303,18 +302,24 @@ def _parse_confidence_threshold(scan_section: dict[str, Any]) -> float:
     Raises:
         ConfigurationError: If the value cannot be coerced to float or is outside [0.0, 1.0].
     """
-    raw = scan_section.get(_YAML_KEY_CONFIDENCE_THRESHOLD, DEFAULT_CONFIDENCE_THRESHOLD)
+    raw_confidence_threshold = scan_section.get(
+        _YAML_KEY_CONFIDENCE_THRESHOLD, DEFAULT_CONFIDENCE_THRESHOLD
+    )
     try:
-        value = float(raw)
+        confidence_threshold = float(raw_confidence_threshold)
     except (TypeError, ValueError) as error:
-        raise ConfigurationError(_INVALID_CONFIDENCE_THRESHOLD_ERROR.format(value=raw)) from error
-    if not CONFIDENCE_SCORE_MINIMUM <= value <= CONFIDENCE_SCORE_MAXIMUM:
+        raise ConfigurationError(
+            _INVALID_CONFIDENCE_THRESHOLD_ERROR.format(value=raw_confidence_threshold)
+        ) from error
+    if not CONFIDENCE_SCORE_MINIMUM <= confidence_threshold <= CONFIDENCE_SCORE_MAXIMUM:
         raise ConfigurationError(
             _CONFIDENCE_THRESHOLD_RANGE_ERROR.format(
-                value=value, minimum=CONFIDENCE_SCORE_MINIMUM, maximum=CONFIDENCE_SCORE_MAXIMUM
+                value=confidence_threshold,
+                minimum=CONFIDENCE_SCORE_MINIMUM,
+                maximum=CONFIDENCE_SCORE_MAXIMUM,
             )
         )
-    return value
+    return confidence_threshold
 
 
 def _parse_severity_level(scan_section: dict[str, Any]) -> SeverityLevel:
@@ -329,12 +334,14 @@ def _parse_severity_level(scan_section: dict[str, Any]) -> SeverityLevel:
     Raises:
         ConfigurationError: If the value is not a valid SeverityLevel.
     """
-    raw = scan_section.get(_YAML_KEY_SEVERITY_THRESHOLD, SeverityLevel.LOW.value)
+    raw_severity_threshold = scan_section.get(_YAML_KEY_SEVERITY_THRESHOLD, SeverityLevel.LOW.value)
     try:
-        return SeverityLevel(raw)
+        return SeverityLevel(raw_severity_threshold)
     except ValueError as error:
         valid = ", ".join(member.value for member in SeverityLevel)
-        raise ConfigurationError(_INVALID_SEVERITY_ERROR.format(value=raw, valid=valid)) from error
+        raise ConfigurationError(
+            _INVALID_SEVERITY_ERROR.format(value=raw_severity_threshold, valid=valid)
+        ) from error
 
 
 def _parse_max_file_size_mb(scan_section: dict[str, Any]) -> int:
@@ -349,11 +356,13 @@ def _parse_max_file_size_mb(scan_section: dict[str, Any]) -> int:
     Raises:
         ConfigurationError: If the value cannot be coerced to int.
     """
-    raw = scan_section.get(_YAML_KEY_MAX_FILE_SIZE_MB, MAX_FILE_SIZE_MB)
+    raw_max_file_size_mb = scan_section.get(_YAML_KEY_MAX_FILE_SIZE_MB, MAX_FILE_SIZE_MB)
     try:
-        return int(raw)
+        return int(raw_max_file_size_mb)
     except (TypeError, ValueError) as error:
-        raise ConfigurationError(_INVALID_MAX_FILE_SIZE_MB_ERROR.format(value=raw)) from error
+        raise ConfigurationError(
+            _INVALID_MAX_FILE_SIZE_MB_ERROR.format(value=raw_max_file_size_mb)
+        ) from error
 
 
 def _build_scan_config(
@@ -378,7 +387,6 @@ def _build_scan_config(
         confidence_threshold=_parse_confidence_threshold(scan_section),
         severity_threshold=_parse_severity_level(scan_section),
         max_file_size_mb=_parse_max_file_size_mb(scan_section),
-        should_follow_symlinks=_SYMLINK_TRAVERSAL_DISABLED,
         include_extensions=scan_section.get(_YAML_KEY_INCLUDE_EXTENSIONS),
         exclude_paths=list(scan_section.get(_YAML_KEY_EXCLUDE_PATHS, [])),
         output_format=output_format,
