@@ -44,8 +44,14 @@ _MINIMUM_INCLUDE_EXTENSIONS_COUNT: int = 1
 # Extensions must start with a dot so they match pathlib.Path.suffix values
 # (e.g. ".py", not "py"). Bare extensions silently match nothing.
 _EXTENSION_DOT_PREFIX: str = "."
-_INVALID_OUTPUT_FORMAT_ERROR: str = "output_format must be an OutputFormat member, got {value!r}"
-_INVALID_DATABASE_PATH_ERROR: str = "database_path must be a Path, got {value!r}"
+# Distinct from config._INVALID_OUTPUT_FORMAT_ERROR (YAML key error) —
+# this fires when the ScanConfig field itself receives a non-OutputFormat value.
+_INVALID_OUTPUT_FORMAT_FIELD_ERROR: str = (
+    "output_format must be an OutputFormat member, got {value!r}"
+)
+# Distinct from config._INVALID_DATABASE_PATH_ERROR (YAML string-type error) —
+# this fires when the ScanConfig field itself receives a non-Path value.
+_INVALID_DATABASE_PATH_FIELD_ERROR: str = "database_path must be a Path, got {value!r}"
 
 
 class _ConfigField(StrEnum):
@@ -382,12 +388,12 @@ def _validate_include_extensions(include_extensions: object) -> None:
 
 def _validate_output_format(output_format: object) -> None:
     if not isinstance(output_format, OutputFormat):
-        raise ConfigurationError(_INVALID_OUTPUT_FORMAT_ERROR.format(value=output_format))
+        raise ConfigurationError(_INVALID_OUTPUT_FORMAT_FIELD_ERROR.format(value=output_format))
 
 
 def _validate_database_path(database_path: object) -> None:
     if not isinstance(database_path, Path):
-        raise ConfigurationError(_INVALID_DATABASE_PATH_ERROR.format(value=database_path))
+        raise ConfigurationError(_INVALID_DATABASE_PATH_FIELD_ERROR.format(value=database_path))
 
 
 # Dispatch table for ScanConfig.__setattr__ — maps each field name to its validator.

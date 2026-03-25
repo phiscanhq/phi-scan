@@ -53,6 +53,7 @@ _CONFIG_FILE_ENCODING: str = "utf-8"
 
 _CONFIG_READ_ERROR: str = "Cannot read config file {path!r}: {error}"
 _CONFIG_PARSE_ERROR: str = "Failed to parse config file {path!r}: {error}"
+_CONFIG_NOT_MAPPING_ERROR: str = "Config file {path!r} must be a YAML mapping, got {type}"
 _CONFIG_WRITE_ERROR: str = "Cannot write config file {path!r}: {error}"
 _UNSUPPORTED_VERSION_ERROR: str = "Unsupported config version {version!r} — expected {expected}"
 _FOLLOW_SYMLINKS_ERROR: str = (
@@ -213,7 +214,7 @@ def _read_config_file(config_path: Path) -> dict[str, Any]:  # noqa: ANN401
         ) from error
     if not isinstance(raw, dict):
         raise ConfigurationError(
-            _CONFIG_PARSE_ERROR.format(path=config_path, error="top-level value is not a mapping")
+            _CONFIG_NOT_MAPPING_ERROR.format(path=config_path, type=type(raw).__name__)
         )
     return raw
 
@@ -387,6 +388,10 @@ def _build_scan_config(
         confidence_threshold=_parse_confidence_threshold(scan_section),
         severity_threshold=_parse_severity_level(scan_section),
         max_file_size_mb=_parse_max_file_size_mb(scan_section),
+        # Hardcoded False — YAML true is rejected above by _reject_follow_symlinks_enabled.
+        # Explicit here so a future change to ScanConfig's default cannot silently break
+        # the security guarantee without failing tests.
+        should_follow_symlinks=False,
         include_extensions=scan_section.get(_YAML_KEY_INCLUDE_EXTENSIONS),
         exclude_paths=list(scan_section.get(_YAML_KEY_EXCLUDE_PATHS, [])),
         output_format=output_format,

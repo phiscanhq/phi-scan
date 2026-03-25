@@ -154,15 +154,6 @@ def test_load_config_should_follow_symlinks_is_always_false(tmp_path: Path) -> N
 # ---------------------------------------------------------------------------
 
 
-def test_load_config_accepts_gitlab_sast_output_format(tmp_path: Path) -> None:
-    config = _minimal_config()
-    config["output"] = {"format": "gitlab-sast"}
-
-    config_file = _write_config(tmp_path, config)
-
-    load_config(config_file)
-
-
 def test_load_config_maps_gitlab_sast_format_to_output_format_member(tmp_path: Path) -> None:
     config = _minimal_config()
     config["output"] = {"format": "gitlab-sast"}
