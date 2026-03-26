@@ -208,6 +208,18 @@ def test_is_binary_file_inspects_only_first_chunk_of_large_file(tmp_path: Path) 
 # ---------------------------------------------------------------------------
 
 
+def test_collect_scan_targets_raises_traversal_error_when_root_is_a_symlink(
+    tmp_path: Path,
+) -> None:
+    real_dir = tmp_path / "real_dir"
+    real_dir.mkdir()
+    symlink_root = tmp_path / "link_root"
+    symlink_root.symlink_to(real_dir)
+
+    with pytest.raises(TraversalError):
+        collect_scan_targets(symlink_root, [], _build_default_config())
+
+
 def test_collect_scan_targets_raises_traversal_error_for_nonexistent_root(
     tmp_path: Path,
 ) -> None:

@@ -46,6 +46,9 @@ _BINARY_FILE_SKIPPED_INFO: str = "Skipping {path!r} — detected as binary"
 _EXTENSION_SKIPPED_DEBUG: str = "Skipping {path!r} — extension not in include_extensions"
 _EXCLUDED_PATH_DEBUG: str = "Skipping {path!r} — matched exclusion pattern"
 _FILE_OS_ERROR_WARNING: str = "Skipping {path!r} — OS error: {error}"
+_ROOT_PATH_IS_SYMLINK_ERROR: str = (
+    "Scan root {path!r} is a symlink — symlink traversal is prohibited"
+)
 _IGNORE_FILE_MISSING_INFO: str = "Ignore file {path!r} not found — no patterns loaded"
 # Phase 1B stub — emitted once per call to scan_file to prevent silent integration
 # failures if the placeholder is accidentally left in place during Phase 2 wiring.
@@ -271,17 +274,20 @@ def _build_scan_result(
 
 
 def _reject_invalid_scan_root(root_path: Path) -> None:
-    """Raise TraversalError if root_path is not a readable, existing directory.
+    """Raise TraversalError if root_path is not a readable, existing, non-symlink directory.
 
-    Covers two distinct invalid states: a path that does not exist, and a path
-    that exists but is not a directory (e.g. a file passed where a root was expected).
+    Covers three distinct invalid states: a symlink (traversal is prohibited through
+    symlinked roots), a path that does not exist, and a path that exists but is not a
+    directory (e.g. a file passed where a root was expected).
 
     Args:
         root_path: The scan root to validate.
 
     Raises:
-        TraversalError: If root_path does not exist or is not a directory.
+        TraversalError: If root_path is a symlink, does not exist, or is not a directory.
     """
+    if root_path.is_symlink():
+        raise TraversalError(_ROOT_PATH_IS_SYMLINK_ERROR.format(path=root_path))
     if not root_path.exists():
         raise TraversalError(_ROOT_PATH_NOT_FOUND_ERROR.format(path=root_path))
     if not root_path.is_dir():
@@ -290,6 +296,11 @@ def _reject_invalid_scan_root(root_path: Path) -> None:
 
 def _should_skip_directory_candidate(candidate: Path) -> bool:
     """Return True if candidate is a directory.
+
+    Precondition: ``_should_skip_symlink_candidate`` must be called before this
+    function in the traversal loop. ``Path.is_dir()`` returns True for symlinks
+    pointing to directories — relying on the symlink guard to run first ensures
+    symlinked directories are caught and logged before this check is reached.
 
     Args:
         candidate: The filesystem entry to check.
