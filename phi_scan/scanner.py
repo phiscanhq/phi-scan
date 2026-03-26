@@ -125,6 +125,12 @@ def is_binary_file(file_path: Path) -> bool:
 
     Returns:
         True if the file is binary, False if it appears to be a text file.
+
+    Raises:
+        OSError: If the file cannot be opened or read (e.g. PermissionError,
+            I/O error on a networked or FUSE filesystem). Callers inside
+            collect_scan_targets have an outer OSError handler; direct callers
+            must handle this themselves.
     """
     if file_path.suffix.lower() in KNOWN_BINARY_EXTENSIONS:
         return True
@@ -386,7 +392,7 @@ def _should_skip_oversized_file(candidate: Path, max_file_size_bytes: int) -> bo
     Returns:
         True if the file is larger than max_file_size_bytes.
     """
-    if candidate.stat().st_size > max_file_size_bytes:
+    if candidate.lstat().st_size > max_file_size_bytes:
         limit_mb = max_file_size_bytes // BYTES_PER_MEGABYTE
         _logger.warning(_OVERSIZED_FILE_SKIPPED_WARNING.format(path=candidate, limit_mb=limit_mb))
         return True
