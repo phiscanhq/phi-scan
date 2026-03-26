@@ -58,9 +58,14 @@ _SCAN_FILE_STUB_WARNING: str = (
 _UNMAPPED_SEVERITY_LEVELS_ERROR: str = (
     "No RiskLevel mapping for severity levels {levels!r} — update _derive_risk_level"
 )
-# Traversal constant — passed to rglob to match every entry at every depth.
+
+# ---------------------------------------------------------------------------
+# Implementation constants — traversal and binary detection
+# ---------------------------------------------------------------------------
+
+# Passed to rglob to match every filesystem entry at every depth.
 _RGLOB_ALL_FILES_PATTERN: str = "*"
-# Binary file detection constants — never embed these literals in logic code.
+# Used by is_binary_file — never embed these literals in logic code.
 _NULL_BYTE: bytes = b"\x00"
 _BINARY_READ_MODE: str = "rb"
 
