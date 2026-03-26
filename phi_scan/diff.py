@@ -140,6 +140,8 @@ def _run_git_command(git_args: Sequence[str]) -> str:
             with a non-zero return code.
     """
     try:
+        # check=False is intentional — manual returncode check lets us embed
+        # the exit code and stderr into the TraversalError message directly.
         completed_process = subprocess.run(
             [_GIT_EXECUTABLE, *git_args],
             capture_output=True,
