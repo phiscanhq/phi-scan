@@ -65,6 +65,8 @@ _UNMAPPED_SEVERITY_LEVELS_ERROR: str = (
 
 # Passed to rglob to match every filesystem entry at every depth.
 _RGLOB_ALL_FILES_PATTERN: str = "*"
+# Lines beginning with this prefix are treated as comments in .phi-scanignore files.
+_IGNORE_COMMENT_PREFIX: str = "#"
 # Used by is_binary_file — never embed these literals in logic code.
 _NULL_BYTE: bytes = b"\x00"
 _BINARY_READ_MODE: str = "rb"
@@ -93,7 +95,9 @@ def load_ignore_patterns(ignore_file_path: Path) -> list[str]:
         _logger.info(_IGNORE_FILE_MISSING_INFO.format(path=ignore_file_path))
         return []
     raw_lines = ignore_file_path.read_text(encoding=DEFAULT_TEXT_ENCODING).splitlines()
-    return [line for line in raw_lines if line.strip() and not line.startswith("#")]
+    return [
+        line for line in raw_lines if line.strip() and not line.startswith(_IGNORE_COMMENT_PREFIX)
+    ]
 
 
 def is_path_excluded(file_path: Path, exclusion_spec: pathspec.PathSpec) -> bool:
@@ -269,8 +273,11 @@ def _build_scan_result(
         A fully populated, immutable ScanResult.
     """
     is_clean = not findings
-    # file_path is location metadata — not a PHI value, not subject to the
-    # hash-storage policy that governs detected PHI content (value_hash).
+    # file_path is location metadata used for deduplication, not the detected
+    # PHI value itself (which is stored only as value_hash per policy).
+    # KNOWN RISK: filenames can embed PHI (e.g. john_doe_ssn.csv). Whether
+    # file_path requires hashing is an architectural decision deferred to
+    # Phase 2 security review — do not dismiss this without that review.
     files_with_findings = len({finding.file_path for finding in findings})
     return ScanResult(
         findings=findings,
