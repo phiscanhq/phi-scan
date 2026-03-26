@@ -28,6 +28,7 @@ _INVALID_DIFF_REF_ERROR: str = "Invalid or unknown diff reference {ref!r}: {deta
 _GIT_NOT_FOUND_ERROR: str = "git executable not found — install git to use --diff mode"
 _GIT_EXECUTION_ERROR: str = "git could not be executed: {detail}"
 _GIT_COMMAND_FAILED_ERROR: str = "git command exited with code {code}: {detail}"
+_GIT_TIMEOUT_ERROR: str = "git command timed out after {timeout} seconds"
 
 # ---------------------------------------------------------------------------
 # Implementation constants
@@ -147,6 +148,10 @@ def _run_git_command(git_args: Sequence[str]) -> str:
         )
     except FileNotFoundError as not_found_error:
         raise TraversalError(_GIT_NOT_FOUND_ERROR) from not_found_error
+    except subprocess.TimeoutExpired as timeout_error:
+        raise TraversalError(
+            _GIT_TIMEOUT_ERROR.format(timeout=_GIT_COMMAND_TIMEOUT_SECONDS)
+        ) from timeout_error
     except OSError as execution_error:
         raise TraversalError(
             _GIT_EXECUTION_ERROR.format(detail=execution_error)

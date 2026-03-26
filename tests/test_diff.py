@@ -222,6 +222,17 @@ def test_run_git_command_raises_traversal_error_on_os_error() -> None:
             _run_git_command(["--version"])
 
 
+def test_run_git_command_raises_traversal_error_on_timeout() -> None:
+    import subprocess as _subprocess
+
+    with patch(
+        "phi_scan.diff.subprocess.run",
+        side_effect=_subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(TraversalError):
+            _run_git_command(["--version"])
+
+
 # ---------------------------------------------------------------------------
 # _get_git_repository_root
 # ---------------------------------------------------------------------------
