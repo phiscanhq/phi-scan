@@ -58,8 +58,9 @@ _SCAN_FILE_STUB_WARNING: str = (
 _UNMAPPED_SEVERITY_LEVELS_ERROR: str = (
     "No RiskLevel mapping for severity levels {levels!r} — update _derive_risk_level"
 )
-# Binary file detection constants — never embed these literals in logic code.
+# Traversal constant — passed to rglob to match every entry at every depth.
 _RGLOB_ALL_FILES_PATTERN: str = "*"
+# Binary file detection constants — never embed these literals in logic code.
 _NULL_BYTE: bytes = b"\x00"
 _BINARY_READ_MODE: str = "rb"
 
@@ -295,20 +296,19 @@ def _reject_invalid_scan_root(root_path: Path) -> None:
 
 
 def _should_skip_directory_candidate(candidate: Path) -> bool:
-    """Return True if candidate is a directory.
+    """Return True if candidate is a real (non-symlink) directory.
 
-    Precondition: ``_should_skip_symlink_candidate`` must be called before this
-    function in the traversal loop. ``Path.is_dir()`` returns True for symlinks
-    pointing to directories — relying on the symlink guard to run first ensures
-    symlinked directories are caught and logged before this check is reached.
+    ``Path.is_dir()`` returns True for symlinks pointing to directories. The
+    explicit ``is_symlink()`` guard ensures symlinked directories are not
+    treated as plain directories regardless of call order in the traversal loop.
 
     Args:
         candidate: The filesystem entry to check.
 
     Returns:
-        True if the candidate is a directory and should be skipped.
+        True if the candidate is a non-symlink directory and should be skipped.
     """
-    return candidate.is_dir()
+    return not candidate.is_symlink() and candidate.is_dir()
 
 
 def _should_skip_symlink_candidate(candidate: Path) -> bool:
