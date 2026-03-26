@@ -120,10 +120,10 @@ def _get_git_repository_root() -> Path:
             repository or if git cannot be executed.
     """
     try:
-        root_output = _run_git_command(_GIT_TOPLEVEL_ARGS)
+        git_toplevel_output = _run_git_command(_GIT_TOPLEVEL_ARGS)
     except TraversalError as git_error:
         raise TraversalError(_NOT_A_GIT_REPOSITORY_ERROR) from git_error
-    return Path(root_output.strip())
+    return Path(git_toplevel_output.strip())
 
 
 def _run_git_command(git_args: Sequence[str]) -> str:

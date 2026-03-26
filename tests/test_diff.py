@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -223,11 +224,9 @@ def test_run_git_command_raises_traversal_error_on_os_error() -> None:
 
 
 def test_run_git_command_raises_traversal_error_on_timeout() -> None:
-    import subprocess as _subprocess
-
     with patch(
         "phi_scan.diff.subprocess.run",
-        side_effect=_subprocess.TimeoutExpired(cmd="git", timeout=30),
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
     ):
         with pytest.raises(TraversalError):
             _run_git_command(["--version"])
