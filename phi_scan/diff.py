@@ -35,6 +35,7 @@ _GIT_COMMAND_FAILED_ERROR: str = "git command exited with code {code}: {detail}"
 
 _GIT_EXECUTABLE: str = "git"
 _GIT_SUCCESS_EXIT_CODE: int = 0
+_GIT_COMMAND_TIMEOUT_SECONDS: int = 30
 # ACMR: Added, Copied, Modified, Renamed — excludes Deleted from output so
 # scan targets are never built for files that no longer exist on disk.
 _DIFF_FILTER_SPECIFIER: str = "ACMR"
@@ -138,10 +139,11 @@ def _run_git_command(git_args: Sequence[str]) -> str:
             with a non-zero return code.
     """
     try:
-        result = subprocess.run(
+        completed_process = subprocess.run(
             [_GIT_EXECUTABLE, *git_args],
             capture_output=True,
             text=True,
+            timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as not_found_error:
         raise TraversalError(_GIT_NOT_FOUND_ERROR) from not_found_error
@@ -149,14 +151,14 @@ def _run_git_command(git_args: Sequence[str]) -> str:
         raise TraversalError(
             _GIT_EXECUTION_ERROR.format(detail=execution_error)
         ) from execution_error
-    if result.returncode != _GIT_SUCCESS_EXIT_CODE:
+    if completed_process.returncode != _GIT_SUCCESS_EXIT_CODE:
         raise TraversalError(
             _GIT_COMMAND_FAILED_ERROR.format(
-                code=result.returncode,
-                detail=result.stderr.strip(),
+                code=completed_process.returncode,
+                detail=completed_process.stderr.strip(),
             )
         )
-    return result.stdout
+    return completed_process.stdout
 
 
 def _resolve_existing_paths(git_output: str, repo_root: Path) -> list[Path]:

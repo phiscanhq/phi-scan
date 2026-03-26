@@ -35,7 +35,8 @@ _DELETED_FILE_NAME: str = "removed/gone.py"
 _SYMLINKED_FILE_NAME: str = "link/target.py"
 _EXPECTED_MULTI_FILE_COUNT: int = 2
 _GIT_FAILURE_EXIT_CODE: int = 128
-_GIT_STDERR_INVALID_REF: str = "fatal: ambiguous argument 'HEAD~99': unknown revision"
+_INVALID_DIFF_REF: str = "HEAD~99"
+_GIT_STDERR_INVALID_REF: str = f"fatal: ambiguous argument '{_INVALID_DIFF_REF}': unknown revision"
 _GIT_STDERR_NOT_A_REPO: str = "fatal: not a git repository"
 _SAMPLE_FILE_CONTENT: str = "x = 1\n"
 
@@ -300,11 +301,11 @@ def test_get_changed_files_from_diff_raises_traversal_error_for_invalid_diff_ref
         ),
     ):
         with pytest.raises(TraversalError):
-            get_changed_files_from_diff("HEAD~99")
+            get_changed_files_from_diff(_INVALID_DIFF_REF)
 
 
 def test_get_changed_files_from_diff_error_includes_diff_ref() -> None:
-    invalid_ref = "HEAD~99"
+    invalid_ref = _INVALID_DIFF_REF
 
     with (
         patch("phi_scan.diff._get_git_repository_root", return_value=Path(_SAMPLE_REPO_ROOT_STR)),
