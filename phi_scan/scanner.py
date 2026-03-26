@@ -165,7 +165,7 @@ def collect_scan_targets(
         try:
             if _should_skip_symlink_candidate(candidate):
                 continue
-            if candidate.is_dir():
+            if _should_skip_directory_candidate(candidate):
                 continue
             relative_path = candidate.relative_to(root_path)
             if _should_skip_excluded_candidate(relative_path, exclusion_spec):
@@ -286,6 +286,18 @@ def _reject_invalid_scan_root(root_path: Path) -> None:
         raise TraversalError(_ROOT_PATH_NOT_FOUND_ERROR.format(path=root_path))
     if not root_path.is_dir():
         raise TraversalError(_ROOT_PATH_NOT_DIRECTORY_ERROR.format(path=root_path))
+
+
+def _should_skip_directory_candidate(candidate: Path) -> bool:
+    """Return True if candidate is a directory.
+
+    Args:
+        candidate: The filesystem entry to check.
+
+    Returns:
+        True if the candidate is a directory and should be skipped.
+    """
+    return candidate.is_dir()
 
 
 def _should_skip_symlink_candidate(candidate: Path) -> bool:
