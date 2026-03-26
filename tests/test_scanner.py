@@ -47,6 +47,8 @@ _OVERSIZED_FILE_SIZE_BYTES: int = MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE + 1
 _MULTI_FILE_SCAN_COUNT: int = 3
 # Minimum acceptable scan duration — time.monotonic() guarantees non-negative values.
 _MINIMUM_SCAN_DURATION: float = 0.0
+# Number of non-blank, non-comment patterns in a two-pattern ignore file fixture.
+_EXPECTED_NON_BLANK_NON_COMMENT_PATTERN_COUNT: int = 2
 
 
 def _build_exclusion_spec(patterns: list[str]) -> pathspec.PathSpec:
@@ -83,7 +85,7 @@ def test_load_ignore_patterns_skips_blank_lines(tmp_path: Path) -> None:
     patterns = load_ignore_patterns(ignore_file)
 
     assert "" not in patterns
-    assert len(patterns) == 2
+    assert len(patterns) == _EXPECTED_NON_BLANK_NON_COMMENT_PATTERN_COUNT
 
 
 def test_load_ignore_patterns_skips_comment_lines(tmp_path: Path) -> None:
@@ -329,6 +331,19 @@ def test_collect_scan_targets_logs_warning_when_symlink_skipped(
         collect_scan_targets(tmp_path, [], _build_default_config())
 
     assert any("symlink" in record.message.lower() for record in caplog.records)
+
+
+def test_collect_scan_targets_skips_symlinked_directory(tmp_path: Path) -> None:
+    real_dir = tmp_path / "real_dir"
+    real_dir.mkdir()
+    nested_file = real_dir / "secret.py"
+    nested_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
+    link_dir = tmp_path / "link_dir"
+    link_dir.symlink_to(real_dir)
+
+    scan_targets = collect_scan_targets(tmp_path, [], _build_default_config())
+
+    assert not any("link_dir" in str(p) for p in scan_targets)
 
 
 def test_collect_scan_targets_skips_oversized_files(tmp_path: Path) -> None:
