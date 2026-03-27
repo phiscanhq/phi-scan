@@ -2,6 +2,7 @@
 name: task-status
 description: Show the current PhiScan task position — what was last merged, what is in progress, and what comes next according to PLAN.md
 disable-model-invocation: true
+allowed-tools: Bash(git log:*), Bash(git branch:*), Bash(git status:*), Bash(gh pr list:*)
 ---
 
 ## /task-status
