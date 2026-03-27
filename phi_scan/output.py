@@ -147,7 +147,6 @@ _COL_ENTITY_TYPE: str = "Entity Type"
 _COL_CATEGORY: str = "Category"
 _COL_SEVERITY: str = "Severity"
 _COL_CONFIDENCE: str = "Confidence"
-_COL_CONTEXT: str = "Context"
 
 # ---------------------------------------------------------------------------
 # Category breakdown table column headers and bar chart constants
@@ -170,6 +169,7 @@ _CATEGORY_BAR_DENOMINATOR_FLOOR: int = 1
 _CLEAN_RESULT_TEXT: str = "✓  No PHI/PII detected"
 _CLEAN_RESULT_STYLE: str = _STYLE_BOLD_GREEN
 _JUSTIFY_CENTER: Literal["center"] = "center"
+_JUSTIFY_RIGHT: Literal["right"] = "right"
 
 # ---------------------------------------------------------------------------
 # CSV field names (in output column order)
@@ -195,7 +195,6 @@ _CONFIDENCE_FORMAT: str = "{:.2f}"
 _DURATION_FORMAT: str = "{:.2f}s"
 _TIMESTAMP_TIMESPEC: str = "seconds"
 _PROGRESS_DESCRIPTION: str = "Scanning"
-_TABLE_CONTEXT_MAX_WIDTH: int = 40
 
 # ---------------------------------------------------------------------------
 # Pluralization constants
@@ -203,6 +202,7 @@ _TABLE_CONTEXT_MAX_WIDTH: int = 40
 
 _FINDING_WORD: str = "finding"
 _FINDING_WORD_PLURAL: str = "findings"
+_SINGULAR_COUNT: int = 1
 
 # ---------------------------------------------------------------------------
 # Private helper functions
@@ -212,8 +212,11 @@ _FINDING_WORD_PLURAL: str = "findings"
 def _finding_to_dict(finding: ScanFinding) -> dict[str, object]:
     """Serialize a ScanFinding to a JSON-serializable dict.
 
-    The value_hash field contains only the SHA-256 digest — never the raw
-    detected value — so serialization cannot leak PHI.
+    code_context is intentionally omitted: it contains the raw source line
+    that triggered the finding, which may hold the PHI value itself. JSON
+    output is consumed by CI systems and log aggregators where raw PHI must
+    never appear. File path and line number are sufficient for remediation.
+    The value_hash field is a SHA-256 digest — it never contains raw PHI.
 
     Args:
         finding: The finding to serialize.
@@ -230,7 +233,6 @@ def _finding_to_dict(finding: ScanFinding) -> dict[str, object]:
         "detection_layer": finding.detection_layer.value,
         "severity": finding.severity.value,
         "value_hash": finding.value_hash,
-        "code_context": finding.code_context,
         "remediation_hint": finding.remediation_hint,
     }
 
@@ -266,14 +268,17 @@ def _build_findings_table(findings: tuple[ScanFinding, ...], title: str) -> Tabl
     Returns:
         A configured Rich Table ready to print.
     """
+    # code_context is omitted from table columns: terminal output is captured
+    # by CI log systems, and rendering the raw source line would expose PHI in
+    # those logs. File path and line number are sufficient for the developer to
+    # locate and fix the finding.
     table = Table(title=title, show_header=True, header_style=_PANEL_LABEL_STYLE)
     table.add_column(_COL_FILE, no_wrap=True)
-    table.add_column(_COL_LINE, justify="right")
+    table.add_column(_COL_LINE, justify=_JUSTIFY_RIGHT)
     table.add_column(_COL_ENTITY_TYPE)
     table.add_column(_COL_CATEGORY)
     table.add_column(_COL_SEVERITY)
-    table.add_column(_COL_CONFIDENCE, justify="right")
-    table.add_column(_COL_CONTEXT, max_width=_TABLE_CONTEXT_MAX_WIDTH)
+    table.add_column(_COL_CONFIDENCE, justify=_JUSTIFY_RIGHT)
     for finding in findings:
         style = _SEVERITY_STYLE[finding.severity]
         confidence_str = _CONFIDENCE_FORMAT.format(finding.confidence)
@@ -284,7 +289,6 @@ def _build_findings_table(findings: tuple[ScanFinding, ...], title: str) -> Tabl
             finding.hipaa_category.value,
             f"[{style}]{finding.severity.value}[/{style}]",
             confidence_str,
-            finding.code_context,
         )
     return table
 
@@ -411,15 +415,15 @@ def _build_severity_breakdown(severity_counts: MappingProxyType[SeverityLevel, i
     Returns:
         Newline-separated Rich markup lines, one per severity level.
     """
-    lines = []
+    severity_markup_lines = []
     for level in SeverityLevel:
         count = severity_counts.get(level, 0)
         style = _SEVERITY_STYLE[level]
-        lines.append(
+        severity_markup_lines.append(
             f"[{_PANEL_LABEL_STYLE}]{level.value.title()}:[/{_PANEL_LABEL_STYLE}]"
             f" [{style}]{count}[/{style}]"
         )
-    return "\n".join(lines)
+    return "\n".join(severity_markup_lines)
 
 
 def _build_count_bar(count: int, max_count: int) -> str:
@@ -560,16 +564,19 @@ def display_banner() -> None:
     _console.rule(style=_RULE_STYLE)
 
 
-def display_scan_header(path: Path, config: ScanConfig) -> None:
-    """Render a styled panel showing the scan target and active configuration.
+def _build_scan_header_content(path: Path, config: ScanConfig) -> str:
+    """Build the Rich markup content string for the scan header panel.
 
     Args:
         path: The directory or file being scanned.
-        config: Active scan configuration (severity threshold, confidence, etc.).
+        config: Active scan configuration.
+
+    Returns:
+        Newline-separated Rich markup string with target, thresholds, and timestamp.
     """
     timestamp = datetime.now().isoformat(timespec=_TIMESTAMP_TIMESPEC)
     label_style = _PANEL_LABEL_STYLE
-    content = "\n".join(
+    return "\n".join(
         [
             f"[{label_style}]Target:[/{label_style}]               {path}",
             f"[{label_style}]Severity threshold:[/{label_style}]"
@@ -579,6 +586,16 @@ def display_scan_header(path: Path, config: ScanConfig) -> None:
             f"[{label_style}]Timestamp:[/{label_style}]            {timestamp}",
         ]
     )
+
+
+def display_scan_header(path: Path, config: ScanConfig) -> None:
+    """Render a styled panel showing the scan target and active configuration.
+
+    Args:
+        path: The directory or file being scanned.
+        config: Active scan configuration (severity threshold, confidence, etc.).
+    """
+    content = _build_scan_header_content(path, config)
     _console.print(Panel(content, title=_SCAN_HEADER_TITLE, border_style=_PANEL_BORDER_STYLE))
 
 
@@ -629,7 +646,7 @@ def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
     findings_by_file = _group_findings_by_file(findings)
     for file_path, file_findings in sorted(findings_by_file.items()):
         count = len(file_findings)
-        word = _FINDING_WORD if count == 1 else _FINDING_WORD_PLURAL
+        word = _FINDING_WORD if count == _SINGULAR_COUNT else _FINDING_WORD_PLURAL
         branch = tree.add(f"{file_path} ({count} {word})")
         for finding in file_findings:
             style = _SEVERITY_STYLE[finding.severity]
@@ -679,7 +696,7 @@ def display_violation_alert(scan_result: ScanResult) -> None:
     """
     count = len(scan_result.findings)
     risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
-    word = _FINDING_WORD if count == 1 else _FINDING_WORD_PLURAL
+    word = _FINDING_WORD if count == _SINGULAR_COUNT else _FINDING_WORD_PLURAL
     content = "\n".join(
         [
             f"[{_STYLE_BOLD}]{count} {word} detected[/{_STYLE_BOLD}]",
@@ -702,7 +719,7 @@ def display_category_breakdown(scan_result: ScanResult) -> None:
     """
     table = Table(title=_CATEGORY_TABLE_TITLE, show_header=True, header_style=_PANEL_LABEL_STYLE)
     table.add_column(_COL_CATEGORY_NAME, style=_PANEL_LABEL_STYLE)
-    table.add_column(_COL_COUNT, justify="right")
+    table.add_column(_COL_COUNT, justify=_JUSTIFY_RIGHT)
     table.add_column(_COL_DISTRIBUTION)
     max_count = max(scan_result.category_counts.values(), default=_CATEGORY_BAR_DENOMINATOR_FLOOR)
     for category in PhiCategory:
