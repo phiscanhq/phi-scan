@@ -1,7 +1,7 @@
 # PLAN.md — PhiScan Master Project Plan
 
 **PHI/PII Scanner for CI/CD Pipelines**
-Created: March 15, 2026 | Updated: March 16, 2026 | Python 3.12.3 | uv 0.10.9
+Created: March 15, 2026 | Updated: March 27, 2026 | Python 3.12.3 | uv 0.10.9
 
 ---
 
@@ -48,22 +48,46 @@ All tools confirmed installed and version-verified in WSL on March 15, 2026:
 
 ---
 
-## Current State (March 16, 2026)
+## Current State (March 27, 2026)
+
+**Phase 1A complete. Phase 1B complete. Phase 1C in progress.**
 
 ```
 phi-scan/
 ├── .git/
-├── .gitignore          ← basic Python entries
-├── .python-version     ← 3.12 (fixed from 3.15 alpha)
-├── .venv/              ← created by uv sync, Python 3.12.3
-├── CLAUDE.md           ← project instructions
+├── .github/workflows/  ← ci.yml (lint, typecheck, test) + claude-review.yml
+├── .gitignore          ← Python + PHI-risk entries
+├── .phi-scanignore     ← exclusion patterns (gitignore-style)
+├── .phi-scanner.yml    ← default scanner configuration
+├── .python-version     ← 3.12
+├── .venv/              ← uv sync, Python 3.12.3
+├── CHANGELOG.md
+├── CLAUDE.md
+├── LICENSE             ← MIT
+├── Makefile            ← install, lint, typecheck, test, scan, help
 ├── PLAN.md             ← this file
-├── README.md           ← empty
-├── main.py             ← hello world placeholder (to be deleted)
-└── pyproject.toml      ← minimal scaffold, no deps, no entry points
+├── README.md           ← project overview, install, usage, CI badge
+├── SECURITY.md
+├── pyproject.toml      ← full metadata, all deps, entry point, ruff/pytest config
+├── uv.lock
+├── phi_scan/
+│   ├── __init__.py         ← __version__ = "0.1.0", __app_name__ = "phi-scan"
+│   ├── py.typed
+│   ├── constants.py        ← all named constants and enums (complete)
+│   ├── exceptions.py       ← PhiScanError hierarchy (complete)
+│   ├── models.py           ← ScanFinding, ScanResult, ScanConfig (complete)
+│   ├── logging_config.py   ← structured logging, Rich console handler (complete)
+│   ├── config.py           ← YAML config loading and validation (complete)
+│   ├── scanner.py          ← recursive traversal, Phase 2 detection stub (complete)
+│   ├── diff.py             ← git diff file extraction (complete)
+│   ├── audit.py            ← SQLite HIPAA-compliant audit logging (complete)
+│   ├── output.py           ← formatters + Rich UI components (complete)
+│   └── cli.py              ← Typer app with all Phase 1 commands (complete)
+└── tests/
+    ├── conftest.py
+    ├── test_models.py      ← 71 tests, 100% models.py coverage
+    └── ...                 ← additional test files per module
 ```
-
-No `phi_scan/` package, no `tests/`, no Makefile, no config files yet.
 
 ---
 
@@ -197,7 +221,7 @@ and explain commands deferred to Phase 2).
   - `ScanFinding` (file_path, line_number, entity_type, hipaa_category, confidence, detection_layer, value_hash, severity, code_context, remediation_hint)
   - `ScanResult` (findings, files_scanned, files_with_findings, scan_duration, is_clean, risk_level, severity_counts, category_counts)
   - `ScanConfig` (exclude_paths, severity_threshold, confidence_threshold, follow_symlinks, max_file_size_mb, include_extensions — optional allowlist filter, defaults to None meaning scan all text files)
-- [ ] **1B.5** `logging_config.py` — structured logging setup
+- [x] **1B.5** `logging_config.py` — structured logging setup
   - Configure Python `logging` module with named logger `phi_scan`
   - Log levels: DEBUG, INFO, WARNING, ERROR
   - Console handler with Rich-formatted output (respects `--quiet` and `NO_COLOR`)
@@ -206,7 +230,7 @@ and explain commands deferred to Phase 2).
   - `--log-file` CLI flag: enable persistent file logging
   - All traversal events (symlink skip, permission error, binary skip) use structured logger
   - Log format: `[%(asctime)s] %(levelname)s %(name)s: %(message)s`
-- [ ] **1B.6** `config.py` — YAML config loading
+- [x] **1B.6** `config.py` — YAML config loading
   - `load_config(config_path)` → `ScanConfig`
   - `create_default_config(output_path)` — writes default `.phi-scanner.yml`
   - Validation raises `ConfigurationError` on invalid values — never silently fall back
@@ -214,7 +238,7 @@ and explain commands deferred to Phase 2).
   - Call `Path(database_path).expanduser()` before any file I/O — never pass raw `~` string
   - Raise `ConfigurationError` (not `ValueError`) if `follow_symlinks: true` is set;
     use `if scan_config.follow_symlinks:` (boolean check — no magic string `"true"` in logic)
-- [ ] **1B.7** `scanner.py` — recursive file traversal (NO detection yet)
+- [x] **1B.7** `scanner.py` — recursive file traversal (NO detection yet)
   - `collect_scan_targets(root_path, excluded_patterns, config)` → `list[Path]` via `pathlib.rglob("*")`
   - `is_path_excluded(file_path, excluded_patterns)` → bool
   - `is_binary_file(file_path)` → bool — check `KNOWN_BINARY_EXTENSIONS` first, then read first 8KB for null bytes
@@ -224,7 +248,7 @@ and explain commands deferred to Phase 2).
   - Symlink skip + warning log, file size check against `max_file_size_mb`
   - Binary file skip + info log (scans ALL text files regardless of extension)
   - All warnings/info use `logging_config` logger (not print statements)
-- [ ] **1B.8** `diff.py` — git diff file extraction for `--diff` mode
+- [x] **1B.8** `diff.py` — git diff file extraction for `--diff` mode
   - `get_changed_files_from_diff(diff_ref)` → `list[Path]` — parse `git diff --name-only`
   - `get_staged_files()` → `list[Path]` — parse `git diff --cached --name-only`
   - Handle renamed files: `git diff --name-only --diff-filter=ACMR` (Added, Copied, Modified, Renamed)
@@ -232,7 +256,7 @@ and explain commands deferred to Phase 2).
   - Guard: raise `TraversalError` with clear message when not inside a git repository
   - Guard: raise `TraversalError` when diff ref is invalid (e.g., `HEAD~1` with no commits)
   - Support formats: `HEAD~N`, `branch..branch`, `commit_sha`, `--staged`
-- [ ] **1B.9** `audit.py` — SQLite audit log (HIPAA-compliant immutable)
+- [x] **1B.9** `audit.py` — SQLite audit log (HIPAA-compliant immutable)
   - `create_audit_schema(database_path)` — CREATE TABLE IF NOT EXISTS with `schema_version` metadata table
   - `insert_scan_event(database_path, scan_result)` — INSERT only, never UPDATE/DELETE
   - `query_recent_scans(database_path, days)` → list of scan events
@@ -242,7 +266,7 @@ and explain commands deferred to Phase 2).
   - Table: `scan_events` (id, timestamp, scanner_version, repository, branch, files_scanned, findings_count, findings_json, is_clean, scan_duration)
   - Table: `schema_meta` (key, value) — stores `schema_version`, `created_at`
   - On startup: check schema version, migrate if needed, raise `SchemaMigrationError` on failure
-- [ ] **1B.10** `output.py` — formatters + Rich visual components
+- [x] **1B.10** `output.py` — formatters + Rich visual components
   - `format_table(scan_result)` — Rich table, color-coded rows (red=high, yellow=medium, green=low)
   - `format_json(scan_result)` — JSON serialization
   - `format_csv(scan_result)` — CSV string with headers
@@ -256,7 +280,7 @@ and explain commands deferred to Phase 2).
   - `display_clean_result()` — large green checkmark with "No PHI/PII detected" celebration
   - `display_violation_alert(scan_result)` — red alert banner with finding count and risk level
   - `display_category_breakdown(scan_result)` — Rich table showing count per HIPAA category with bar-style column
-- [ ] **1B.11** `cli.py` — Typer app with all commands
+- [x] **1B.11** `cli.py` — Typer app with all commands
   - `scan` — path arg, `--diff`, `--file`, `--output`, `--config`, `--severity-threshold`, `--log-level`, `--log-file`, `--quiet`, `--no-cache` (no-op until Phase 2)
   - `watch` — path arg, watchdog file monitoring + re-scan on change
     - **Phase 1 behavior:** traverses files and reports file count per change event
