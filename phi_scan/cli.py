@@ -496,16 +496,16 @@ def _parse_lookback_days(period: str) -> int:
     return int(day_count_str)
 
 
-def _display_scan_event_row(event: dict[str, Any]) -> None:
+def _display_scan_event_row(audit_row: dict[str, Any]) -> None:
     """Print a single audit scan event as a one-line summary.
 
     Args:
-        event: Audit row dict as returned by get_last_scan or query_recent_scans.
+        audit_row: Audit row dict as returned by get_last_scan or query_recent_scans.
     """
-    scanned_at = event.get(_AUDIT_KEY_SCANNED_AT, _UNKNOWN_LABEL)
-    is_clean = event.get(_AUDIT_KEY_IS_CLEAN, False)
-    risk_level = event.get(_AUDIT_KEY_RISK_LEVEL, _UNKNOWN_LABEL)
-    files_scanned = event.get(_AUDIT_KEY_FILES_SCANNED, _ZERO_FILES_SCANNED)
+    scanned_at = audit_row.get(_AUDIT_KEY_SCANNED_AT, _UNKNOWN_LABEL)
+    is_clean = audit_row.get(_AUDIT_KEY_IS_CLEAN, False)
+    risk_level = audit_row.get(_AUDIT_KEY_RISK_LEVEL, _UNKNOWN_LABEL)
+    files_scanned = audit_row.get(_AUDIT_KEY_FILES_SCANNED, _ZERO_FILES_SCANNED)
     status = _CLEAN_STATUS_LABEL if is_clean else _VIOLATION_STATUS_LABEL
     typer.echo(
         _HISTORY_ROW_FORMAT.format(
@@ -563,7 +563,7 @@ def _reject_hook_path_with_symlinked_component(hook_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_watch_loop(watch_path: Path) -> None:
+def _observe_directory(watch_path: Path) -> None:
     """Start the watchdog observer and block until Ctrl+C.
 
     Args:
@@ -581,7 +581,7 @@ def _run_watch_loop(watch_path: Path) -> None:
         typer.echo(_WATCH_STOPPED_MESSAGE)
     finally:
         observer.stop()
-    observer.join()
+        observer.join()
 
 
 # ---------------------------------------------------------------------------
@@ -623,10 +623,6 @@ def main_callback(
 
 @app.command()
 def scan(
-    # Typer command functions must declare options/arguments as parameters so Typer
-    # can build the CLI interface via introspection. The 3-argument rule from CLAUDE.md
-    # applies to regular functions — here the parameters are CLI declarations, not
-    # call-site arguments. Options are immediately packed into dataclasses below.
     path: Annotated[Path, typer.Argument(help=_SCAN_PATH_HELP)] = Path("."),
     diff_ref: Annotated[str | None, typer.Option("--diff", help=_SCAN_DIFF_HELP)] = None,
     single_file: Annotated[Path | None, typer.Option("--file", help=_SCAN_FILE_HELP)] = None,
@@ -648,7 +644,15 @@ def scan(
         bool, typer.Option("--no-cache", help=_SCAN_NO_CACHE_HELP)
     ] = False,
 ) -> None:
-    """Scan a directory or file for PHI/PII."""
+    """Scan a directory or file for PHI/PII.
+
+    Parameters are Typer CLI declarations, not regular call-site arguments — the
+    3-argument rule from CLAUDE.md applies to regular functions, not CLI commands
+    whose parameters are read by Typer introspection. Scan target parameters are
+    immediately packed into _ScanTargetOptions below. Rich UI (banner, progress,
+    results table) is suppressed for serialised formats (json/csv/sarif) to keep
+    stdout clean for pipe and file consumption.
+    """
     _configure_logging(log_level, log_file, is_quiet)
     scan_config = _load_scan_config(config_path, severity_threshold)
     target_options = _ScanTargetOptions(
@@ -658,8 +662,6 @@ def scan(
         config=scan_config,
     )
     scan_targets = _resolve_scan_targets(target_options)
-    # Serialized formats (json/csv/sarif) must produce pure output; Rich UI
-    # (banner, progress, results table) is suppressed to avoid polluting them.
     is_rich_mode = not is_quiet and output_format == OutputFormat.TABLE.value
     if is_rich_mode:
         display_banner()
@@ -677,7 +679,7 @@ def watch(
 ) -> None:
     """Watch a directory and report file changes. Detection active from Phase 2."""
     typer.echo(_WATCH_PHASE_ONE_NOTE)
-    _run_watch_loop(path)
+    _observe_directory(path)
 
 
 @app.command()
