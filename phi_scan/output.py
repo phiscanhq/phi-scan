@@ -203,13 +203,16 @@ _PROGRESS_DESCRIPTION: str = "Scanning"
 _FINDING_WORD: str = "finding"
 _FINDING_WORD_PLURAL: str = "findings"
 _SINGULAR_COUNT: int = 1
+_ZERO_FINDINGS: int = 0
+_LINE_LABEL: str = "line"
+_EMPTY_LINE: str = ""
 
 # ---------------------------------------------------------------------------
 # Private helper functions
 # ---------------------------------------------------------------------------
 
 
-def _finding_to_dict(finding: ScanFinding) -> dict[str, object]:
+def _serialize_finding_to_dict(finding: ScanFinding) -> dict[str, object]:
     """Serialize a ScanFinding to a JSON-serializable dict.
 
     code_context is intentionally omitted: it contains the raw source line
@@ -237,7 +240,7 @@ def _finding_to_dict(finding: ScanFinding) -> dict[str, object]:
     }
 
 
-def _finding_to_csv_row(finding: ScanFinding) -> dict[str, object]:
+def _serialize_finding_to_csv_row(finding: ScanFinding) -> dict[str, object]:
     """Build a CSV row dict from a ScanFinding.
 
     Args:
@@ -498,7 +501,7 @@ def format_json(scan_result: ScanResult) -> str:
         "risk_level": scan_result.risk_level.value,
         "severity_counts": {k.value: v for k, v in scan_result.severity_counts.items()},
         "category_counts": {k.value: v for k, v in scan_result.category_counts.items()},
-        "findings": [_finding_to_dict(finding) for finding in scan_result.findings],
+        "findings": [_serialize_finding_to_dict(finding) for finding in scan_result.findings],
     }
     return json.dumps(payload, indent=_JSON_INDENT)
 
@@ -516,7 +519,7 @@ def format_csv(scan_result: ScanResult) -> str:
     writer = csv.DictWriter(buffer, fieldnames=_CSV_FIELD_NAMES)
     writer.writeheader()
     for finding in scan_result.findings:
-        writer.writerow(_finding_to_csv_row(finding))
+        writer.writerow(_serialize_finding_to_csv_row(finding))
     return buffer.getvalue()
 
 
@@ -564,7 +567,7 @@ def display_banner() -> None:
     _console.rule(style=_RULE_STYLE)
 
 
-def _build_scan_header_content(path: Path, config: ScanConfig) -> str:
+def _build_scan_header_markup(path: Path, config: ScanConfig) -> str:
     """Build the Rich markup content string for the scan header panel.
 
     Args:
@@ -576,16 +579,16 @@ def _build_scan_header_content(path: Path, config: ScanConfig) -> str:
     """
     timestamp = datetime.now().isoformat(timespec=_TIMESTAMP_TIMESPEC)
     label_style = _PANEL_LABEL_STYLE
-    return "\n".join(
+    scan_header_markup = "\n".join(
         [
-            f"[{label_style}]Target:[/{label_style}]               {path}",
-            f"[{label_style}]Severity threshold:[/{label_style}]"
-            f"   {config.severity_threshold.value}",
+            f"[{label_style}]Target:[/{label_style}] {path}",
+            f"[{label_style}]Severity threshold:[/{label_style}] {config.severity_threshold.value}",
             f"[{label_style}]Confidence threshold:[/{label_style}]"
             f" {_CONFIDENCE_FORMAT.format(config.confidence_threshold)}",
-            f"[{label_style}]Timestamp:[/{label_style}]            {timestamp}",
+            f"[{label_style}]Timestamp:[/{label_style}] {timestamp}",
         ]
     )
+    return scan_header_markup
 
 
 def display_scan_header(path: Path, config: ScanConfig) -> None:
@@ -595,8 +598,10 @@ def display_scan_header(path: Path, config: ScanConfig) -> None:
         path: The directory or file being scanned.
         config: Active scan configuration (severity threshold, confidence, etc.).
     """
-    content = _build_scan_header_content(path, config)
-    _console.print(Panel(content, title=_SCAN_HEADER_TITLE, border_style=_PANEL_BORDER_STYLE))
+    scan_header_markup = _build_scan_header_markup(path, config)
+    _console.print(
+        Panel(scan_header_markup, title=_SCAN_HEADER_TITLE, border_style=_PANEL_BORDER_STYLE)
+    )
 
 
 @contextmanager
@@ -650,7 +655,9 @@ def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
         branch = tree.add(f"{file_path} ({count} {word})")
         for finding in file_findings:
             style = _SEVERITY_STYLE[finding.severity]
-            branch.add(f"[{style}]line {finding.line_number}[/{style}] — {finding.entity_type}")
+            branch.add(
+                f"[{style}]{_LINE_LABEL} {finding.line_number}[/{style}] — {finding.entity_type}"
+            )
     _console.print(tree)
 
 
@@ -663,19 +670,19 @@ def display_summary_panel(scan_result: ScanResult) -> None:
     risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
     label_style = _PANEL_LABEL_STYLE
     duration_str = _DURATION_FORMAT.format(scan_result.scan_duration)
-    content = "\n".join(
+    summary_panel_markup = "\n".join(
         [
-            f"[{label_style}]Risk Level:[/{label_style}]          [{risk_style}]"
+            f"[{label_style}]Risk Level:[/{label_style}] [{risk_style}]"
             f"{scan_result.risk_level.value.upper()}[/{risk_style}]",
-            f"[{label_style}]Files Scanned:[/{label_style}]       {scan_result.files_scanned}",
+            f"[{label_style}]Files Scanned:[/{label_style}] {scan_result.files_scanned}",
             f"[{label_style}]Files with Findings:[/{label_style}]"
             f" {scan_result.files_with_findings}",
-            f"[{label_style}]Scan Duration:[/{label_style}]       {duration_str}",
-            "",
+            f"[{label_style}]Scan Duration:[/{label_style}] {duration_str}",
+            _EMPTY_LINE,
             _build_severity_breakdown(scan_result.severity_counts),
         ]
     )
-    _console.print(Panel(content, title=_SUMMARY_PANEL_TITLE, border_style=risk_style))
+    _console.print(Panel(summary_panel_markup, title=_SUMMARY_PANEL_TITLE, border_style=risk_style))
 
 
 def display_clean_result() -> None:
@@ -697,14 +704,18 @@ def display_violation_alert(scan_result: ScanResult) -> None:
     count = len(scan_result.findings)
     risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
     word = _FINDING_WORD if count == _SINGULAR_COUNT else _FINDING_WORD_PLURAL
-    content = "\n".join(
+    violation_panel_markup = "\n".join(
         [
             f"[{_STYLE_BOLD}]{count} {word} detected[/{_STYLE_BOLD}]",
             f"{_VIOLATION_RISK_LEVEL_LABEL}[{risk_style}]{scan_result.risk_level.value.upper()}[/{risk_style}]",
         ]
     )
     _console.print(
-        Panel(content, title=_VIOLATION_ALERT_TITLE, border_style=_VIOLATION_BORDER_STYLE)
+        Panel(
+            violation_panel_markup,
+            title=_VIOLATION_ALERT_TITLE,
+            border_style=_VIOLATION_BORDER_STYLE,
+        )
     )
 
 
@@ -724,6 +735,6 @@ def display_category_breakdown(scan_result: ScanResult) -> None:
     max_count = max(scan_result.category_counts.values(), default=_CATEGORY_BAR_DENOMINATOR_FLOOR)
     for category in PhiCategory:
         count = scan_result.category_counts.get(category, 0)
-        if count > 0:
+        if count > _ZERO_FINDINGS:
             table.add_row(category.value, str(count), _build_count_bar(count, max_count))
     _console.print(table)
