@@ -106,6 +106,7 @@ _WATCH_PHASE_ONE_NOTE: str = (
 _WATCH_STARTED_MESSAGE: str = "Watching {path} for changes. Press Ctrl+C to stop."
 _WATCH_CHANGE_EVENT_FORMAT: str = "Change detected: {event_path} — {file_count} file(s) in tree"
 _WATCH_POLL_INTERVAL_SECONDS: float = 1.0
+_WATCH_STOPPED_MESSAGE: str = "\nWatch stopped."
 
 # ---------------------------------------------------------------------------
 # History command
@@ -153,6 +154,10 @@ _HOOK_ALREADY_EXISTS_MESSAGE: str = (
 _HOOK_REMOVED_MESSAGE: str = "Pre-commit hook removed: {path}"
 _HOOK_NOT_FOUND_MESSAGE: str = "No phi-scan hook found at {path}."
 _HOOK_NOT_OURS_MESSAGE: str = "Hook at {path} was not installed by phi-scan — not removing."
+_HOOK_IS_SYMLINK_MESSAGE: str = "Hook at {path} is a symlink — not reading or removing."
+_HOOK_ESCAPED_PROJECT_ROOT_ERROR: str = (
+    "Hook path {path!r} resolves outside the project root — refusing to write."
+)
 # Marker written into every hook we install; used to identify our hooks on uninstall.
 _HOOK_MARKER: str = "phi-scan scan"
 _HOOK_FILE_PERMISSIONS: int = 0o755
@@ -517,6 +522,37 @@ def _display_scan_history(scan_events: list[dict[str, Any]]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Internal helpers — install-hook / uninstall-hook
+# ---------------------------------------------------------------------------
+
+
+def _reject_hook_path_outside_project_root(hook_path: Path) -> None:
+    """Guard against symlink attacks that redirect the hook outside the project root.
+
+    Resolves hook_path against the real filesystem and verifies the result is
+    a descendant of the current working directory. A symlink in any intermediate
+    directory component (e.g. .git itself being a symlink) would cause the hook
+    to be written to an unintended location outside the repository.
+
+    Args:
+        hook_path: The hook file path to validate before writing.
+
+    Raises:
+        typer.Exit: If the resolved path is not inside the project root.
+    """
+    project_root = Path.cwd().resolve()
+    resolved = hook_path.resolve()
+    try:
+        resolved.relative_to(project_root)
+    except ValueError:
+        typer.echo(
+            _HOOK_ESCAPED_PROJECT_ROOT_ERROR.format(path=str(hook_path)),
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_CODE_ERROR)
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers — watch command
 # ---------------------------------------------------------------------------
 
@@ -536,7 +572,7 @@ def _run_watch_loop(watch_path: Path) -> None:
         while True:
             time.sleep(_WATCH_POLL_INTERVAL_SECONDS)
     except KeyboardInterrupt:
-        pass
+        typer.echo(_WATCH_STOPPED_MESSAGE)
     finally:
         observer.stop()
     observer.join()
@@ -602,14 +638,15 @@ def scan(
     ] = _LOG_LEVEL_WARNING,
     log_file: Annotated[Path | None, typer.Option("--log-file", help=_SCAN_LOG_FILE_HELP)] = None,
     is_quiet: Annotated[bool, typer.Option("--quiet", "-q", help=_SCAN_QUIET_HELP)] = False,
-    no_cache: Annotated[bool, typer.Option("--no-cache", help=_SCAN_NO_CACHE_HELP)] = False,
+    should_bypass_cache: Annotated[
+        bool, typer.Option("--no-cache", help=_SCAN_NO_CACHE_HELP)
+    ] = False,
 ) -> None:
     """Scan a directory or file for PHI/PII."""
+    # should_bypass_cache is accepted now for forward-compatibility; the cache
+    # layer that honours it activates in Phase 2.
+    del should_bypass_cache
     _configure_logging(log_level, log_file, is_quiet)
-    # no_cache is a declared Phase 2 flag. It is accepted now so existing CI
-    # scripts can pass --no-cache without breaking; the cache layer activates
-    # in Phase 2 and will honour it then.
-    _logger.debug("--no-cache flag received (no-op until Phase 2): %s", no_cache)
     scan_config = _load_scan_config(config_path, severity_threshold)
     target_options = _ScanTargetOptions(
         scan_root=path,
@@ -618,9 +655,8 @@ def scan(
         config=scan_config,
     )
     scan_targets = _resolve_scan_targets(target_options)
-    # Rich UI (banner, progress, results table) is only appropriate for table
-    # format. Serialized formats (json/csv/sarif) must produce pure output with
-    # no terminal decoration so they can be piped to files or consumed by CI.
+    # Serialized formats (json/csv/sarif) must produce pure output; Rich UI
+    # (banner, progress, results table) is suppressed to avoid polluting them.
     is_rich_mode = not is_quiet and output_format == OutputFormat.TABLE.value
     if is_rich_mode:
         display_banner()
@@ -673,6 +709,7 @@ def install_hook() -> None:
     if hook_path.exists() or hook_path.is_symlink():
         typer.echo(_HOOK_ALREADY_EXISTS_MESSAGE.format(path=hook_path))
         return
+    _reject_hook_path_outside_project_root(hook_path)
     hook_path.parent.mkdir(parents=True, exist_ok=True)
     hook_path.write_text(_HOOK_SCRIPT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
     hook_path.chmod(_HOOK_FILE_PERMISSIONS)
@@ -685,6 +722,9 @@ def uninstall_hook() -> None:
     hook_path = Path(_PRE_COMMIT_HOOK_PATH)
     if not hook_path.exists():
         typer.echo(_HOOK_NOT_FOUND_MESSAGE.format(path=hook_path))
+        return
+    if hook_path.is_symlink():
+        typer.echo(_HOOK_IS_SYMLINK_MESSAGE.format(path=hook_path))
         return
     hook_content = hook_path.read_text(encoding=DEFAULT_TEXT_ENCODING)
     if _HOOK_MARKER not in hook_content:
