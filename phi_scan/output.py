@@ -206,7 +206,7 @@ _SINGULAR_COUNT: int = 1
 _ZERO_FINDINGS: int = 0
 _MIN_VALID_MAX_COUNT: int = 1
 _LINE_LABEL: str = "line"
-_EMPTY_LINE: str = ""
+_MARKUP_BLANK_LINE: str = ""
 _EM_DASH_SEPARATOR: str = " — "
 # Error raised when _build_count_bar receives max_count=0 — callers must guard
 # via max(..., default=_CATEGORY_BAR_DENOMINATOR_FLOOR) before calling.
@@ -245,6 +245,9 @@ def _serialize_finding_to_dict(finding: ScanFinding) -> dict[str, object]:
         "detection_layer": finding.detection_layer.value,
         "severity": finding.severity.value,
         "value_hash": finding.value_hash,
+        # remediation_hint must never contain raw PHI — the ScanFinding contract
+        # requires it to hold only generic guidance (e.g. "Replace SSN with
+        # synthetic value"), never the matched value itself.
         "remediation_hint": finding.remediation_hint,
     }
 
@@ -266,6 +269,7 @@ def _serialize_finding_to_csv_row(finding: ScanFinding) -> dict[str, object]:
         "confidence": finding.confidence,
         "severity": finding.severity.value,
         "detection_layer": finding.detection_layer.value,
+        # remediation_hint must never contain raw PHI — see _serialize_finding_to_dict.
         "remediation_hint": finding.remediation_hint,
     }
 
@@ -587,7 +591,7 @@ _BANNER_PYFIGLET_MISSING_NOTE: str = (
 )
 
 
-def _render_ascii_banner() -> str:
+def _build_ascii_banner_text() -> str:
     """Return the PhiScan ASCII art string, falling back to plain text.
 
     pyfiglet is an optional dependency. When absent, emits a dim console note
@@ -607,7 +611,7 @@ def _render_ascii_banner() -> str:
 
 def display_banner() -> None:
     """Render the PhiScan ASCII art banner, tagline, and separator rule."""
-    _console.print(_render_ascii_banner(), style=_BANNER_STYLE)
+    _console.print(_build_ascii_banner_text(), style=_BANNER_STYLE)
     _console.print(
         _BANNER_TAGLINE_TEMPLATE.format(version=__version__),
         style=_BANNER_TAGLINE_STYLE,
@@ -661,7 +665,7 @@ def create_scan_progress(total_files: int) -> Generator[tuple[Progress, TaskID],
 
     Usage::
 
-        with display_scan_progress(total) as (progress, task_id):
+        with create_scan_progress(total) as (progress, task_id):
             for path in files:
                 progress.update(task_id, advance=1, description=str(path))
 
@@ -700,6 +704,7 @@ def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
     """
     tree = Tree(_FILE_TREE_TITLE, style=_PANEL_LABEL_STYLE)
     findings_by_file = _group_findings_by_file(findings)
+    # Path objects sort lexicographically — produces alphabetical file order intentionally.
     for file_path, file_findings in sorted(findings_by_file.items()):
         count = len(file_findings)
         word = _FINDING_WORD if count == _SINGULAR_COUNT else _FINDING_WORD_PLURAL
@@ -713,16 +718,19 @@ def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
     _console.print(tree)
 
 
-def display_summary_panel(scan_result: ScanResult) -> None:
-    """Render a bordered summary panel with risk level, file stats, and severity breakdown.
+def _build_summary_panel_markup(scan_result: ScanResult) -> str:
+    """Build the Rich markup string for the scan summary panel.
 
     Args:
-        scan_result: The completed scan result to summarise.
+        scan_result: The completed scan result.
+
+    Returns:
+        Newline-separated Rich markup string with risk level, file stats, and severity.
     """
     risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
     label_style = _PANEL_LABEL_STYLE
     duration_str = _DURATION_FORMAT.format(scan_result.scan_duration)
-    summary_panel_markup = "\n".join(
+    return "\n".join(
         [
             f"[{label_style}]Risk Level:[/{label_style}] [{risk_style}]"
             f"{_format_risk_level_display(scan_result.risk_level)}[/{risk_style}]",
@@ -730,11 +738,26 @@ def display_summary_panel(scan_result: ScanResult) -> None:
             f"[{label_style}]Files with Findings:[/{label_style}]"
             f" {scan_result.files_with_findings}",
             f"[{label_style}]Scan Duration:[/{label_style}] {duration_str}",
-            _EMPTY_LINE,
+            _MARKUP_BLANK_LINE,
             _build_severity_breakdown(scan_result.severity_counts),
         ]
     )
-    _console.print(Panel(summary_panel_markup, title=_SUMMARY_PANEL_TITLE, border_style=risk_style))
+
+
+def display_summary_panel(scan_result: ScanResult) -> None:
+    """Render a bordered summary panel with risk level, file stats, and severity breakdown.
+
+    Args:
+        scan_result: The completed scan result to summarise.
+    """
+    risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
+    _console.print(
+        Panel(
+            _build_summary_panel_markup(scan_result),
+            title=_SUMMARY_PANEL_TITLE,
+            border_style=risk_style,
+        )
+    )
 
 
 def display_clean_result() -> None:
