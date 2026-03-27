@@ -14,7 +14,6 @@ import pytest
 
 from phi_scan import __version__
 from phi_scan.audit import (
-    _BOOLEAN_FALSE,
     _BOOLEAN_TRUE,
     _CREATED_AT_KEY,
     _SCAN_EVENTS_TABLE,
@@ -60,6 +59,7 @@ _SAMPLE_FILES_WITH_FINDINGS: int = 1
 _SAMPLE_GIT_BRANCH: str = "main"
 _SAMPLE_GIT_REPO_ROOT: str = "/repo"
 _SAMPLE_REPOSITORY_HASH: str = hashlib.sha256(_SAMPLE_GIT_REPO_ROOT.encode()).hexdigest()
+_SAMPLE_BRANCH_HASH: str = hashlib.sha256(_SAMPLE_GIT_BRANCH.encode()).hexdigest()
 _SAMPLE_GIT_BRANCH_OUTPUT: str = f"{_SAMPLE_GIT_BRANCH}\n"
 _SAMPLE_GIT_REPO_OUTPUT: str = f"{_SAMPLE_GIT_REPO_ROOT}\n"
 _EMPTY_GIT_OUTPUT: str = ""
@@ -380,7 +380,7 @@ def test_insert_scan_event_sets_is_clean_true_for_clean_result(tmp_path: Path) -
     cursor = connection.execute(f"SELECT {_IS_CLEAN_COLUMN} FROM {_SCAN_EVENTS_TABLE}")
     is_clean_value = cursor.fetchone()[0]
     connection.close()
-    assert is_clean_value == _BOOLEAN_TRUE
+    assert bool(is_clean_value) is True
 
 
 def test_insert_scan_event_sets_is_clean_false_for_dirty_result(tmp_path: Path) -> None:
@@ -398,7 +398,7 @@ def test_insert_scan_event_sets_is_clean_false_for_dirty_result(tmp_path: Path) 
     cursor = connection.execute(f"SELECT {_IS_CLEAN_COLUMN} FROM {_SCAN_EVENTS_TABLE}")
     is_clean_value = cursor.fetchone()[0]
     connection.close()
-    assert is_clean_value == _BOOLEAN_FALSE
+    assert bool(is_clean_value) is False
 
 
 def test_insert_scan_event_stores_findings_count(tmp_path: Path) -> None:
@@ -504,14 +504,14 @@ def test_query_recent_scans_excludes_events_older_than_cutoff(tmp_path: Path) ->
     connection = sqlite3.connect(str(database_path))
     connection.execute(
         f"INSERT INTO {_SCAN_EVENTS_TABLE} "
-        "(timestamp, scanner_version, repository_hash, branch, files_scanned, "
+        "(timestamp, scanner_version, repository_hash, branch_hash, files_scanned, "
         "findings_count, findings_json, is_clean, scan_duration) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             old_timestamp,
             __version__,
             _SAMPLE_REPOSITORY_HASH,
-            _SAMPLE_GIT_BRANCH,
+            _SAMPLE_BRANCH_HASH,
             _SAMPLE_FILES_SCANNED,
             0,
             "[]",
@@ -603,7 +603,7 @@ def test_get_last_scan_returns_most_recent_scan(tmp_path: Path) -> None:
     last = get_last_scan(database_path)
 
     assert last is not None
-    assert last["is_clean"] == _BOOLEAN_FALSE  # dirty_result was inserted last
+    assert bool(last["is_clean"]) is False  # dirty_result was inserted last
 
 
 def test_get_last_scan_raises_audit_log_error_for_symlink(tmp_path: Path) -> None:

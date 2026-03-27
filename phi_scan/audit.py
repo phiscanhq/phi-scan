@@ -77,7 +77,7 @@ _CREATE_SCAN_EVENTS_SQL: str = f"""
         timestamp        TEXT    NOT NULL,
         scanner_version  TEXT    NOT NULL,
         repository_hash  TEXT    NOT NULL,
-        branch           TEXT    NOT NULL,
+        branch_hash      TEXT    NOT NULL,
         files_scanned    INTEGER NOT NULL,
         findings_count   INTEGER NOT NULL,
         findings_json    TEXT    NOT NULL,
@@ -95,7 +95,7 @@ _INSERT_META_SQL: str = f"INSERT OR IGNORE INTO {_SCHEMA_META_TABLE} (key, value
 _UPDATE_META_SQL: str = f"INSERT OR REPLACE INTO {_SCHEMA_META_TABLE} (key, value) VALUES (?, ?)"
 _INSERT_SCAN_EVENT_SQL: str = f"""
     INSERT INTO {_SCAN_EVENTS_TABLE}
-        (timestamp, scanner_version, repository_hash, branch,
+        (timestamp, scanner_version, repository_hash, branch_hash,
          files_scanned, findings_count, findings_json, is_clean, scan_duration)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
@@ -153,9 +153,9 @@ def insert_scan_event(database_path: Path, scan_result: ScanResult) -> None:
 
     findings_json stores only value_hash and metadata fields — raw detected
     values and code_context (which may contain raw PHI) are never persisted.
-    repository_hash and file_path_hash store SHA-256 digests — repository
-    root paths and file names can be PHI-revealing and must not be stored
-    in plaintext (e.g. /home/patient_records/ssn_exports).
+    repository_hash, branch_hash, and file_path_hash store SHA-256 digests
+    — paths and branch names can be PHI-revealing (e.g. a branch named
+    feature/patient-john-doe-ssn-fix or a repo at /home/patient_records).
 
     Args:
         database_path: Path to the SQLite audit database file.
@@ -166,11 +166,12 @@ def insert_scan_event(database_path: Path, scan_result: ScanResult) -> None:
     """
     is_clean_flag = _BOOLEAN_TRUE if scan_result.is_clean else _BOOLEAN_FALSE
     repository_hash = hashlib.sha256(_get_current_repository_path().encode()).hexdigest()
+    branch_hash = hashlib.sha256(_get_current_branch().encode()).hexdigest()
     scan_event_row = (
         _get_current_timestamp(),
         __version__,
         repository_hash,
-        _get_current_branch(),
+        branch_hash,
         scan_result.files_scanned,
         len(scan_result.findings),
         _serialize_findings(scan_result.findings),
