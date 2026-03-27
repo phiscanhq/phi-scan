@@ -155,8 +155,8 @@ _HOOK_REMOVED_MESSAGE: str = "Pre-commit hook removed: {path}"
 _HOOK_NOT_FOUND_MESSAGE: str = "No phi-scan hook found at {path}."
 _HOOK_NOT_OURS_MESSAGE: str = "Hook at {path} was not installed by phi-scan — not removing."
 _HOOK_IS_SYMLINK_MESSAGE: str = "Hook at {path} is a symlink — not reading or removing."
-_HOOK_ESCAPED_PROJECT_ROOT_ERROR: str = (
-    "Hook path {path!r} resolves outside the project root — refusing to write."
+_HOOK_SYMLINKED_COMPONENT_ERROR: str = (
+    "Hook path component {component!r} is a symlink — refusing to write."
 )
 # Marker written into every hook we install; used to identify our hooks on uninstall.
 _HOOK_MARKER: str = "phi-scan scan"
@@ -198,6 +198,9 @@ _DASHBOARD_STUB_MESSAGE: str = (
 # Error and warning messages
 # ---------------------------------------------------------------------------
 
+_CONFIG_LOAD_FAILURE_WARNING: str = (
+    "Config file {path!r} exists but could not be loaded — using defaults: {error}"
+)
 _AUDIT_WRITE_FAILURE_WARNING: str = "Audit log write failed — scan result not persisted: {error}"
 _UNSUPPORTED_OUTPUT_FORMAT_ERROR: str = (
     "Output format {fmt!r} is not supported in Phase 1. Supported: table, json, csv, sarif."
@@ -338,7 +341,13 @@ def _load_scan_config(config_path: Path | None, severity_threshold: str | None) 
     resolved_config_path = config_path or Path(DEFAULT_CONFIG_FILENAME)
     try:
         scan_config = load_config(resolved_config_path)
-    except ConfigurationError:
+    except ConfigurationError as config_error:
+        if resolved_config_path.exists():
+            _logger.warning(
+                _CONFIG_LOAD_FAILURE_WARNING.format(
+                    path=str(resolved_config_path), error=config_error
+                )
+            )
         scan_config = ScanConfig()
     if severity_threshold is None:
         return scan_config
@@ -526,30 +535,27 @@ def _display_scan_history(scan_events: list[dict[str, Any]]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _reject_hook_path_outside_project_root(hook_path: Path) -> None:
-    """Guard against symlink attacks that redirect the hook outside the project root.
+def _reject_hook_path_with_symlinked_component(hook_path: Path) -> None:
+    """Reject if any existing ancestor directory of hook_path is itself a symlink.
 
-    Resolves hook_path against the real filesystem and verifies the result is
-    a descendant of the current working directory. A symlink in any intermediate
-    directory component (e.g. .git itself being a symlink) would cause the hook
-    to be written to an unintended location outside the repository.
+    Walks each path component individually instead of calling Path.resolve(),
+    which would follow symlinks — prohibited by the security policy. A symlinked
+    .git directory (common in git worktrees) would redirect hook writes to an
+    unintended location; this guard catches that before any write occurs.
 
     Args:
         hook_path: The hook file path to validate before writing.
 
     Raises:
-        typer.Exit: If the resolved path is not inside the project root.
+        typer.Exit: If any ancestor directory component is a symlink.
     """
-    project_root = Path.cwd().resolve()
-    resolved = hook_path.resolve()
-    try:
-        resolved.relative_to(project_root)
-    except ValueError:
-        typer.echo(
-            _HOOK_ESCAPED_PROJECT_ROOT_ERROR.format(path=str(hook_path)),
-            err=True,
-        )
-        raise typer.Exit(code=_EXIT_CODE_ERROR)
+    for ancestor in reversed(list(hook_path.parents)):
+        if ancestor.is_symlink():
+            typer.echo(
+                _HOOK_SYMLINKED_COMPONENT_ERROR.format(component=str(ancestor)),
+                err=True,
+            )
+            raise typer.Exit(code=_EXIT_CODE_ERROR)
 
 
 # ---------------------------------------------------------------------------
@@ -643,9 +649,6 @@ def scan(
     ] = False,
 ) -> None:
     """Scan a directory or file for PHI/PII."""
-    # should_bypass_cache is accepted now for forward-compatibility; the cache
-    # layer that honours it activates in Phase 2.
-    del should_bypass_cache
     _configure_logging(log_level, log_file, is_quiet)
     scan_config = _load_scan_config(config_path, severity_threshold)
     target_options = _ScanTargetOptions(
@@ -709,7 +712,7 @@ def install_hook() -> None:
     if hook_path.exists() or hook_path.is_symlink():
         typer.echo(_HOOK_ALREADY_EXISTS_MESSAGE.format(path=hook_path))
         return
-    _reject_hook_path_outside_project_root(hook_path)
+    _reject_hook_path_with_symlinked_component(hook_path)
     hook_path.parent.mkdir(parents=True, exist_ok=True)
     hook_path.write_text(_HOOK_SCRIPT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
     hook_path.chmod(_HOOK_FILE_PERMISSIONS)
@@ -747,7 +750,7 @@ def download_models() -> None:
 
 
 @app.command("dashboard")
-def show_dashboard() -> None:
+def display_dashboard() -> None:
     """Rich Live real-time scan dashboard."""
     typer.echo(_DASHBOARD_STUB_MESSAGE)
 
