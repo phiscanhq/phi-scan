@@ -15,6 +15,7 @@ from phi_scan import __version__
 from phi_scan.audit import (
     _BOOLEAN_FALSE,
     _BOOLEAN_TRUE,
+    _CREATED_AT_KEY,
     _SCAN_EVENTS_TABLE,
     _SCHEMA_META_TABLE,
     _SCHEMA_VERSION_KEY,
@@ -286,7 +287,9 @@ def test_create_audit_schema_seeds_created_at(tmp_path: Path) -> None:
     create_audit_schema(database_path)
 
     connection = sqlite3.connect(str(database_path))
-    cursor = connection.execute(f"SELECT value FROM {_SCHEMA_META_TABLE} WHERE key = 'created_at'")
+    cursor = connection.execute(
+        f"SELECT value FROM {_SCHEMA_META_TABLE} WHERE key = '{_CREATED_AT_KEY}'"
+    )
     row = cursor.fetchone()
     connection.close()
     assert row is not None

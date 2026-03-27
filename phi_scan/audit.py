@@ -65,8 +65,9 @@ _BOOLEAN_TRUE: int = 1
 _BOOLEAN_FALSE: int = 0
 _PRAGMA_WAL_MODE: str = "PRAGMA journal_mode=WAL"
 _LAST_SCAN_LIMIT: int = 1
-_GIT_BRANCH_ARGS: list[str] = ["git", "branch", "--show-current"]
-_GIT_TOPLEVEL_ARGS: list[str] = ["git", "rev-parse", "--show-toplevel"]
+_GIT_SUBPROCESS_TIMEOUT_SECONDS: int = 5
+_GIT_BRANCH_ARGS: tuple[str, ...] = ("git", "branch", "--show-current")
+_GIT_TOPLEVEL_ARGS: tuple[str, ...] = ("git", "rev-parse", "--show-toplevel")
 
 # SQL DDL — table names are module-level constants, not user input; f-strings are safe.
 _CREATE_SCAN_EVENTS_SQL: str = f"""
@@ -278,18 +279,7 @@ def migrate_schema(database_path: Path, from_version: int, to_version: int) -> N
         )
     connection = _open_database(database_path)
     try:
-        current_version = from_version
-        while current_version < to_version:
-            if current_version not in _MIGRATIONS:
-                raise SchemaMigrationError(
-                    _UNKNOWN_MIGRATION_ERROR.format(
-                        from_version=current_version,
-                        to_version=current_version + 1,
-                    )
-                )
-            connection.execute(_MIGRATIONS[current_version])
-            connection.execute(_UPDATE_META_SQL, (_SCHEMA_VERSION_KEY, str(current_version + 1)))
-            current_version += 1
+        _apply_migration_steps(connection, from_version, to_version)
         connection.commit()
     except sqlite3.Error as db_error:
         connection.rollback()
@@ -301,6 +291,33 @@ def migrate_schema(database_path: Path, from_version: int, to_version: int) -> N
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _apply_migration_steps(
+    connection: sqlite3.Connection, from_version: int, to_version: int
+) -> None:
+    """Execute sequential migration SQL steps from from_version up to to_version.
+
+    Args:
+        connection: Open database connection to execute migrations on.
+        from_version: The starting schema version.
+        to_version: The target schema version.
+
+    Raises:
+        SchemaMigrationError: If no migration SQL exists for a required step.
+    """
+    current_version = from_version
+    while current_version < to_version:
+        if current_version not in _MIGRATIONS:
+            raise SchemaMigrationError(
+                _UNKNOWN_MIGRATION_ERROR.format(
+                    from_version=current_version,
+                    to_version=current_version + 1,
+                )
+            )
+        connection.execute(_MIGRATIONS[current_version])
+        connection.execute(_UPDATE_META_SQL, (_SCHEMA_VERSION_KEY, str(current_version + 1)))
+        current_version += 1
 
 
 def _reject_symlink_database_path(database_path: Path) -> None:
@@ -391,8 +408,13 @@ def _get_current_branch() -> str:
         The branch name string, or _UNKNOWN_BRANCH on any failure.
     """
     try:
-        result = subprocess.run(_GIT_BRANCH_ARGS, capture_output=True, text=True)
-        branch = result.stdout.strip()
+        completed_process = subprocess.run(
+            _GIT_BRANCH_ARGS,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_SUBPROCESS_TIMEOUT_SECONDS,
+        )
+        branch = completed_process.stdout.strip()
         return branch if branch else _UNKNOWN_BRANCH
     except OSError:
         return _UNKNOWN_BRANCH
@@ -405,9 +427,14 @@ def _get_repository_path() -> str:
         Absolute path string of the repository root or CWD.
     """
     try:
-        result = subprocess.run(_GIT_TOPLEVEL_ARGS, capture_output=True, text=True)
-        if result.returncode == 0:
-            return result.stdout.strip()
+        completed_process = subprocess.run(
+            _GIT_TOPLEVEL_ARGS,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_SUBPROCESS_TIMEOUT_SECONDS,
+        )
+        if completed_process.returncode == 0:
+            return completed_process.stdout.strip()
     except OSError:
-        pass
+        return str(Path.cwd())
     return str(Path.cwd())
