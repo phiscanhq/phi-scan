@@ -132,7 +132,7 @@ def create_audit_schema(database_path: Path) -> None:
         AuditLogError: If database_path is a symlink, or if the database
             cannot be opened or written to.
     """
-    timestamp = _current_timestamp()
+    timestamp = _get_current_timestamp()
     connection = _open_database(database_path)
     try:
         connection.execute(_CREATE_SCAN_EVENTS_SQL)
@@ -162,7 +162,7 @@ def insert_scan_event(database_path: Path, scan_result: ScanResult) -> None:
     """
     is_clean_flag = _BOOLEAN_TRUE if scan_result.is_clean else _BOOLEAN_FALSE
     row = (
-        _current_timestamp(),
+        _get_current_timestamp(),
         __version__,
         _get_repository_path(),
         _get_current_branch(),
@@ -362,7 +362,7 @@ def _open_database(database_path: Path) -> sqlite3.Connection:
     return connection
 
 
-def _current_timestamp() -> str:
+def _get_current_timestamp() -> str:
     """Return the current UTC time as an ISO 8601 string.
 
     Returns:
@@ -376,7 +376,9 @@ def _serialize_findings(findings: tuple[ScanFinding, ...]) -> str:
 
     Only fields that cannot contain raw PHI are included. ``code_context``
     is deliberately excluded — it stores surrounding source lines that may
-    contain the detected value in plaintext.
+    contain the detected value in plaintext. ``file_path`` is stored as a
+    plain string — paths can be PHI-revealing (e.g. patient_ssn_export.csv);
+    this is a known limitation deferred to Phase 2 security hardening.
 
     Args:
         findings: The findings tuple from a completed ScanResult.
@@ -416,7 +418,8 @@ def _get_current_branch() -> str:
         )
         branch = completed_process.stdout.strip()
         return branch if branch else _UNKNOWN_BRANCH
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired) as git_error:
+        _logger.warning("Could not determine git branch: %s", git_error)
         return _UNKNOWN_BRANCH
 
 
@@ -435,6 +438,6 @@ def _get_repository_path() -> str:
         )
         if completed_process.returncode == 0:
             return completed_process.stdout.strip()
-    except OSError:
-        return str(Path.cwd())
+    except (OSError, subprocess.TimeoutExpired) as git_error:
+        _logger.warning("Could not determine git repository path: %s", git_error)
     return str(Path.cwd())

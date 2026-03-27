@@ -20,8 +20,8 @@ from phi_scan.audit import (
     _SCHEMA_META_TABLE,
     _SCHEMA_VERSION_KEY,
     _UNKNOWN_BRANCH,
-    _current_timestamp,
     _get_current_branch,
+    _get_current_timestamp,
     _get_repository_path,
     _open_database,
     _reject_symlink_database_path,
@@ -729,25 +729,25 @@ def test_migrate_schema_raises_audit_log_error_for_symlink(tmp_path: Path) -> No
 
 
 # ---------------------------------------------------------------------------
-# _current_timestamp
+# _get_current_timestamp
 # ---------------------------------------------------------------------------
 
 
 def test_current_timestamp_returns_string() -> None:
-    timestamp = _current_timestamp()
+    timestamp = _get_current_timestamp()
 
     assert isinstance(timestamp, str)
 
 
 def test_current_timestamp_is_parseable_as_datetime() -> None:
-    timestamp = _current_timestamp()
+    timestamp = _get_current_timestamp()
 
     parsed = datetime.datetime.fromisoformat(timestamp)
     assert isinstance(parsed, datetime.datetime)
 
 
 def test_current_timestamp_is_utc() -> None:
-    timestamp = _current_timestamp()
+    timestamp = _get_current_timestamp()
 
     parsed = datetime.datetime.fromisoformat(timestamp)
     assert parsed.tzinfo is not None
@@ -756,7 +756,7 @@ def test_current_timestamp_is_utc() -> None:
 
 
 def test_current_timestamp_contains_date_time_separator() -> None:
-    timestamp = _current_timestamp()
+    timestamp = _get_current_timestamp()
 
     assert "T" in timestamp
 
