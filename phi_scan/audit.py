@@ -67,6 +67,8 @@ _BOOLEAN_FALSE: int = 0
 _PRAGMA_WAL_MODE: str = "PRAGMA journal_mode=WAL"
 _LAST_SCAN_LIMIT: int = 1
 _GIT_SUBPROCESS_TIMEOUT_SECONDS: int = 5
+# Git args are fully hardcoded tuples — shell=False is implicit (list form),
+# no user input is interpolated, so subprocess injection is not possible.
 _GIT_BRANCH_ARGS: tuple[str, ...] = ("git", "branch", "--show-current")
 _GIT_TOPLEVEL_ARGS: tuple[str, ...] = ("git", "rev-parse", "--show-toplevel")
 
@@ -189,12 +191,12 @@ def insert_scan_event(database_path: Path, scan_result: ScanResult) -> None:
         connection.close()
 
 
-def query_recent_scans(database_path: Path, days: int) -> list[dict[str, Any]]:
-    """Return scan events recorded within the last ``days`` days.
+def query_recent_scans(database_path: Path, lookback_days: int) -> list[dict[str, Any]]:
+    """Return scan events recorded within the last ``lookback_days`` days.
 
     Args:
         database_path: Path to the SQLite audit database file.
-        days: Number of days back to include in the results.
+        lookback_days: Number of days back to include in the results.
 
     Returns:
         List of scan event rows as dicts, ordered by timestamp descending.
@@ -202,7 +204,9 @@ def query_recent_scans(database_path: Path, days: int) -> list[dict[str, Any]]:
     Raises:
         AuditLogError: If the database cannot be read.
     """
-    cutoff = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)).isoformat()
+    cutoff = (
+        datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=lookback_days)
+    ).isoformat()
     connection = _open_database(database_path)
     try:
         cursor = connection.execute(_SELECT_RECENT_SCANS_SQL, (cutoff,))
@@ -360,11 +364,11 @@ def _ensure_database_parent_exists(database_path: Path) -> None:
 def _open_database(database_path: Path) -> sqlite3.Connection:
     """Open and configure a SQLite connection to the audit database.
 
-    Note: _reject_symlink_database_path is subject to a TOCTOU race — a
-    symlink could be inserted between the is_symlink() check and the
-    sqlite3.connect call. Full mitigation requires os.open with O_NOFOLLOW,
-    which is platform-specific. The window is narrow and requires local
-    filesystem access, which is outside the HIPAA threat model for CI runners.
+    # TODO(security): TOCTOU race — a symlink could be inserted between the
+    # is_symlink() check in _reject_symlink_database_path and the sqlite3.connect
+    # call below. Full mitigation requires os.open with O_NOFOLLOW, which is not
+    # portable on Windows. The window is narrow and requires local filesystem write
+    # access on the CI runner — outside the HIPAA threat model. Defer to Phase 5.
 
     Args:
         database_path: Path to the SQLite file to open or create.
@@ -470,4 +474,7 @@ def _get_current_repository_path() -> str:
             return completed_process.stdout.strip()
     except (OSError, subprocess.TimeoutExpired) as git_error:
         _logger.warning("Could not determine git repository path: %s", git_error)
+    # Path.cwd() follows symlinks on most platforms. The returned path is
+    # SHA-256 hashed before storage, so no plaintext PHI is persisted even
+    # if a symlinked CWD returns an attacker-influenced path.
     return str(Path.cwd())
