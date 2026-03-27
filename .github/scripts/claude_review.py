@@ -146,26 +146,49 @@ def request_claude_review(pr_title: str, diff: str) -> str:
 
 
 REVIEW_RESULT_FILE = "review_result.txt"
+REVIEW_COMMENT_HEADER = "## Claude Code Review\n\n"
+DEFAULT_VERDICT = "WARNING"
+VERDICT_LINE_PREFIX = "verdict:"
+
+
+def _extract_verdict(review_text: str) -> str:
+    """Extract the machine-readable verdict from the structured REVIEW_RESULT block.
+
+    Args:
+        review_text: Full review text from Claude, expected to contain a verdict line.
+
+    Returns:
+        Verdict string (CLEAN, CRITICAL, or WARNING). Defaults to WARNING if not found
+        so unreadable results trigger a fix attempt rather than silently passing.
+    """
+    for line in review_text.splitlines():
+        stripped_line = line.strip()
+        if stripped_line.startswith(VERDICT_LINE_PREFIX):
+            return stripped_line.split(":", maxsplit=1)[1].strip()
+    return DEFAULT_VERDICT
+
+
+def _write_human_review(review_text: str) -> None:
+    """Write the human-readable review comment to the output file for posting."""
+    with open(REVIEW_OUTPUT_FILE, "w", encoding="utf-8") as output_file:
+        output_file.write(REVIEW_COMMENT_HEADER + review_text)
+
+
+def _write_verdict_result(review_text: str) -> None:
+    """Write the machine-readable verdict to the result file for the auto-resolve workflow."""
+    verdict = _extract_verdict(review_text)
+    with open(REVIEW_RESULT_FILE, "w", encoding="utf-8") as result_file:
+        result_file.write(verdict)
 
 
 def write_review_comment(review_text: str) -> None:
-    """Write the human-readable review and machine-readable result to their output files."""
-    header = "## Claude Code Review\n\n"
+    """Write the review comment and verdict result files.
 
-    with open(REVIEW_OUTPUT_FILE, "w", encoding="utf-8") as output_file:
-        output_file.write(header + review_text)
-
-    # Extract the machine-readable verdict for the auto-resolve workflow.
-    # Defaults to WARNING so unreadable results trigger a fix attempt rather than silently pass.
-    verdict = "WARNING"
-    for line in review_text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("verdict:"):
-            verdict = stripped.split(":", maxsplit=1)[1].strip()
-            break
-
-    with open(REVIEW_RESULT_FILE, "w", encoding="utf-8") as result_file:
-        result_file.write(verdict)
+    Args:
+        review_text: Full review text returned by Claude.
+    """
+    _write_human_review(review_text)
+    _write_verdict_result(review_text)
 
 
 def run_review() -> None:
