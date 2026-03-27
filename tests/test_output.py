@@ -37,7 +37,9 @@ _TEST_LINE_NUMBER: int = 42
 _TEST_ENTITY_TYPE: str = "us_ssn"
 _TEST_CONFIDENCE_HIGH: float = 0.95
 _TEST_CONFIDENCE_MEDIUM: float = 0.75
-_TEST_CODE_CONTEXT: str = 'ssn = "123-45-6789"'
+# Deliberately not PHI-shaped — the SSN 000-00-0000 is in the SSN_EXCLUDED_AREA_NUMBERS
+# reserved range (area 000) and is therefore structurally invalid as a real identifier.
+_TEST_CODE_CONTEXT: str = 'field = "000-00-0000"'
 _TEST_REMEDIATION_HINT: str = "Replace SSN with synthetic value"
 _TEST_FILES_SCANNED: int = 10
 _TEST_FILES_WITH_FINDINGS_CLEAN: int = 0
@@ -440,3 +442,17 @@ def test_display_file_tree_handles_findings_across_multiple_files() -> None:
     finding_b = _make_finding(file_path=Path("src/b.py"))
 
     display_file_tree((finding_a, finding_b))
+
+
+# ---------------------------------------------------------------------------
+# _build_count_bar precondition tests
+# ---------------------------------------------------------------------------
+
+
+def test_build_count_bar_raises_value_error_when_max_count_is_zero() -> None:
+    import pytest
+
+    from phi_scan.output import _build_count_bar
+
+    with pytest.raises(ValueError):
+        _build_count_bar(count=1, max_count=0)

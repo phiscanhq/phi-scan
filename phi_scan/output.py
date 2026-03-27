@@ -207,6 +207,12 @@ _ZERO_FINDINGS: int = 0
 _LINE_LABEL: str = "line"
 _EMPTY_LINE: str = ""
 _EM_DASH_SEPARATOR: str = " — "
+# Error raised when _build_count_bar receives max_count=0 — callers must guard
+# via max(..., default=_CATEGORY_BAR_DENOMINATOR_FLOOR) before calling.
+_ZERO_MAX_COUNT_ERROR: str = (
+    "max_count must be greater than zero — "
+    "callers must pass default=_CATEGORY_BAR_DENOMINATOR_FLOOR to max()"
+)
 
 # ---------------------------------------------------------------------------
 # Private helper functions
@@ -433,6 +439,9 @@ def _build_severity_breakdown(severity_counts: MappingProxyType[SeverityLevel, i
 def _build_count_bar(count: int, max_count: int) -> str:
     """Build a fixed-width block bar for a category count.
 
+    Precondition: max_count must be > 0. Callers are responsible for ensuring
+    this via max(..., default=_CATEGORY_BAR_DENOMINATOR_FLOOR).
+
     Args:
         count: The category's finding count.
         max_count: The highest count across all categories (sets bar scale).
@@ -440,10 +449,31 @@ def _build_count_bar(count: int, max_count: int) -> str:
     Returns:
         A string of filled and empty block characters totalling
         _CATEGORY_BAR_MAX_WIDTH characters.
+
+    Raises:
+        ValueError: If max_count is zero or less.
     """
+    if max_count <= _ZERO_FINDINGS:
+        raise ValueError(_ZERO_MAX_COUNT_ERROR)
     filled = round(count / max_count * _CATEGORY_BAR_MAX_WIDTH)
     empty = _CATEGORY_BAR_MAX_WIDTH - filled
     return _CATEGORY_BAR_FILLED_CHAR * filled + _CATEGORY_BAR_EMPTY_CHAR * empty
+
+
+def _format_risk_level_display(risk_level: RiskLevel) -> str:
+    """Format a risk level as uppercase text for panel display.
+
+    Centralised so the display format (uppercase) is defined once. Both
+    display_summary_panel and display_violation_alert use this helper to
+    avoid duplicating the .upper() transformation.
+
+    Args:
+        risk_level: The risk level to format.
+
+    Returns:
+        Uppercase string representation (e.g., "CRITICAL", "HIGH").
+    """
+    return risk_level.value.upper()
 
 
 def _group_findings_by_file(
@@ -460,7 +490,7 @@ def _group_findings_by_file(
     groups: dict[Path, list[ScanFinding]] = {}
     for finding in findings:
         if finding.file_path not in groups:
-            groups[finding.file_path] = list()
+            groups[finding.file_path] = []
         groups[finding.file_path].append(finding)
     return groups
 
@@ -678,7 +708,7 @@ def display_summary_panel(scan_result: ScanResult) -> None:
     summary_panel_markup = "\n".join(
         [
             f"[{label_style}]Risk Level:[/{label_style}] [{risk_style}]"
-            f"{scan_result.risk_level.value.upper()}[/{risk_style}]",
+            f"{_format_risk_level_display(scan_result.risk_level)}[/{risk_style}]",
             f"[{label_style}]Files Scanned:[/{label_style}] {scan_result.files_scanned}",
             f"[{label_style}]Files with Findings:[/{label_style}]"
             f" {scan_result.files_with_findings}",
@@ -712,7 +742,7 @@ def display_violation_alert(scan_result: ScanResult) -> None:
     violation_panel_markup = "\n".join(
         [
             f"[{_STYLE_BOLD}]{count} {word} detected[/{_STYLE_BOLD}]",
-            f"{_VIOLATION_RISK_LEVEL_LABEL}[{risk_style}]{scan_result.risk_level.value.upper()}[/{risk_style}]",
+            f"{_VIOLATION_RISK_LEVEL_LABEL}[{risk_style}]{_format_risk_level_display(scan_result.risk_level)}[/{risk_style}]",
         ]
     )
     _console.print(
