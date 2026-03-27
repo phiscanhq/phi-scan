@@ -357,6 +357,8 @@ def _build_sarif_finding_message(finding: ScanFinding) -> str:
         A sentence describing the category, layer, confidence, and remediation.
     """
     confidence_str = _CONFIDENCE_FORMAT.format(finding.confidence)
+    # remediation_hint must never contain raw PHI — see _serialize_finding_to_dict.
+    # SARIF output is consumed by GitHub Advanced Security and other CI platforms.
     return (
         f"{finding.hipaa_category.value} identifier detected by the "
         f"{finding.detection_layer.value} layer "
@@ -433,7 +435,7 @@ def _build_severity_breakdown(severity_counts: MappingProxyType[SeverityLevel, i
     """
     severity_markup_lines = []
     for level in SeverityLevel:
-        count = severity_counts.get(level, 0)
+        count = severity_counts.get(level, _ZERO_FINDINGS)
         style = _SEVERITY_STYLE[level]
         severity_markup_lines.append(
             f"[{_PANEL_LABEL_STYLE}]{level.value.title()}:[/{_PANEL_LABEL_STYLE}]"
@@ -770,25 +772,36 @@ def display_clean_result() -> None:
     _console.print()
 
 
-def display_violation_alert(scan_result: ScanResult) -> None:
-    """Render a red alert panel summarising the violation count and risk level.
+def _build_violation_panel_markup(scan_result: ScanResult) -> str:
+    """Build the Rich markup string for the violation alert panel.
 
     Args:
         scan_result: The completed scan result that contains violations.
+
+    Returns:
+        Newline-separated Rich markup string with finding count and risk level.
     """
     count = len(scan_result.findings)
     risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
     word = _FINDING_WORD if count == _SINGULAR_COUNT else _FINDING_WORD_PLURAL
-    violation_panel_markup = "\n".join(
+    return "\n".join(
         [
             f"[{_STYLE_BOLD}]{count} {word} {_VIOLATION_DETECTED_SUFFIX}[/{_STYLE_BOLD}]",
             f"{_VIOLATION_RISK_LEVEL_LABEL}"
             f"[{risk_style}]{_format_risk_level_display(scan_result.risk_level)}[/{risk_style}]",
         ]
     )
+
+
+def display_violation_alert(scan_result: ScanResult) -> None:
+    """Render a red alert panel summarising the violation count and risk level.
+
+    Args:
+        scan_result: The completed scan result that contains violations.
+    """
     _console.print(
         Panel(
-            violation_panel_markup,
+            _build_violation_panel_markup(scan_result),
             title=_VIOLATION_ALERT_TITLE,
             border_style=_VIOLATION_BORDER_STYLE,
         )
@@ -810,7 +823,7 @@ def display_category_breakdown(scan_result: ScanResult) -> None:
     table.add_column(_COL_DISTRIBUTION)
     max_count = max(scan_result.category_counts.values(), default=_CATEGORY_BAR_DENOMINATOR_FLOOR)
     for category in PhiCategory:
-        count = scan_result.category_counts.get(category, 0)
+        count = scan_result.category_counts.get(category, _ZERO_FINDINGS)
         if count > _ZERO_FINDINGS:
             table.add_row(category.value, str(count), _build_count_bar(count, max_count))
     _console.print(table)
