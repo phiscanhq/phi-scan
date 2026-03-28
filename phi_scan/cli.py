@@ -349,7 +349,9 @@ class _FileChangeMonitor(FileSystemEventHandler):
         # expose files containing PHI that were never intended to be scanned.
         if changed_path.is_symlink():
             return
-        _append_watch_event(changed_path, self._context)
+        scan_outcome = _scan_changed_file(changed_path, self._context)
+        if scan_outcome is not None:
+            _append_watch_event(changed_path, scan_outcome, self._context)
 
 
 # ---------------------------------------------------------------------------
@@ -675,21 +677,39 @@ def _relative_display_path(changed_path: Path, watch_root: Path) -> str:
         return changed_path.name
 
 
-def _append_watch_event(changed_path: Path, context: _WatchState) -> None:
-    """Scan changed_path, build a WatchEvent record, and append it to the deque.
+def _scan_changed_file(changed_path: Path, context: _WatchState) -> _WatchScanOutcome | None:
+    """Run scan_file on a watchdog-reported path and return a structured outcome.
+
+    Returns None when the file cannot be read (deleted or permissions changed between
+    the watchdog event and the scan call) — caller skips appending to the deque.
 
     Args:
         changed_path: The file that changed, already confirmed non-symlink.
-        context: Shared watch context holding deque, scan config, and watch root.
+        context: Shared watch state; provides the scan configuration.
+
+    Returns:
+        _WatchScanOutcome with result text and is_clean flag, or None on I/O error.
     """
     try:
         findings = scan_file(changed_path, context.scan_config)
     except (PermissionError, FileNotFoundError):
-        # File was deleted or became unreadable between the watchdog event and the
-        # scan call — log and skip rather than crashing the watchdog thread.
+        # File deleted or permissions revoked between watchdog event and scan call —
+        # log and signal skip rather than crashing the watchdog background thread.
         _logger.warning("Skipping unreadable or deleted file during watch: %s", changed_path.name)
-        return
-    scan_outcome = _build_watch_result(findings)
+        return None
+    return _build_watch_result(findings)
+
+
+def _append_watch_event(
+    changed_path: Path, scan_outcome: _WatchScanOutcome, context: _WatchState
+) -> None:
+    """Build a WatchEvent from the scan outcome and append it to the rolling deque.
+
+    Args:
+        changed_path: The file that changed; used to compute the display path.
+        scan_outcome: Structured result from _scan_changed_file.
+        context: Shared watch state; provides the deque and watch root.
+    """
     context.watch_events.append(
         WatchEvent(
             event_time=datetime.now(),
@@ -727,11 +747,10 @@ def _display_watch_live_screen(
     """Drive the Rich Live display loop until the user presses Ctrl+C.
 
     KeyboardInterrupt (a BaseException subclass, not Exception) is caught here
-    solely to close the Rich alternate-screen buffer cleanly before returning.
-    It is not re-raised because returning normally is the agreed contract: the
-    caller (watch()) wraps this call in a try/finally that stops and joins the
-    observer regardless of how this function exits — no teardown is missed by
-    returning instead of propagating.
+    to close the Rich alternate-screen buffer cleanly before raising typer.Exit.
+    typer.Exit propagates out through watch()'s try/finally, which stops and
+    joins the observer — no teardown is skipped. Raising typer.Exit rather than
+    returning makes the clean-exit intent explicit and matches display_dashboard.
 
     Args:
         watch_path: The watched directory, shown in the persistent header.
@@ -743,7 +762,7 @@ def _display_watch_live_screen(
                 live.update(build_watch_layout(watch_path, list(watch_events)))
                 time.sleep(_WATCH_POLL_INTERVAL_SECONDS)
     except KeyboardInterrupt:
-        return
+        raise typer.Exit(code=EXIT_CODE_CLEAN)
 
 
 # ---------------------------------------------------------------------------

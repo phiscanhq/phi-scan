@@ -13,6 +13,7 @@ import pytest
 from rich.console import Console
 from rich.table import Table
 
+from phi_scan.cli import _WATCH_RESULT_VIOLATION_FORMAT
 from phi_scan.constants import DetectionLayer, PhiCategory, RiskLevel, SeverityLevel
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 from phi_scan.output import (
@@ -928,7 +929,10 @@ _WATCH_SAMPLE_FILE_ONE: str = "src/api/patient.py"
 _WATCH_SAMPLE_RESULT_TEXT_CLEAN: str = "✅ Clean"
 _WATCH_SAMPLE_DATETIME_TWO: datetime = datetime(2026, 3, 28, 14, 33, 10)
 _WATCH_SAMPLE_FILE_TWO: str = "src/models/user.py"
-_WATCH_SAMPLE_RESULT_TEXT_VIOLATION: str = "⚠  2 findings detected"
+_WATCH_SAMPLE_VIOLATION_COUNT: int = 2
+_WATCH_SAMPLE_RESULT_TEXT_VIOLATION: str = _WATCH_RESULT_VIOLATION_FORMAT.format(
+    count=_WATCH_SAMPLE_VIOLATION_COUNT
+)
 
 
 @pytest.fixture()
