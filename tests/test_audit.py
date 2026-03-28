@@ -340,7 +340,7 @@ def test_create_audit_schema_raises_audit_log_error_for_symlink(
 # ---------------------------------------------------------------------------
 
 
-def test_insert_scan_event_inserts_one_row(tmp_path: Path, patched_git_info: None) -> None:
+def test_insert_scan_event_inserts_one_row(tmp_path: Path, patched_git_info) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
@@ -354,7 +354,7 @@ def test_insert_scan_event_inserts_one_row(tmp_path: Path, patched_git_info: Non
     assert scan_event_row_count == _SINGLE_INSERTED_ROW_COUNT
 
 
-def test_insert_scan_event_sets_scanner_version(tmp_path: Path, patched_git_info: None) -> None:
+def test_insert_scan_event_sets_scanner_version(tmp_path: Path, patched_git_info) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
@@ -369,7 +369,7 @@ def test_insert_scan_event_sets_scanner_version(tmp_path: Path, patched_git_info
 
 
 def test_insert_scan_event_sets_is_clean_true_for_clean_result(
-    tmp_path: Path, patched_git_info: None
+    tmp_path: Path, patched_git_info
 ) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
@@ -385,7 +385,7 @@ def test_insert_scan_event_sets_is_clean_true_for_clean_result(
 
 
 def test_insert_scan_event_sets_is_clean_false_for_dirty_result(
-    tmp_path: Path, patched_git_info: None
+    tmp_path: Path, patched_git_info
 ) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
@@ -400,7 +400,7 @@ def test_insert_scan_event_sets_is_clean_false_for_dirty_result(
     assert bool(is_clean_value) is False
 
 
-def test_insert_scan_event_stores_findings_count(tmp_path: Path, patched_git_info: None) -> None:
+def test_insert_scan_event_stores_findings_count(tmp_path: Path, patched_git_info) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_dirty_scan_result(tmp_path / "src" / "main.py")
@@ -414,7 +414,7 @@ def test_insert_scan_event_stores_findings_count(tmp_path: Path, patched_git_inf
     assert findings_count == len(scan_result.findings)
 
 
-def test_insert_scan_event_stores_scan_duration(tmp_path: Path, patched_git_info: None) -> None:
+def test_insert_scan_event_stores_scan_duration(tmp_path: Path, patched_git_info) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
@@ -453,9 +453,7 @@ def test_query_recent_scans_returns_empty_list_when_no_scans(tmp_path: Path) -> 
     assert result == []
 
 
-def test_query_recent_scans_returns_scan_within_cutoff(
-    tmp_path: Path, patched_git_info: None
-) -> None:
+def test_query_recent_scans_returns_scan_within_cutoff(tmp_path: Path, patched_git_info) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
@@ -467,7 +465,7 @@ def test_query_recent_scans_returns_scan_within_cutoff(
     assert len(rows) == 1
 
 
-def test_query_recent_scans_returns_dicts(tmp_path: Path, patched_git_info: None) -> None:
+def test_query_recent_scans_returns_dicts(tmp_path: Path, patched_git_info) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
@@ -513,7 +511,7 @@ def test_query_recent_scans_excludes_events_older_than_cutoff(tmp_path: Path) ->
 
 
 def test_query_recent_scans_returns_rows_ordered_by_timestamp_descending(
-    tmp_path: Path, patched_git_info: None
+    tmp_path: Path, patched_git_info
 ) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
@@ -552,9 +550,7 @@ def test_get_last_scan_returns_none_when_no_scans_exist(tmp_path: Path) -> None:
     assert result is None
 
 
-def test_get_last_scan_returns_dict_after_scan_inserted(
-    tmp_path: Path, patched_git_info: None
-) -> None:
+def test_get_last_scan_returns_dict_after_scan_inserted(tmp_path: Path, patched_git_info) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
@@ -566,7 +562,7 @@ def test_get_last_scan_returns_dict_after_scan_inserted(
     assert isinstance(last, dict)
 
 
-def test_get_last_scan_returns_most_recent_scan(tmp_path: Path, patched_git_info: None) -> None:
+def test_get_last_scan_returns_most_recent_scan(tmp_path: Path, patched_git_info) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     clean_result = _build_clean_scan_result()
