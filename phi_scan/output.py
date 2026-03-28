@@ -5,17 +5,21 @@ from __future__ import annotations
 import csv
 import io
 import json
+import operator
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Literal
+from typing import Any, Literal
 
+from rich import box as rich_box
 from rich.console import Console
+from rich.layout import Layout
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
+    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
     TaskID,
@@ -23,7 +27,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-from rich.table import Table
+from rich.table import Column, Table
 from rich.tree import Tree
 
 from phi_scan import __version__
@@ -31,15 +35,28 @@ from phi_scan.constants import PhiCategory, RiskLevel, SeverityLevel
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 
 __all__ = [
+    "build_dashboard_layout",
     "display_banner",
     "display_category_breakdown",
     "display_clean_result",
+    "display_clean_summary_panel",
+    "display_exit_code_message",
     "display_file_tree",
     "display_findings_table",
+    "display_file_type_summary",
+    "display_phase_audit",
+    "display_status_spinner",
+    "display_phase_collecting",
+    "display_phase_report",
+    "display_phase_scanning",
+    "display_phase_separator",
     "display_scan_header",
     "create_scan_progress",
-    "display_summary_panel",
+    "display_code_context_panel",
+    "display_risk_level_badge",
+    "display_severity_inline",
     "display_violation_alert",
+    "display_violation_summary_panel",
     "format_csv",
     "format_json",
     "format_sarif",
@@ -132,6 +149,23 @@ _BANNER_PYFIGLET_MISSING_NOTE: str = (
 # Panel and table titles
 # ---------------------------------------------------------------------------
 
+_PHASE_SEPARATOR_COLLECTING: str = "Collecting Files"
+_PHASE_SEPARATOR_SCANNING: str = "Scanning for PHI/PII"
+_PHASE_SEPARATOR_AUDIT: str = "Writing Audit Log"
+_PHASE_SEPARATOR_REPORT: str = "Generating Report"
+_PHASE_SEPARATOR_STYLE: str = "bold cyan"
+
+_SPINNER_STYLE: str = "dots"
+
+# Maximum number of named extensions shown in the file type summary line.
+# Extensions beyond this count are folded into the "other" bucket.
+_FILE_TYPE_SUMMARY_MAX_EXTENSIONS: int = 5
+_FILE_TYPE_SUMMARY_OTHER_LABEL: str = "other"
+_FILE_TYPE_SUMMARY_SEPARATOR: str = " | "
+_FILE_TYPE_SUMMARY_ENTRY_FORMAT: str = "{ext}: {count}"
+_FILE_TYPE_SUMMARY_STYLE: str = _STYLE_DIM
+_FILE_TYPE_SUMMARY_ZERO_FILES_MESSAGE: str = "No files collected."
+
 _SCAN_HEADER_TITLE: str = "Scan Target"
 _SUMMARY_PANEL_TITLE: str = "Scan Summary"
 _CATEGORY_TABLE_TITLE: str = "PHI Category Breakdown"
@@ -139,6 +173,15 @@ _FINDINGS_TABLE_TITLE: str = "Findings"
 _FILE_TREE_TITLE: str = "Affected Files"
 _VIOLATION_ALERT_TITLE: str = "PHI/PII Violation Detected"
 _VIOLATION_RISK_LEVEL_LABEL: str = "Risk Level: "
+
+# Severity levels ordered from highest to lowest — used when selecting the
+# most severe icon to represent a group of findings.
+_SEVERITY_DESCENDING_ORDER: tuple[SeverityLevel, ...] = (
+    SeverityLevel.HIGH,
+    SeverityLevel.MEDIUM,
+    SeverityLevel.LOW,
+    SeverityLevel.INFO,
+)
 
 # ---------------------------------------------------------------------------
 # Findings table column headers
@@ -169,10 +212,99 @@ _CATEGORY_BAR_DENOMINATOR_FLOOR: int = 1
 # Clean result display
 # ---------------------------------------------------------------------------
 
-_CLEAN_RESULT_TEXT: str = "✓  No PHI/PII detected"
+_CLEAN_RESULT_ICON: str = "✅"
+_CLEAN_RESULT_TEXT: str = "CLEAN — No PHI or PII Detected"
 _CLEAN_RESULT_STYLE: str = _STYLE_BOLD_GREEN
+_CLEAN_SUMMARY_PANEL_TITLE: str = "Scan Complete"
+_CLEAN_SUMMARY_BORDER_STYLE: str = _STYLE_BOLD_GREEN
+_CLEAN_SUMMARY_STATUS_VALUE: str = "✅  CLEAN"
+_CLEAN_SUMMARY_STATUS_LABEL: str = "Status"
+_CLEAN_SUMMARY_FILES_LABEL: str = "Files Scanned"
+_CLEAN_SUMMARY_TIME_LABEL: str = "Scan Time"
+_CLEAN_SUMMARY_RISK_LABEL: str = "Risk Level"
+_EXIT_CODE_CLEAN_MESSAGE: str = "Exit code: 0 (clean)"
+_EXIT_CODE_CLEAN_STYLE: str = _STYLE_BOLD_GREEN
+_EXIT_CODE_VIOLATION_MESSAGE: str = "Exit code: 1 (violations found — pipeline blocked)"
+_EXIT_CODE_VIOLATION_STYLE: str = _STYLE_BOLD_RED
+
+# ---------------------------------------------------------------------------
+# Violation display
+# ---------------------------------------------------------------------------
+
+_VIOLATION_ALERT_ICON: str = "⚠"
+_VIOLATION_ALERT_MESSAGE_FORMAT: str = (
+    "{icon}  PHI/PII DETECTED — {count} {finding_word} in {files} {file_word}"
+)
+_VIOLATION_ALERT_BOX_STYLE: str = _STYLE_BOLD_RED
+_RISK_LEVEL_BADGE_STYLE: dict[str, str] = {
+    "CRITICAL": "bold white on red",
+    "HIGH": _STYLE_BOLD_RED,
+    "MODERATE": _STYLE_YELLOW,
+    "LOW": "dim yellow",
+    "CLEAN": _STYLE_BOLD_GREEN,
+}
+_SEVERITY_ICON: dict[str, str] = {
+    "high": "🔴",
+    "medium": "🟡",
+    "low": "🟢",
+    "info": "⚪",
+}
+_SEVERITY_INLINE_SEPARATOR: str = "    "
+_SEVERITY_INLINE_FORMAT: str = "{icon} {level}: {count}"
+_VIOLATION_SUMMARY_STATUS_VALUE: str = "⚠  VIOLATION"
+_VIOLATION_SUMMARY_STATUS_LABEL: str = "Status"
+_VIOLATION_SUMMARY_RISK_LABEL: str = "Risk Level"
+_VIOLATION_SUMMARY_FINDINGS_LABEL: str = "Findings"
+_VIOLATION_SUMMARY_FILES_LABEL: str = "Files"
+_VIOLATION_SUMMARY_FILES_FORMAT: str = "{with_findings} of {total:,} contain PHI"
+_VIOLATION_SUMMARY_TIME_LABEL: str = "Scan Time"
+_VIOLATION_SUMMARY_AUDIT_LABEL: str = "Audit Log"
+_VIOLATION_SUMMARY_ACTION_LABEL: str = "Action"
+_VIOLATION_SUMMARY_ACTION_VALUE: str = "Pipeline BLOCKED — exit code 1"
+_VIOLATION_SUMMARY_PANEL_TITLE: str = "Scan Complete"
+_CODE_CONTEXT_PANEL_FORMAT: str = "{file}:{line}  —  {entity} ({severity})"
+_CODE_CONTEXT_REMEDIATION_PREFIX: str = "💡 Remediation: "
+_FILE_WORD: str = "file"
+_FILE_WORD_PLURAL: str = "files"
+
 _JUSTIFY_CENTER: Literal["center"] = "center"
 _JUSTIFY_RIGHT: Literal["right"] = "right"
+
+# ---------------------------------------------------------------------------
+# Dashboard display
+# ---------------------------------------------------------------------------
+
+_DASHBOARD_TOP_PANEL_HEIGHT: int = 5
+_DASHBOARD_BOTTOM_PANEL_HEIGHT: int = 3
+_DASHBOARD_TOP_SECTION: str = "top"
+_DASHBOARD_MAIN_SECTION: str = "main"
+_DASHBOARD_LEFT_SECTION: str = "left"
+_DASHBOARD_RIGHT_SECTION: str = "right"
+_DASHBOARD_BOTTOM_SECTION: str = "bottom"
+_DASHBOARD_STATUS_PANEL_TITLE: str = "PhiScan — Live Dashboard"
+_DASHBOARD_HISTORY_PANEL_TITLE: str = "Recent Scans"
+_DASHBOARD_CATEGORY_PANEL_TITLE: str = "PHI Categories"
+_DASHBOARD_WATCHER_PANEL_TITLE: str = "Watch Status"
+_DASHBOARD_COMPACT_BANNER: str = "⬛ PhiScan"
+_DASHBOARD_VERSION_FORMAT: str = "v{version}  —  HIPAA-Compliant PHI/PII Scanner"
+_DASHBOARD_LAST_SCAN_LABEL: str = "Last scan: "
+_DASHBOARD_NO_HISTORY_TEXT: str = "No scan history found."
+_DASHBOARD_NO_CATEGORIES_TEXT: str = "No findings recorded yet."
+_DASHBOARD_WATCHER_INACTIVE_TEXT: str = "File watcher: Not active  (run phi-scan watch <path>)"
+_DASHBOARD_HISTORY_CLEAN_STATUS: str = "✅ CLEAN"
+_DASHBOARD_HISTORY_VIOLATION_STATUS: str = "⚠  VIOLATION"
+_DASHBOARD_HISTORY_CLEAN_STYLE: str = _STYLE_BOLD_GREEN
+_DASHBOARD_HISTORY_VIOLATION_STYLE: str = _STYLE_BOLD_RED
+_DASHBOARD_BOOLEAN_CLEAN: int = 1
+_DASHBOARD_COL_TIME: str = "Time"
+_DASHBOARD_COL_STATUS: str = "Status"
+_DASHBOARD_COL_FILES: str = "Files"
+_DASHBOARD_COL_FINDINGS: str = "Findings"
+_DASHBOARD_COL_DURATION: str = "Duration"
+_DASHBOARD_COL_CATEGORY: str = "HIPAA Category"
+_DASHBOARD_COL_TOTAL: str = "Total"
+# 19 = len("YYYY-MM-DD HH:MM:SS") — ISO-8601 local datetime without microseconds.
+_DASHBOARD_TIMESTAMP_DISPLAY_LENGTH: int = 19
 
 # ---------------------------------------------------------------------------
 # CSV field names (in output column order)
@@ -198,6 +330,7 @@ _CONFIDENCE_FORMAT: str = "{:.2f}"
 _DURATION_FORMAT: str = "{:.2f}s"
 _TIMESTAMP_TIMESPEC: str = "seconds"
 _PROGRESS_DESCRIPTION: str = "Scanning"
+_PROGRESS_CURRENT_FILE_WIDTH: int = 40
 
 # ---------------------------------------------------------------------------
 # Pluralization constants
@@ -429,6 +562,32 @@ def _build_sarif_run(scan_result: ScanResult) -> dict[str, object]:
     }
 
 
+def _build_severity_inline_text(severity_counts: MappingProxyType[SeverityLevel, int]) -> str:
+    """Build a single-line severity breakdown with colored emoji icons.
+
+    Only includes levels with at least one finding, so a scan with only HIGH
+    findings shows just '🔴 HIGH: 4' without trailing zero entries.
+
+    Args:
+        severity_counts: Mapping from severity level to finding count.
+
+    Returns:
+        Inline Rich markup string: '🔴 HIGH: 4    🟡 MEDIUM: 5    🟢 LOW: 3'
+    """
+    severity_entries = []
+    for level in SeverityLevel:
+        count = severity_counts.get(level, _ZERO_FINDINGS)
+        if count == _ZERO_FINDINGS:
+            continue
+        icon = _SEVERITY_ICON.get(level.value, "")
+        style = _SEVERITY_STYLE[level]
+        count_markup = f"[{style}]{count}[/{style}]"
+        severity_entries.append(
+            _SEVERITY_INLINE_FORMAT.format(icon=icon, level=level.value.upper(), count=count_markup)
+        )
+    return _SEVERITY_INLINE_SEPARATOR.join(severity_entries)
+
+
 def _build_severity_breakdown(severity_counts: MappingProxyType[SeverityLevel, int]) -> str:
     """Build a Rich markup string listing count per severity level.
 
@@ -621,6 +780,116 @@ def display_banner() -> None:
     _console.rule(style=_RULE_STYLE)
 
 
+def display_phase_separator(title: str) -> None:
+    """Render a styled console rule marking the start of a named scan phase.
+
+    Used between the four scan stages (Collecting Files, Scanning for PHI/PII,
+    Writing Audit Log, Generating Report) to give the user a clear visual cue
+    that the terminal is progressing through distinct work phases.
+
+    Args:
+        title: Short human-readable phase name to embed in the rule line.
+    """
+    _console.rule(title, style=_PHASE_SEPARATOR_STYLE)
+
+
+def display_phase_collecting() -> None:
+    """Render the 'Collecting Files' phase separator rule."""
+    display_phase_separator(_PHASE_SEPARATOR_COLLECTING)
+
+
+def display_phase_scanning() -> None:
+    """Render the 'Scanning for PHI/PII' phase separator rule."""
+    display_phase_separator(_PHASE_SEPARATOR_SCANNING)
+
+
+def display_phase_audit() -> None:
+    """Render the 'Writing Audit Log' phase separator rule."""
+    display_phase_separator(_PHASE_SEPARATOR_AUDIT)
+
+
+def display_phase_report() -> None:
+    """Render the 'Generating Report' phase separator rule."""
+    display_phase_separator(_PHASE_SEPARATOR_REPORT)
+
+
+@contextmanager
+def display_status_spinner(message: str, is_active: bool) -> Generator[None, None, None]:
+    """Show a spinner with status text for the duration of the wrapped block.
+
+    When is_active is False the context manager is a no-op, allowing call
+    sites to pass is_rich_mode directly without a conditional at every usage.
+
+    Args:
+        message: Status text shown beside the spinner.
+        is_active: Show the spinner only when True.
+
+    Yields:
+        None — caller wraps the work block.
+    """
+    if is_active:
+        with _console.status(message, spinner=_SPINNER_STYLE):
+            yield
+    else:
+        yield
+
+
+def _count_files_by_extension(scan_targets: list[Path]) -> dict[str, int]:
+    """Count scan targets grouped by lowercased file extension.
+
+    Files with no extension are tallied under the 'other' bucket key so they
+    surface in the summary without a misleading blank label.
+
+    Args:
+        scan_targets: Paths returned by _resolve_scan_targets.
+
+    Returns:
+        Mapping of extension string (e.g. '.py') to file count.
+        The 'other' key is only present when at least one file has no extension.
+    """
+    counts: dict[str, int] = {}
+    for file_path in scan_targets:
+        extension = file_path.suffix.lower() if file_path.suffix else _FILE_TYPE_SUMMARY_OTHER_LABEL
+        counts[extension] = counts.get(extension, 0) + 1
+    return counts
+
+
+def display_file_type_summary(scan_targets: list[Path]) -> None:
+    """Print a one-line file type breakdown after the collection phase.
+
+    Shows up to _FILE_TYPE_SUMMARY_MAX_EXTENSIONS named extensions sorted by
+    count descending. Remaining files are folded into an 'other' bucket.
+    Outputs nothing if scan_targets is empty — the zero-files message is
+    printed instead.
+
+    Args:
+        scan_targets: Collected file paths, as returned by _resolve_scan_targets.
+    """
+    if not scan_targets:
+        _console.print(_FILE_TYPE_SUMMARY_ZERO_FILES_MESSAGE, style=_FILE_TYPE_SUMMARY_STYLE)
+        return
+    counts = _count_files_by_extension(scan_targets)
+    sorted_extensions = sorted(
+        counts.items(), key=lambda extension_count_pair: extension_count_pair[1], reverse=True
+    )
+    top_extensions = sorted_extensions[:_FILE_TYPE_SUMMARY_MAX_EXTENSIONS]
+    overflow_extensions = sorted_extensions[_FILE_TYPE_SUMMARY_MAX_EXTENSIONS:]
+    overflow_count = sum(count for _, count in overflow_extensions)
+    extension_entries = [
+        _FILE_TYPE_SUMMARY_ENTRY_FORMAT.format(ext=ext, count=count)
+        for ext, count in top_extensions
+    ]
+    if overflow_count:
+        extension_entries.append(
+            _FILE_TYPE_SUMMARY_ENTRY_FORMAT.format(
+                ext=_FILE_TYPE_SUMMARY_OTHER_LABEL, count=overflow_count
+            )
+        )
+    _console.print(
+        _FILE_TYPE_SUMMARY_SEPARATOR.join(extension_entries), style=_FILE_TYPE_SUMMARY_STYLE
+    )
+
+
 def _build_scan_header_markup(path: Path, config: ScanConfig, timestamp: str) -> str:
     """Build the Rich markup string for the scan header panel.
 
@@ -681,7 +950,11 @@ def create_scan_progress(total_files: int) -> Generator[tuple[Progress, TaskID],
         SpinnerColumn(),
         BarColumn(),
         TaskProgressColumn(),
-        TextColumn("[progress.description]{task.description}"),
+        MofNCompleteColumn(),
+        TextColumn(
+            "[progress.description]{task.description}",
+            table_column=Column(min_width=_PROGRESS_CURRENT_FILE_WIDTH, no_wrap=True),
+        ),
         TimeElapsedColumn(),
         console=_console,
     ) as progress:
@@ -698,8 +971,24 @@ def display_findings_table(findings: tuple[ScanFinding, ...]) -> None:
     _console.print(_build_findings_table(findings, _FINDINGS_TABLE_TITLE))
 
 
+def _highest_severity_icon(file_findings: list[ScanFinding]) -> str:
+    """Return the emoji icon for the highest severity level in a set of findings.
+
+    Args:
+        file_findings: All findings for a single file.
+
+    Returns:
+        Emoji string corresponding to the highest severity level found.
+    """
+    file_severities = {f.severity for f in file_findings}
+    for level in _SEVERITY_DESCENDING_ORDER:
+        if level in file_severities:
+            return _SEVERITY_ICON.get(level.value, "")
+    return ""
+
+
 def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
-    """Render a Rich Tree of affected files with per-file finding counts.
+    """Render a Rich Tree of affected files with severity icons and per-file finding counts.
 
     Args:
         findings: All findings from a scan result.
@@ -710,7 +999,8 @@ def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
     for file_path, file_findings in sorted(findings_by_file.items()):
         count = len(file_findings)
         finding_word = _FINDING_WORD if count == _SINGULAR_COUNT else _FINDING_WORD_PLURAL
-        branch = tree.add(f"{file_path} ({count} {finding_word})")
+        icon = _highest_severity_icon(file_findings)
+        branch = tree.add(f"{icon} {file_path} ({count} {finding_word})")
         for finding in file_findings:
             style = _SEVERITY_STYLE[finding.severity]
             branch.add(
@@ -749,6 +1039,10 @@ def _build_summary_panel_markup(scan_result: ScanResult) -> str:
 def display_summary_panel(scan_result: ScanResult) -> None:
     """Render a bordered summary panel with risk level, file stats, and severity breakdown.
 
+    Deprecated: superseded by display_clean_summary_panel and
+    display_violation_summary_panel which provide split clean/violation UI.
+    Retained for test coverage only — not part of the public API.
+
     Args:
         scan_result: The completed scan result to summarise.
     """
@@ -763,8 +1057,9 @@ def display_summary_panel(scan_result: ScanResult) -> None:
 
 
 def display_clean_result() -> None:
-    """Render a prominent green checkmark indicating no PHI/PII was detected."""
+    """Render a large green checkmark and CLEAN headline for zero-finding scans."""
     _console.print()
+    _console.print(_CLEAN_RESULT_ICON, justify=_JUSTIFY_CENTER)
     _console.print(
         f"[{_CLEAN_RESULT_STYLE}]{_CLEAN_RESULT_TEXT}[/{_CLEAN_RESULT_STYLE}]",
         justify=_JUSTIFY_CENTER,
@@ -772,40 +1067,201 @@ def display_clean_result() -> None:
     _console.print()
 
 
-def _build_violation_panel_markup(scan_result: ScanResult) -> str:
-    """Build the Rich markup string for the violation alert panel.
+def _build_clean_summary_panel_markup(scan_result: ScanResult) -> str:
+    """Build the Rich markup string for the clean scan summary panel.
+
+    Args:
+        scan_result: A completed scan result with zero findings.
+
+    Returns:
+        Newline-separated Rich markup string showing status, file count,
+        scan time, and risk level.
+    """
+    label_style = _PANEL_LABEL_STYLE
+    duration_str = _DURATION_FORMAT.format(scan_result.scan_duration)
+    return "\n".join(
+        [
+            f"[{label_style}]{_CLEAN_SUMMARY_STATUS_LABEL}:[/{label_style}]"
+            f"  {_CLEAN_SUMMARY_STATUS_VALUE}",
+            f"[{label_style}]{_CLEAN_SUMMARY_FILES_LABEL}:[/{label_style}]"
+            f"  {scan_result.files_scanned:,}",
+            f"[{label_style}]{_CLEAN_SUMMARY_TIME_LABEL}:[/{label_style}]  {duration_str}",
+            f"[{label_style}]{_CLEAN_SUMMARY_RISK_LABEL}:[/{label_style}]"
+            f"  [{_CLEAN_RESULT_STYLE}]{_format_risk_level_display(scan_result.risk_level)}"
+            f"[/{_CLEAN_RESULT_STYLE}]",
+        ]
+    )
+
+
+def display_clean_summary_panel(scan_result: ScanResult) -> None:
+    """Render the green-bordered 'Scan Complete' summary panel for clean scans.
+
+    Args:
+        scan_result: A completed scan result with zero findings.
+    """
+    _console.print(
+        Panel(
+            _build_clean_summary_panel_markup(scan_result),
+            title=_CLEAN_SUMMARY_PANEL_TITLE,
+            border_style=_CLEAN_SUMMARY_BORDER_STYLE,
+        )
+    )
+
+
+def display_exit_code_message(is_clean: bool) -> None:
+    """Print a colored exit code line at the end of the scan output.
+
+    Args:
+        is_clean: True for a clean scan (exit 0), False for violations (exit 1).
+    """
+    if is_clean:
+        _console.print(_EXIT_CODE_CLEAN_MESSAGE, style=_EXIT_CODE_CLEAN_STYLE)
+    else:
+        _console.print(_EXIT_CODE_VIOLATION_MESSAGE, style=_EXIT_CODE_VIOLATION_STYLE)
+
+
+def _build_violation_alert_text(scan_result: ScanResult) -> str:
+    """Build the full-width alert message for the heavy-box violation banner.
 
     Args:
         scan_result: The completed scan result that contains violations.
 
     Returns:
-        Newline-separated Rich markup string with finding count and risk level.
+        Rich markup string: '⚠  PHI/PII DETECTED — N findings in M files'
     """
     count = len(scan_result.findings)
-    risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
     finding_word = _FINDING_WORD if count == _SINGULAR_COUNT else _FINDING_WORD_PLURAL
-    return "\n".join(
-        [
-            f"[{_STYLE_BOLD}]{count} {finding_word} {_VIOLATION_DETECTED_SUFFIX}[/{_STYLE_BOLD}]",
-            f"{_VIOLATION_RISK_LEVEL_LABEL}"
-            f"[{risk_style}]{_format_risk_level_display(scan_result.risk_level)}[/{risk_style}]",
-        ]
+    files = scan_result.files_with_findings
+    file_word = _FILE_WORD if files == _SINGULAR_COUNT else _FILE_WORD_PLURAL
+    return _VIOLATION_ALERT_MESSAGE_FORMAT.format(
+        icon=_VIOLATION_ALERT_ICON,
+        count=count,
+        finding_word=finding_word,
+        files=files,
+        file_word=file_word,
     )
 
 
 def display_violation_alert(scan_result: ScanResult) -> None:
-    """Render a red alert panel summarising the violation count and risk level.
+    """Render a full-width heavy-box red alert banner for violation scans.
+
+    Uses rich.box.HEAVY (┏━━━┓ borders) and embeds the ⚠ icon, finding
+    count, and affected file count directly in the panel content.
 
     Args:
         scan_result: The completed scan result that contains violations.
     """
     _console.print(
         Panel(
-            _build_violation_panel_markup(scan_result),
-            title=_VIOLATION_ALERT_TITLE,
+            f"[{_VIOLATION_ALERT_BOX_STYLE}]{_build_violation_alert_text(scan_result)}"
+            f"[/{_VIOLATION_ALERT_BOX_STYLE}]",
+            box=rich_box.HEAVY,
             border_style=_VIOLATION_BORDER_STYLE,
+            expand=True,
         )
     )
+
+
+def display_risk_level_badge(scan_result: ScanResult) -> None:
+    """Print a color-coded risk level badge on its own line.
+
+    Badge styles per level:
+      CRITICAL — bold white text on red background
+      HIGH     — bold red text
+      MODERATE — yellow text
+      LOW      — dim yellow text
+
+    Args:
+        scan_result: The completed scan result whose risk level to badge.
+    """
+    level_name = scan_result.risk_level.value
+    badge_style = _RISK_LEVEL_BADGE_STYLE.get(level_name, _STYLE_BOLD)
+    _console.print(f"[{badge_style}] {level_name} [/{badge_style}]")
+
+
+def display_severity_inline(scan_result: ScanResult) -> None:
+    """Print a single-line severity breakdown with colored emoji icons.
+
+    Args:
+        scan_result: The completed scan result.
+    """
+    _console.print(_build_severity_inline_text(scan_result.severity_counts))
+
+
+def _build_violation_summary_panel_markup(scan_result: ScanResult) -> str:
+    """Build the Rich markup string for the violation scan summary panel.
+
+    Args:
+        scan_result: The completed scan result with findings.
+
+    Returns:
+        Newline-separated Rich markup showing status, risk, findings, files,
+        time, audit log path, and action.
+    """
+    label_style = _PANEL_LABEL_STYLE
+    risk_level_name = scan_result.risk_level.value
+    badge_style = _RISK_LEVEL_BADGE_STYLE.get(risk_level_name, _STYLE_BOLD)
+    duration_str = _DURATION_FORMAT.format(scan_result.scan_duration)
+    severity_inline = _build_severity_inline_text(scan_result.severity_counts)
+    files_line = _VIOLATION_SUMMARY_FILES_FORMAT.format(
+        with_findings=scan_result.files_with_findings,
+        total=scan_result.files_scanned,
+    )
+    return "\n".join(
+        [
+            f"[{label_style}]{_VIOLATION_SUMMARY_STATUS_LABEL}:[/{label_style}]"
+            f"  [{_VIOLATION_ALERT_BOX_STYLE}]{_VIOLATION_SUMMARY_STATUS_VALUE}"
+            f"[/{_VIOLATION_ALERT_BOX_STYLE}]",
+            f"[{label_style}]{_VIOLATION_SUMMARY_RISK_LABEL}:[/{label_style}]"
+            f"  [{badge_style}]{risk_level_name}[/{badge_style}]",
+            f"[{label_style}]{_VIOLATION_SUMMARY_FINDINGS_LABEL}:[/{label_style}]"
+            f"  {len(scan_result.findings)}  ({severity_inline})",
+            f"[{label_style}]{_VIOLATION_SUMMARY_FILES_LABEL}:[/{label_style}]  {files_line}",
+            f"[{label_style}]{_VIOLATION_SUMMARY_TIME_LABEL}:[/{label_style}]  {duration_str}",
+            f"[{label_style}]{_VIOLATION_SUMMARY_ACTION_LABEL}:[/{label_style}]"
+            f"  [{_STYLE_BOLD_RED}]{_VIOLATION_SUMMARY_ACTION_VALUE}[/{_STYLE_BOLD_RED}]",
+        ]
+    )
+
+
+def display_violation_summary_panel(scan_result: ScanResult) -> None:
+    """Render the risk-level-colored summary panel for violation scans.
+
+    Args:
+        scan_result: The completed scan result with findings.
+    """
+    risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
+    _console.print(
+        Panel(
+            _build_violation_summary_panel_markup(scan_result),
+            title=_VIOLATION_SUMMARY_PANEL_TITLE,
+            border_style=risk_style,
+        )
+    )
+
+
+def display_code_context_panel(finding: ScanFinding) -> None:
+    """Render a bordered panel showing the code context and remediation hint for a finding.
+
+    Args:
+        finding: A single scan finding with code_context and remediation_hint populated.
+    """
+    severity_style = _SEVERITY_STYLE[finding.severity]
+    title = _CODE_CONTEXT_PANEL_FORMAT.format(
+        file=finding.file_path,
+        line=finding.line_number,
+        entity=finding.entity_type,
+        severity=finding.severity.value,
+    )
+    content = "\n".join(
+        [
+            finding.code_context,
+            "",
+            f"[{severity_style}]{_CODE_CONTEXT_REMEDIATION_PREFIX}"
+            f"{finding.remediation_hint}[/{severity_style}]",
+        ]
+    )
+    _console.print(Panel(content, title=title, border_style=severity_style))
 
 
 def display_category_breakdown(scan_result: ScanResult) -> None:
@@ -827,3 +1283,158 @@ def display_category_breakdown(scan_result: ScanResult) -> None:
         if count > _ZERO_FINDINGS:
             table.add_row(category.value, str(count), _build_count_bar(count, max_count))
     _console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard layout builders
+# ---------------------------------------------------------------------------
+
+
+def _build_dashboard_top_panel(last_scan: dict[str, Any] | None) -> Panel:
+    """Build the top banner panel showing version and last scan status.
+
+    Args:
+        last_scan: Most recent scan row from the audit DB, or None if no scans.
+
+    Returns:
+        A Panel with compact banner and last-scan status line.
+    """
+    version_text = _DASHBOARD_VERSION_FORMAT.format(version=__version__)
+    version_line = f"[{_BANNER_TAGLINE_STYLE}]{version_text}[/{_BANNER_TAGLINE_STYLE}]"
+    if last_scan is None:
+        status_line = f"[{_STYLE_DIM}]{_DASHBOARD_NO_HISTORY_TEXT}[/{_STYLE_DIM}]"
+    elif last_scan.get("is_clean") == _DASHBOARD_BOOLEAN_CLEAN:
+        label = f"[{_PANEL_LABEL_STYLE}]{_DASHBOARD_LAST_SCAN_LABEL}[/{_PANEL_LABEL_STYLE}]"
+        value = f"[{_DASHBOARD_HISTORY_CLEAN_STYLE}]{_DASHBOARD_HISTORY_CLEAN_STATUS}"
+        status_line = label + value + f"[/{_DASHBOARD_HISTORY_CLEAN_STYLE}]"
+    else:
+        label = f"[{_PANEL_LABEL_STYLE}]{_DASHBOARD_LAST_SCAN_LABEL}[/{_PANEL_LABEL_STYLE}]"
+        value = f"[{_DASHBOARD_HISTORY_VIOLATION_STYLE}]{_DASHBOARD_HISTORY_VIOLATION_STATUS}"
+        status_line = label + value + f"[/{_DASHBOARD_HISTORY_VIOLATION_STYLE}]"
+    return Panel(
+        f"{version_line}\n{status_line}",
+        title=_DASHBOARD_STATUS_PANEL_TITLE,
+        border_style=_PANEL_BORDER_STYLE,
+    )
+
+
+def _build_dashboard_history_table(recent_scans: list[dict[str, Any]]) -> Table:
+    """Build the recent scan history table for the dashboard left panel.
+
+    Args:
+        recent_scans: Scan rows from the audit DB, most recent first.
+
+    Returns:
+        A Rich Table with color-coded rows per scan outcome.
+    """
+    table = Table(
+        title=_DASHBOARD_HISTORY_PANEL_TITLE,
+        show_header=True,
+        header_style=_PANEL_LABEL_STYLE,
+        expand=True,
+    )
+    table.add_column(_DASHBOARD_COL_TIME, style=_STYLE_DIM)
+    table.add_column(_DASHBOARD_COL_STATUS)
+    table.add_column(_DASHBOARD_COL_FILES, justify=_JUSTIFY_RIGHT)
+    table.add_column(_DASHBOARD_COL_FINDINGS, justify=_JUSTIFY_RIGHT)
+    table.add_column(_DASHBOARD_COL_DURATION, justify=_JUSTIFY_RIGHT)
+    if not recent_scans:
+        table.add_row(_DASHBOARD_NO_HISTORY_TEXT, "", "", "", "")
+        return table
+    for row in recent_scans:
+        is_clean = row.get("is_clean") == _DASHBOARD_BOOLEAN_CLEAN
+        status_text = (
+            _DASHBOARD_HISTORY_CLEAN_STATUS if is_clean else _DASHBOARD_HISTORY_VIOLATION_STATUS
+        )
+        row_style = (
+            _DASHBOARD_HISTORY_CLEAN_STYLE if is_clean else _DASHBOARD_HISTORY_VIOLATION_STYLE
+        )
+        timestamp = str(row.get("timestamp", ""))[:_DASHBOARD_TIMESTAMP_DISPLAY_LENGTH]
+        duration_str = _DURATION_FORMAT.format(float(row.get("scan_duration", 0.0)))
+        table.add_row(
+            timestamp,
+            f"[{row_style}]{status_text}[/{row_style}]",
+            str(row.get("files_scanned", 0)),
+            str(row.get("findings_count", 0)),
+            duration_str,
+        )
+    return table
+
+
+def _build_dashboard_category_table(category_totals: dict[str, int]) -> Table:
+    """Build the HIPAA category totals table for the dashboard right panel.
+
+    Args:
+        category_totals: Mapping of HIPAA category value to total finding count.
+
+    Returns:
+        A Rich Table listing categories sorted by count descending.
+    """
+    table = Table(
+        title=_DASHBOARD_CATEGORY_PANEL_TITLE,
+        show_header=True,
+        header_style=_PANEL_LABEL_STYLE,
+        expand=True,
+    )
+    table.add_column(_DASHBOARD_COL_CATEGORY, style=_PANEL_LABEL_STYLE)
+    table.add_column(_DASHBOARD_COL_TOTAL, justify=_JUSTIFY_RIGHT)
+    if not category_totals:
+        table.add_row(_DASHBOARD_NO_CATEGORIES_TEXT, "")
+        return table
+    for category, count in sorted(
+        category_totals.items(), key=operator.itemgetter(1), reverse=True
+    ):
+        table.add_row(category, str(count))
+    return table
+
+
+def _build_dashboard_watcher_panel() -> Panel:
+    """Build the bottom watcher status panel.
+
+    Returns:
+        A Panel indicating the file watcher is not active (Phase 1 stub).
+    """
+    return Panel(
+        f"[{_STYLE_DIM}]{_DASHBOARD_WATCHER_INACTIVE_TEXT}[/{_STYLE_DIM}]",
+        title=_DASHBOARD_WATCHER_PANEL_TITLE,
+        border_style=_STYLE_DIM,
+    )
+
+
+def build_dashboard_layout(
+    recent_scans: list[dict[str, Any]],
+    category_totals: dict[str, int],
+    last_scan: dict[str, Any] | None,
+) -> Layout:
+    """Assemble the full dashboard Layout from pre-fetched audit data.
+
+    Layout structure:
+      top    — compact banner + last scan status
+      main
+        left  — recent scan history table
+        right — HIPAA category totals table
+      bottom — file watcher status
+
+    Args:
+        recent_scans: Rows from query_recent_scans, most recent first.
+        category_totals: Pre-aggregated HIPAA category counts across all scans.
+        last_scan: Row from get_last_scan, or None if no scans recorded.
+
+    Returns:
+        A fully populated Rich Layout renderable.
+    """
+    layout = Layout()
+    layout.split_column(
+        Layout(name=_DASHBOARD_TOP_SECTION, size=_DASHBOARD_TOP_PANEL_HEIGHT),
+        Layout(name=_DASHBOARD_MAIN_SECTION),
+        Layout(name=_DASHBOARD_BOTTOM_SECTION, size=_DASHBOARD_BOTTOM_PANEL_HEIGHT),
+    )
+    layout[_DASHBOARD_MAIN_SECTION].split_row(
+        Layout(name=_DASHBOARD_LEFT_SECTION),
+        Layout(name=_DASHBOARD_RIGHT_SECTION),
+    )
+    layout[_DASHBOARD_TOP_SECTION].update(_build_dashboard_top_panel(last_scan))
+    layout[_DASHBOARD_LEFT_SECTION].update(_build_dashboard_history_table(recent_scans))
+    layout[_DASHBOARD_RIGHT_SECTION].update(_build_dashboard_category_table(category_totals))
+    layout[_DASHBOARD_BOTTOM_SECTION].update(_build_dashboard_watcher_panel())
+    return layout
