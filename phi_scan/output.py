@@ -1382,8 +1382,10 @@ def _build_watch_event_table(events: Sequence[WatchEvent]) -> Table:
         table.add_row(_WATCH_NO_EVENTS_TEXT, _WATCH_EMPTY_CELL, _WATCH_EMPTY_CELL)
         return table
     for event in events:
-        event_style = _WATCH_RESULT_CLEAN_STYLE if event.is_clean else _WATCH_RESULT_VIOLATION_STYLE
-        styled_result_cell = f"[{event_style}]{event.result_text}[/{event_style}]"
+        result_cell_style = (
+            _WATCH_RESULT_CLEAN_STYLE if event.is_clean else _WATCH_RESULT_VIOLATION_STYLE
+        )
+        styled_result_cell = f"[{result_cell_style}]{event.result_text}[/{result_cell_style}]"
         table.add_row(
             event.event_time.strftime(_WATCH_TIMESTAMP_FORMAT),
             event.file_path,

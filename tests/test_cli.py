@@ -526,7 +526,7 @@ def test_build_watch_result_violation_count_matches_findings_length(
     from phi_scan.constants import DetectionLayer, PhiCategory, SeverityLevel
     from phi_scan.models import ScanFinding
 
-    finding = ScanFinding(
+    finding_one = ScanFinding(
         file_path=tmp_path / "f.py",
         line_number=1,
         entity_type="ssn",
@@ -538,6 +538,18 @@ def test_build_watch_result_violation_count_matches_findings_length(
         code_context="",
         remediation_hint="",
     )
-    scan_outcome = _build_watch_result([finding, finding])
+    finding_two = ScanFinding(
+        file_path=tmp_path / "f.py",
+        line_number=2,
+        entity_type="ssn",
+        hipaa_category=PhiCategory.SSN,
+        confidence=0.9,
+        detection_layer=DetectionLayer.REGEX,
+        value_hash=hashlib.sha256(b"y").hexdigest(),
+        severity=SeverityLevel.HIGH,
+        code_context="",
+        remediation_hint="",
+    )
+    scan_outcome = _build_watch_result([finding_one, finding_two])
 
     assert "2" in scan_outcome.result_text

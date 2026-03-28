@@ -312,7 +312,7 @@ class _WatchScanOutcome:
 
 
 @dataclass
-class _WatchContext:
+class _WatchState:
     """Groups the three shared objects passed between watch() and _FileChangeMonitor.
 
     Introduced so _append_watch_event can access watch_root (needed to compute a
@@ -331,7 +331,7 @@ class _FileChangeMonitor(FileSystemEventHandler):
     note is displayed in the watch header; per-event result shows the actual outcome.
     """
 
-    def __init__(self, context: _WatchContext) -> None:
+    def __init__(self, context: _WatchState) -> None:
         super().__init__()
         self._context = context
 
@@ -675,14 +675,20 @@ def _relative_display_path(changed_path: Path, watch_root: Path) -> str:
         return changed_path.name
 
 
-def _append_watch_event(changed_path: Path, context: _WatchContext) -> None:
+def _append_watch_event(changed_path: Path, context: _WatchState) -> None:
     """Scan changed_path, build a WatchEvent record, and append it to the deque.
 
     Args:
         changed_path: The file that changed, already confirmed non-symlink.
         context: Shared watch context holding deque, scan config, and watch root.
     """
-    findings = scan_file(changed_path, context.scan_config)
+    try:
+        findings = scan_file(changed_path, context.scan_config)
+    except (PermissionError, FileNotFoundError):
+        # File was deleted or became unreadable between the watchdog event and the
+        # scan call — log and skip rather than crashing the watchdog thread.
+        _logger.warning("Skipping unreadable or deleted file during watch: %s", changed_path.name)
+        return
     scan_outcome = _build_watch_result(findings)
     context.watch_events.append(
         WatchEvent(
@@ -849,7 +855,7 @@ def watch(
         raise typer.BadParameter(f"Path does not exist: {watch_path}", param_hint="'PATH'")
     if not watch_path.is_dir():
         raise typer.BadParameter(f"Path is not a directory: {watch_path}", param_hint="'PATH'")
-    watch_context = _WatchContext(
+    watch_context = _WatchState(
         watch_root=watch_path,
         watch_events=deque(maxlen=_WATCH_LOG_MAX_EVENTS),
         scan_config=ScanConfig(),
