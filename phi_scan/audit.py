@@ -374,7 +374,7 @@ def _open_database(database_path: Path) -> sqlite3.Connection:
         AuditLogError: If the path is a symlink, the parent directory cannot
             be created, or the database cannot be opened or configured.
     """
-    # TODO(security): TOCTOU race between is_symlink() and sqlite3.connect —
+    # TODO(security, phase-5): TOCTOU race between is_symlink() and sqlite3.connect —
     # full fix requires os.open with O_NOFOLLOW (not portable on Windows). Deferred to Phase 5.
     _reject_symlink_database_path(database_path)
     _ensure_database_parent_exists(database_path)
@@ -449,7 +449,8 @@ def _get_current_branch() -> str:
             branch = completed_process.stdout.strip()
             return branch if branch else _UNKNOWN_BRANCH
     except (OSError, subprocess.TimeoutExpired) as git_error:
-        _logger.warning("Could not determine git branch: %s", git_error)
+        # Log only the error type — branch names can embed PHI (e.g. feature/patient-john-doe).
+        _logger.warning("Could not determine git branch: %s", type(git_error).__name__)
     return _UNKNOWN_BRANCH
 
 
@@ -469,7 +470,8 @@ def _get_current_repository_path() -> str:
         if completed_process.returncode == 0:
             return completed_process.stdout.strip()
     except (OSError, subprocess.TimeoutExpired) as git_error:
-        _logger.warning("Could not determine git repository path: %s", git_error)
+        # Log only the error type — repository paths can embed PHI (e.g. /home/patient_records/).
+        _logger.warning("Could not determine git repository path: %s", type(git_error).__name__)
     # Path.cwd() follows symlinks on most platforms. The returned path is
     # SHA-256 hashed before storage, so no plaintext PHI is persisted even
     # if a symlinked CWD returns an attacker-influenced path.

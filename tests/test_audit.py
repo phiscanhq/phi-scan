@@ -6,6 +6,7 @@ import datetime
 import hashlib
 import json
 import sqlite3
+from collections.abc import Generator
 from pathlib import Path
 from types import MappingProxyType
 from unittest.mock import MagicMock, patch
@@ -133,6 +134,16 @@ def _build_dirty_scan_result(file_path: Path) -> ScanResult:
         severity_counts=MappingProxyType({SeverityLevel.HIGH: 1}),
         category_counts=MappingProxyType({PhiCategory.SSN: 1}),
     )
+
+
+@pytest.fixture()
+def patched_git_info() -> Generator[None, None, None]:
+    """Patch git subprocess calls to return deterministic values in audit tests."""
+    with (
+        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
+        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
+    ):
+        yield
 
 
 def _build_subprocess_result(
@@ -329,16 +340,12 @@ def test_create_audit_schema_raises_audit_log_error_for_symlink(
 # ---------------------------------------------------------------------------
 
 
-def test_insert_scan_event_inserts_one_row(tmp_path: Path) -> None:
+def test_insert_scan_event_inserts_one_row(tmp_path: Path, patched_git_info: None) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     connection = sqlite3.connect(str(database_path))
     cursor = connection.execute(_SCAN_EVENTS_COUNT_QUERY)
@@ -347,16 +354,12 @@ def test_insert_scan_event_inserts_one_row(tmp_path: Path) -> None:
     assert scan_event_row_count == _SINGLE_INSERTED_ROW_COUNT
 
 
-def test_insert_scan_event_sets_scanner_version(tmp_path: Path) -> None:
+def test_insert_scan_event_sets_scanner_version(tmp_path: Path, patched_git_info: None) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     connection = sqlite3.connect(str(database_path))
     cursor = connection.execute(f"SELECT {_SCANNER_VERSION_COLUMN} FROM {_SCAN_EVENTS_TABLE}")
@@ -365,16 +368,14 @@ def test_insert_scan_event_sets_scanner_version(tmp_path: Path) -> None:
     assert version == __version__
 
 
-def test_insert_scan_event_sets_is_clean_true_for_clean_result(tmp_path: Path) -> None:
+def test_insert_scan_event_sets_is_clean_true_for_clean_result(
+    tmp_path: Path, patched_git_info: None
+) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     connection = sqlite3.connect(str(database_path))
     cursor = connection.execute(f"SELECT {_IS_CLEAN_COLUMN} FROM {_SCAN_EVENTS_TABLE}")
@@ -383,16 +384,14 @@ def test_insert_scan_event_sets_is_clean_true_for_clean_result(tmp_path: Path) -
     assert bool(is_clean_value) is True
 
 
-def test_insert_scan_event_sets_is_clean_false_for_dirty_result(tmp_path: Path) -> None:
+def test_insert_scan_event_sets_is_clean_false_for_dirty_result(
+    tmp_path: Path, patched_git_info: None
+) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_dirty_scan_result(tmp_path / "src" / "main.py")
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     connection = sqlite3.connect(str(database_path))
     cursor = connection.execute(f"SELECT {_IS_CLEAN_COLUMN} FROM {_SCAN_EVENTS_TABLE}")
@@ -401,16 +400,12 @@ def test_insert_scan_event_sets_is_clean_false_for_dirty_result(tmp_path: Path) 
     assert bool(is_clean_value) is False
 
 
-def test_insert_scan_event_stores_findings_count(tmp_path: Path) -> None:
+def test_insert_scan_event_stores_findings_count(tmp_path: Path, patched_git_info: None) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_dirty_scan_result(tmp_path / "src" / "main.py")
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     connection = sqlite3.connect(str(database_path))
     cursor = connection.execute(f"SELECT {_FINDINGS_COUNT_COLUMN} FROM {_SCAN_EVENTS_TABLE}")
@@ -419,16 +414,12 @@ def test_insert_scan_event_stores_findings_count(tmp_path: Path) -> None:
     assert findings_count == len(scan_result.findings)
 
 
-def test_insert_scan_event_stores_scan_duration(tmp_path: Path) -> None:
+def test_insert_scan_event_stores_scan_duration(tmp_path: Path, patched_git_info: None) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     connection = sqlite3.connect(str(database_path))
     cursor = connection.execute(f"SELECT {_SCAN_DURATION_COLUMN} FROM {_SCAN_EVENTS_TABLE}")
@@ -462,32 +453,26 @@ def test_query_recent_scans_returns_empty_list_when_no_scans(tmp_path: Path) -> 
     assert result == []
 
 
-def test_query_recent_scans_returns_scan_within_cutoff(tmp_path: Path) -> None:
+def test_query_recent_scans_returns_scan_within_cutoff(
+    tmp_path: Path, patched_git_info: None
+) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     rows = query_recent_scans(database_path, _RECENT_SCANS_DAYS)
 
     assert len(rows) == 1
 
 
-def test_query_recent_scans_returns_dicts(tmp_path: Path) -> None:
+def test_query_recent_scans_returns_dicts(tmp_path: Path, patched_git_info: None) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     rows = query_recent_scans(database_path, _RECENT_SCANS_DAYS)
 
@@ -528,18 +513,14 @@ def test_query_recent_scans_excludes_events_older_than_cutoff(tmp_path: Path) ->
 
 
 def test_query_recent_scans_returns_rows_ordered_by_timestamp_descending(
-    tmp_path: Path,
+    tmp_path: Path, patched_git_info: None
 ) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     rows = query_recent_scans(database_path, _RECENT_SCANS_DAYS)
 
@@ -571,34 +552,28 @@ def test_get_last_scan_returns_none_when_no_scans_exist(tmp_path: Path) -> None:
     assert result is None
 
 
-def test_get_last_scan_returns_dict_after_scan_inserted(tmp_path: Path) -> None:
+def test_get_last_scan_returns_dict_after_scan_inserted(
+    tmp_path: Path, patched_git_info: None
+) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     scan_result = _build_clean_scan_result()
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, scan_result)
+    insert_scan_event(database_path, scan_result)
 
     last = get_last_scan(database_path)
 
     assert isinstance(last, dict)
 
 
-def test_get_last_scan_returns_most_recent_scan(tmp_path: Path) -> None:
+def test_get_last_scan_returns_most_recent_scan(tmp_path: Path, patched_git_info: None) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     clean_result = _build_clean_scan_result()
     dirty_result = _build_dirty_scan_result(tmp_path / "src" / "main.py")
 
-    with (
-        patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
-        patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
-    ):
-        insert_scan_event(database_path, clean_result)
-        insert_scan_event(database_path, dirty_result)
+    insert_scan_event(database_path, clean_result)
+    insert_scan_event(database_path, dirty_result)
 
     last = get_last_scan(database_path)
 
