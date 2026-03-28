@@ -40,10 +40,7 @@ from phi_scan.exceptions import AuditLogError, ConfigurationError
 from phi_scan.logging_config import get_logger, replace_logger_handlers
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 from phi_scan.output import (
-    WATCH_EVENT_KEY_FILE,
-    WATCH_EVENT_KEY_RESULT_STYLE,
-    WATCH_EVENT_KEY_RESULT_TEXT,
-    WATCH_EVENT_KEY_TIME,
+    WatchEvent,
     build_dashboard_layout,
     build_watch_layout,
     create_scan_progress,
@@ -315,7 +312,7 @@ class _FileChangeMonitor(FileSystemEventHandler):
     def __init__(
         self,
         watch_root: Path,
-        watch_events: deque[dict[str, str]],
+        watch_events: deque[WatchEvent],
         scan_config: ScanConfig,
     ) -> None:
         super().__init__()
@@ -337,16 +334,7 @@ class _FileChangeMonitor(FileSystemEventHandler):
         # expose files containing PHI that were never intended to be scanned.
         if changed_path.is_symlink():
             return
-        findings = scan_file(changed_path, self._scan_config)
-        result_text, result_style = _build_watch_result(findings)
-        self._watch_events.append(
-            {
-                WATCH_EVENT_KEY_TIME: datetime.now().strftime(_WATCH_TIMESTAMP_FORMAT),
-                WATCH_EVENT_KEY_FILE: str(changed_path),
-                WATCH_EVENT_KEY_RESULT_TEXT: result_text,
-                WATCH_EVENT_KEY_RESULT_STYLE: result_style,
-            }
-        )
+        _append_watch_event(changed_path, self._watch_events, self._scan_config)
 
 
 # ---------------------------------------------------------------------------
@@ -650,6 +638,30 @@ def _reject_hook_path_with_symlinked_component(hook_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _append_watch_event(
+    changed_path: Path,
+    watch_events: deque[WatchEvent],
+    scan_config: ScanConfig,
+) -> None:
+    """Scan changed_path, build a WatchEvent record, and append it to the deque.
+
+    Args:
+        changed_path: The file that changed, already confirmed non-symlink.
+        watch_events: Rolling deque shared between the watchdog thread and main thread.
+        scan_config: Scanner configuration used for the per-file scan.
+    """
+    findings = scan_file(changed_path, scan_config)
+    result_text, result_style = _build_watch_result(findings)
+    watch_events.append(
+        WatchEvent(
+            time=datetime.now().strftime(_WATCH_TIMESTAMP_FORMAT),
+            file_path=str(changed_path),
+            result_text=result_text,
+            result_style=result_style,
+        )
+    )
+
+
 def _build_watch_result(findings: list[ScanFinding]) -> tuple[str, str]:
     """Return display text and Rich style for a per-file watch scan result.
 
@@ -670,7 +682,7 @@ def _build_watch_result(findings: list[ScanFinding]) -> tuple[str, str]:
 
 def _run_watch_live_loop(
     watch_path: Path,
-    watch_events: deque[dict[str, str]],
+    watch_events: deque[WatchEvent],
 ) -> None:
     """Drive the Rich Live display loop until Ctrl+C.
 
@@ -797,8 +809,12 @@ def watch(
 ) -> None:
     """Watch a directory and re-scan changed files. Detection active from Phase 2."""
     watch_path = path.resolve()
+    if not watch_path.exists():
+        raise typer.BadParameter(f"Path does not exist: {watch_path}", param_hint="'PATH'")
+    if not watch_path.is_dir():
+        raise typer.BadParameter(f"Path is not a directory: {watch_path}", param_hint="'PATH'")
     scan_config = ScanConfig()
-    watch_events: deque[dict[str, str]] = deque(maxlen=_WATCH_LOG_MAX_EVENTS)
+    watch_events: deque[WatchEvent] = deque(maxlen=_WATCH_LOG_MAX_EVENTS)
     event_handler = _FileChangeMonitor(watch_path, watch_events, scan_config)
     observer = Observer()
     observer.schedule(event_handler, str(watch_path), recursive=True)

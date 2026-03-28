@@ -8,6 +8,7 @@ import json
 import operator
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import MappingProxyType
@@ -37,10 +38,7 @@ from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 __all__ = [
     "build_dashboard_layout",
     "build_watch_layout",
-    "WATCH_EVENT_KEY_FILE",
-    "WATCH_EVENT_KEY_RESULT_STYLE",
-    "WATCH_EVENT_KEY_RESULT_TEXT",
-    "WATCH_EVENT_KEY_TIME",
+    "WatchEvent",
     "display_banner",
     "display_category_breakdown",
     "display_clean_result",
@@ -330,11 +328,22 @@ _WATCH_NO_EVENTS_TEXT: str = "Waiting for file changes…"
 _WATCH_COL_TIME: str = "Time"
 _WATCH_COL_FILE: str = "Changed File"
 _WATCH_COL_RESULT: str = "Result"
-# Dict keys used when cli.py builds watch event records for the rolling log.
-WATCH_EVENT_KEY_TIME: str = "time"
-WATCH_EVENT_KEY_FILE: str = "file"
-WATCH_EVENT_KEY_RESULT_TEXT: str = "result_text"
-WATCH_EVENT_KEY_RESULT_STYLE: str = "result_style"
+
+
+@dataclass(frozen=True)
+class WatchEvent:
+    """A single watch-mode event record rendered in the rolling event table.
+
+    Created by cli.py when watchdog fires and scan_file completes; consumed
+    by output.py to render the rolling log table. Frozen to prevent mutation
+    across the shared deque boundary between the watchdog thread and main thread.
+    """
+
+    time: str
+    file_path: str
+    result_text: str
+    result_style: str
+
 
 # ---------------------------------------------------------------------------
 # CSV field names (in output column order)
@@ -1338,13 +1347,11 @@ def _build_watch_header_panel(watch_path: Path) -> Panel:
     )
 
 
-def _build_watch_event_table(events: Sequence[dict[str, Any]]) -> Table:
+def _build_watch_event_table(events: Sequence[WatchEvent]) -> Table:
     """Build the rolling event log table from recent watch events.
 
-    Each event dict must contain WATCH_EVENT_KEY_* keys produced by cli.py.
-
     Args:
-        events: Sequence of watch event dicts (most recent last).
+        events: Sequence of WatchEvent records (most recent last).
 
     Returns:
         Rich Table with time, changed file, and mini scan result columns.
@@ -1362,18 +1369,12 @@ def _build_watch_event_table(events: Sequence[dict[str, Any]]) -> Table:
         table.add_row(_WATCH_NO_EVENTS_TEXT, "", "")
         return table
     for event in events:
-        result_text = event.get(WATCH_EVENT_KEY_RESULT_TEXT, "")
-        result_style = event.get(WATCH_EVENT_KEY_RESULT_STYLE, "")
-        styled_result = f"[{result_style}]{result_text}[/{result_style}]"
-        table.add_row(
-            event.get(WATCH_EVENT_KEY_TIME, ""),
-            event.get(WATCH_EVENT_KEY_FILE, ""),
-            styled_result,
-        )
+        result_markup = f"[{event.result_style}]{event.result_text}[/{event.result_style}]"
+        table.add_row(event.time, event.file_path, result_markup)
     return table
 
 
-def build_watch_layout(watch_path: Path, events: Sequence[dict[str, Any]]) -> Layout:
+def build_watch_layout(watch_path: Path, events: Sequence[WatchEvent]) -> Layout:
     """Build the Rich Layout for the watch mode live display.
 
     Args:

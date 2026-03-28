@@ -13,10 +13,7 @@ from rich.table import Table
 from phi_scan.constants import DetectionLayer, PhiCategory, RiskLevel, SeverityLevel
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 from phi_scan.output import (
-    WATCH_EVENT_KEY_FILE,
-    WATCH_EVENT_KEY_RESULT_STYLE,
-    WATCH_EVENT_KEY_RESULT_TEXT,
-    WATCH_EVENT_KEY_TIME,
+    WatchEvent,
     build_dashboard_layout,
     build_watch_layout,
     create_scan_progress,
@@ -934,21 +931,21 @@ _WATCH_SAMPLE_RESULT_STYLE_VIOLATION: str = "bold red"
 
 
 @pytest.fixture()
-def watch_sample_events() -> list[dict[str, str]]:
-    """Fresh list of two sample watch events per test — prevents cross-test mutation."""
+def watch_sample_events() -> list[WatchEvent]:
+    """Fresh list of two sample WatchEvent records per test."""
     return [
-        {
-            WATCH_EVENT_KEY_TIME: _WATCH_SAMPLE_TIMESTAMP_ONE,
-            WATCH_EVENT_KEY_FILE: _WATCH_SAMPLE_FILE_ONE,
-            WATCH_EVENT_KEY_RESULT_TEXT: _WATCH_SAMPLE_RESULT_TEXT_CLEAN,
-            WATCH_EVENT_KEY_RESULT_STYLE: _WATCH_SAMPLE_RESULT_STYLE_CLEAN,
-        },
-        {
-            WATCH_EVENT_KEY_TIME: _WATCH_SAMPLE_TIMESTAMP_TWO,
-            WATCH_EVENT_KEY_FILE: _WATCH_SAMPLE_FILE_TWO,
-            WATCH_EVENT_KEY_RESULT_TEXT: _WATCH_SAMPLE_RESULT_TEXT_VIOLATION,
-            WATCH_EVENT_KEY_RESULT_STYLE: _WATCH_SAMPLE_RESULT_STYLE_VIOLATION,
-        },
+        WatchEvent(
+            time=_WATCH_SAMPLE_TIMESTAMP_ONE,
+            file_path=_WATCH_SAMPLE_FILE_ONE,
+            result_text=_WATCH_SAMPLE_RESULT_TEXT_CLEAN,
+            result_style=_WATCH_SAMPLE_RESULT_STYLE_CLEAN,
+        ),
+        WatchEvent(
+            time=_WATCH_SAMPLE_TIMESTAMP_TWO,
+            file_path=_WATCH_SAMPLE_FILE_TWO,
+            result_text=_WATCH_SAMPLE_RESULT_TEXT_VIOLATION,
+            result_style=_WATCH_SAMPLE_RESULT_STYLE_VIOLATION,
+        ),
     ]
 
 
@@ -957,7 +954,7 @@ def test_build_watch_layout_empty_events_does_not_raise(tmp_path: Path) -> None:
 
 
 def test_build_watch_layout_with_events_does_not_raise(
-    tmp_path: Path, watch_sample_events: list[dict[str, str]]
+    tmp_path: Path, watch_sample_events: list[WatchEvent]
 ) -> None:
     build_watch_layout(tmp_path, watch_sample_events)
 
@@ -980,16 +977,21 @@ def test_build_watch_event_table_empty_shows_waiting_text() -> None:
 
 
 def test_build_watch_event_table_has_three_columns() -> None:
-    from phi_scan.output import _build_watch_event_table
+    from phi_scan.output import (
+        _WATCH_COL_FILE,
+        _WATCH_COL_RESULT,
+        _WATCH_COL_TIME,
+        _build_watch_event_table,
+    )
 
-    expected_column_count: int = 3
+    expected_column_count: int = len([_WATCH_COL_TIME, _WATCH_COL_FILE, _WATCH_COL_RESULT])
     table = _build_watch_event_table([])
 
     assert len(table.columns) == expected_column_count
 
 
 def test_build_watch_event_table_non_empty_has_correct_row_count(
-    watch_sample_events: list[dict[str, str]],
+    watch_sample_events: list[WatchEvent],
 ) -> None:
     from phi_scan.output import _build_watch_event_table
 
