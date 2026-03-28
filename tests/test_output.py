@@ -707,7 +707,7 @@ def test_highest_severity_icon_returns_red_for_high() -> None:
     findings = [_make_finding(severity=SeverityLevel.HIGH)]
     icon = _highest_severity_icon(findings)
 
-    assert icon == _SEVERITY_ICON["high"]
+    assert icon == _SEVERITY_ICON[SeverityLevel.HIGH]
 
 
 # ---------------------------------------------------------------------------
@@ -1102,47 +1102,65 @@ def test_violation_alert_icon_contains_warning_on_utf8_terminal(
     assert _EXPECTED_VIOLATION_ICON_UNICODE in icon
 
 
-def test_display_code_context_panel_includes_arrow(tmp_path: Path) -> None:
-    from phi_scan.output import _CODE_CONTEXT_ARROW
+def test_code_context_arrow_unicode_raw_value_is_correct() -> None:
+    from phi_scan.output import _UNICODE_CODE_CONTEXT_ARROW
 
-    assert _CODE_CONTEXT_ARROW in (_EXPECTED_CONTEXT_ARROW_UNICODE, _EXPECTED_CONTEXT_ARROW_ASCII)
+    assert _UNICODE_CODE_CONTEXT_ARROW == _EXPECTED_CONTEXT_ARROW_UNICODE
 
 
-def test_display_file_tree_root_has_folder_icon(tmp_path: Path) -> None:
-    from phi_scan.output import _ICON_FOLDER
+def test_code_context_arrow_ascii_fallback_is_correct() -> None:
+    from phi_scan.output import _ASCII_CODE_CONTEXT_ARROW
 
-    assert _ICON_FOLDER in (_EXPECTED_FOLDER_ICON_UNICODE, "[d]")
+    assert _ASCII_CODE_CONTEXT_ARROW == _EXPECTED_CONTEXT_ARROW_ASCII
+
+
+def test_folder_icon_unicode_raw_value_is_correct() -> None:
+    from phi_scan.output import _UNICODE_ICON_FOLDER
+
+    assert _UNICODE_ICON_FOLDER == _EXPECTED_FOLDER_ICON_UNICODE
+
+
+def test_folder_icon_ascii_fallback_is_correct() -> None:
+    from phi_scan.output import _ASCII_ICON_FOLDER
+
+    assert _ASCII_ICON_FOLDER == "[d]"
 
 
 def test_build_confidence_dots_all_empty_for_zero() -> None:
-    from phi_scan.output import _build_confidence_dots
+    from phi_scan.output import _CONFIDENCE_DOT_COUNT, _CONFIDENCE_DOT_EMPTY, _build_confidence_dots
 
     dots = _build_confidence_dots(_CONFIDENCE_ZERO)
 
-    assert len(dots) == _EXPECTED_DOT_COUNT
-    assert dots.count("#") + dots.count("○") == _EXPECTED_DOT_COUNT
-    # No filled dots at confidence 0.0
-    assert "●" not in dots
-    assert "#" not in dots or "○" not in dots or all(c in ".○" for c in dots)
+    assert dots == _CONFIDENCE_DOT_EMPTY * _CONFIDENCE_DOT_COUNT
 
 
 def test_build_confidence_dots_all_filled_for_one() -> None:
-    from phi_scan.output import _build_confidence_dots
+    from phi_scan.output import (
+        _CONFIDENCE_DOT_COUNT,
+        _CONFIDENCE_DOT_FILLED,
+        _build_confidence_dots,
+    )
 
     dots = _build_confidence_dots(_CONFIDENCE_FULL)
 
-    assert len(dots) == _EXPECTED_DOT_COUNT
-    # No empty dots at full confidence
-    assert "○" not in dots
-    assert "." not in dots
+    assert dots == _CONFIDENCE_DOT_FILLED * _CONFIDENCE_DOT_COUNT
 
 
 def test_build_confidence_dots_partial_for_mid_confidence() -> None:
-    from phi_scan.output import _build_confidence_dots
+    from phi_scan.output import (
+        _CONFIDENCE_DOT_COUNT,
+        _CONFIDENCE_DOT_EMPTY,
+        _CONFIDENCE_DOT_FILLED,
+        _build_confidence_dots,
+    )
 
     dots = _build_confidence_dots(_CONFIDENCE_THREE_FIFTHS)
 
-    assert len(dots) == _EXPECTED_DOT_COUNT
+    assert len(dots) == _CONFIDENCE_DOT_COUNT
+    assert dots.startswith(_CONFIDENCE_DOT_FILLED * _EXPECTED_FILLED_AT_THREE_FIFTHS)
+    assert dots.endswith(
+        _CONFIDENCE_DOT_EMPTY * (_CONFIDENCE_DOT_COUNT - _EXPECTED_FILLED_AT_THREE_FIFTHS)
+    )
 
 
 # ---------------------------------------------------------------------------

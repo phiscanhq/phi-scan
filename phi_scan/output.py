@@ -337,18 +337,18 @@ _VIOLATION_ALERT_MESSAGE_FORMAT: str = (
     "{icon}  PHI/PII DETECTED — {count} {finding_word} in {files} {file_word}"
 )
 _VIOLATION_ALERT_BOX_STYLE: str = _STYLE_BOLD_RED
-_RISK_LEVEL_BADGE_STYLE: dict[str, str] = {
-    "CRITICAL": _STYLE_BOLD_WHITE_ON_RED,
-    "HIGH": _STYLE_BOLD_RED,
-    "MODERATE": _STYLE_YELLOW,
-    "LOW": _STYLE_DIM_YELLOW,
-    "CLEAN": _STYLE_BOLD_GREEN,
+_RISK_LEVEL_BADGE_STYLE: dict[RiskLevel, str] = {
+    RiskLevel.CRITICAL: _STYLE_BOLD_WHITE_ON_RED,
+    RiskLevel.HIGH: _STYLE_BOLD_RED,
+    RiskLevel.MODERATE: _STYLE_YELLOW,
+    RiskLevel.LOW: _STYLE_DIM_YELLOW,
+    RiskLevel.CLEAN: _STYLE_BOLD_GREEN,
 }
-_SEVERITY_ICON: dict[str, str] = {
-    "high": _SEVERITY_ICON_HIGH,
-    "medium": _SEVERITY_ICON_MEDIUM,
-    "low": _SEVERITY_ICON_LOW,
-    "info": _SEVERITY_ICON_INFO,
+_SEVERITY_ICON: dict[SeverityLevel, str] = {
+    SeverityLevel.HIGH: _SEVERITY_ICON_HIGH,
+    SeverityLevel.MEDIUM: _SEVERITY_ICON_MEDIUM,
+    SeverityLevel.LOW: _SEVERITY_ICON_LOW,
+    SeverityLevel.INFO: _SEVERITY_ICON_INFO,
 }
 _SEVERITY_INLINE_SEPARATOR: str = "    "
 _SEVERITY_INLINE_FORMAT: str = "{icon} {level}: {count}"
@@ -792,7 +792,7 @@ def _build_severity_inline_text(severity_counts: MappingProxyType[SeverityLevel,
         count = severity_counts.get(level, _ZERO_FINDINGS)
         if count == _ZERO_FINDINGS:
             continue
-        icon = _SEVERITY_ICON.get(level.value, "")
+        icon = _SEVERITY_ICON.get(level, "")
         style = _SEVERITY_STYLE[level]
         count_markup = f"[{style}]{count}[/{style}]"
         severity_entries.append(
@@ -1196,7 +1196,7 @@ def _highest_severity_icon(file_findings: list[ScanFinding]) -> str:
     file_severities = {f.severity for f in file_findings}
     for level in _SEVERITY_DESCENDING_ORDER:
         if level in file_severities:
-            return _SEVERITY_ICON.get(level.value, "")
+            return _SEVERITY_ICON.get(level, "")
     return ""
 
 
@@ -1388,7 +1388,7 @@ def display_risk_level_badge(scan_result: ScanResult) -> None:
         scan_result: The completed scan result whose risk level to badge.
     """
     level_name = scan_result.risk_level.value
-    badge_style = _RISK_LEVEL_BADGE_STYLE.get(level_name, _STYLE_BOLD)
+    badge_style = _RISK_LEVEL_BADGE_STYLE.get(scan_result.risk_level, _STYLE_BOLD)
     _console.print(f"[{badge_style}] {level_name} [/{badge_style}]")
 
 
@@ -1413,7 +1413,7 @@ def _build_violation_summary_panel_markup(scan_result: ScanResult) -> str:
     """
     label_style = _PANEL_LABEL_STYLE
     risk_level_name = scan_result.risk_level.value
-    badge_style = _RISK_LEVEL_BADGE_STYLE.get(risk_level_name, _STYLE_BOLD)
+    badge_style = _RISK_LEVEL_BADGE_STYLE.get(scan_result.risk_level, _STYLE_BOLD)
     duration_str = _DURATION_FORMAT.format(scan_result.scan_duration)
     severity_inline = _build_severity_inline_text(scan_result.severity_counts)
     files_line = _VIOLATION_SUMMARY_FILES_FORMAT.format(
