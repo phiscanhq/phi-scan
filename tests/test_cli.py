@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -10,7 +11,14 @@ from typer.testing import CliRunner
 
 from phi_scan import __version__
 from phi_scan.cli import _truncate_filename_for_progress, app
-from phi_scan.constants import DEFAULT_CONFIG_FILENAME, EXIT_CODE_CLEAN
+from phi_scan.constants import (
+    DEFAULT_CONFIG_FILENAME,
+    EXIT_CODE_CLEAN,
+    DetectionLayer,
+    PhiCategory,
+    SeverityLevel,
+)
+from phi_scan.models import ScanFinding
 
 # ---------------------------------------------------------------------------
 # Test constants — no magic values
@@ -55,6 +63,41 @@ _SHORT_FILE_PATH: str = "src/phi_scan/cli.py"
 _LONG_FILE_PATH: str = "a/very/deep/nested/path/that/exceeds/the/column/width/limit/some_module.py"
 _LONG_FILE_ELLIPSIS_PREFIX: str = "…"
 _PROGRESS_FILENAME_MAX_CHARS: int = 38
+_WATCH_FINDING_ENTITY_TYPE: str = "ssn"
+_WATCH_FINDING_CONFIDENCE: float = 0.9
+_WATCH_FINDING_CODE_CONTEXT: str = ""
+_WATCH_FINDING_REMEDIATION_HINT: str = ""
+
+
+def _make_watch_scan_finding(
+    file_path: Path,
+    *,
+    line_number: int,
+    value_hash_seed: bytes,
+) -> ScanFinding:
+    """Build a minimal ScanFinding for watch-mode unit tests.
+
+    Args:
+        file_path: Path to the file containing the finding.
+        line_number: Line number of the finding within the file.
+        value_hash_seed: Raw bytes used to derive the SHA-256 value_hash.
+
+    Returns:
+        A ScanFinding populated with stable test defaults.
+    """
+    return ScanFinding(
+        file_path=file_path,
+        line_number=line_number,
+        entity_type=_WATCH_FINDING_ENTITY_TYPE,
+        hipaa_category=PhiCategory.SSN,
+        confidence=_WATCH_FINDING_CONFIDENCE,
+        detection_layer=DetectionLayer.REGEX,
+        value_hash=hashlib.sha256(value_hash_seed).hexdigest(),
+        severity=SeverityLevel.HIGH,
+        code_context=_WATCH_FINDING_CODE_CONTEXT,
+        remediation_hint=_WATCH_FINDING_REMEDIATION_HINT,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Shared runner
@@ -493,24 +536,10 @@ def test_build_watch_result_returns_clean_text_for_no_findings() -> None:
 def test_build_watch_result_returns_violation_text_for_findings(
     tmp_path: Path,
 ) -> None:
-    import hashlib
-
     from phi_scan.cli import _build_watch_result
-    from phi_scan.constants import DetectionLayer, PhiCategory, SeverityLevel
-    from phi_scan.models import ScanFinding
 
-    finding = ScanFinding(
-        file_path=tmp_path / "f.py",
-        line_number=1,
-        entity_type="ssn",
-        hipaa_category=PhiCategory.SSN,
-        confidence=0.9,
-        detection_layer=DetectionLayer.REGEX,
-        value_hash=hashlib.sha256(b"x").hexdigest(),
-        severity=SeverityLevel.HIGH,
-        code_context="",
-        remediation_hint="",
-    )
+    finding = _make_watch_scan_finding(tmp_path / "f.py", line_number=1, value_hash_seed=b"x")
+
     scan_outcome = _build_watch_result([finding])
 
     assert "1" in scan_outcome.result_text
@@ -520,36 +549,11 @@ def test_build_watch_result_returns_violation_text_for_findings(
 def test_build_watch_result_violation_count_matches_findings_length(
     tmp_path: Path,
 ) -> None:
-    import hashlib
-
     from phi_scan.cli import _build_watch_result
-    from phi_scan.constants import DetectionLayer, PhiCategory, SeverityLevel
-    from phi_scan.models import ScanFinding
 
-    finding_one = ScanFinding(
-        file_path=tmp_path / "f.py",
-        line_number=1,
-        entity_type="ssn",
-        hipaa_category=PhiCategory.SSN,
-        confidence=0.9,
-        detection_layer=DetectionLayer.REGEX,
-        value_hash=hashlib.sha256(b"x").hexdigest(),
-        severity=SeverityLevel.HIGH,
-        code_context="",
-        remediation_hint="",
-    )
-    finding_two = ScanFinding(
-        file_path=tmp_path / "f.py",
-        line_number=2,
-        entity_type="ssn",
-        hipaa_category=PhiCategory.SSN,
-        confidence=0.9,
-        detection_layer=DetectionLayer.REGEX,
-        value_hash=hashlib.sha256(b"y").hexdigest(),
-        severity=SeverityLevel.HIGH,
-        code_context="",
-        remediation_hint="",
-    )
+    finding_one = _make_watch_scan_finding(tmp_path / "f.py", line_number=1, value_hash_seed=b"x")
+    finding_two = _make_watch_scan_finding(tmp_path / "f.py", line_number=2, value_hash_seed=b"y")
+
     scan_outcome = _build_watch_result([finding_one, finding_two])
 
     assert "2" in scan_outcome.result_text
