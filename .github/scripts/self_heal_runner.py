@@ -15,7 +15,7 @@ from enum import StrEnum
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, query
 
 MAX_BUDGET_USD: float = 15.00
-MAX_TURNS: int = 50
+MAX_TURNS: int = 100
 MAX_SUMMARY_LENGTH: int = 500
 RESULT_OUTPUT_FILE: str = "self_heal_result.txt"
 ANTHROPIC_API_KEY_ENV_VAR: str = "ANTHROPIC_API_KEY"
