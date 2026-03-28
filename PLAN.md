@@ -474,9 +474,9 @@ polished, informative, and visually striking. Users should enjoy running this to
 
 ### 1D — Git Hook Integration
 
-- [ ] **1D.1** `install_hook` — write executable shell script to `.git/hooks/pre-commit`
-- [ ] **1D.2** `uninstall_hook` — detect and remove the phi-scan hook
-- [ ] **1D.3** Guard: check `.git/` exists, warn if not a git repo
+- [x] **1D.1** `install_hook` — write executable shell script to `.git/hooks/pre-commit`
+- [x] **1D.2** `uninstall_hook` — detect and remove the phi-scan hook
+- [x] **1D.3** Guard: check `.git/` exists, warn if not a git repo
 
 ### 1E — Makefile & Installability
 
