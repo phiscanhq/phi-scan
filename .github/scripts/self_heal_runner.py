@@ -36,6 +36,7 @@ class ResultSubtype(StrEnum):
     MAX_BUDGET = "error_max_budget_usd"
     MAX_TURNS = "error_max_turns"
 
+
 DEFAULT_RESULT_SUBTYPE: ResultSubtype = ResultSubtype.UNKNOWN
 
 EXIT_CODE_SUCCESS: int = 0
