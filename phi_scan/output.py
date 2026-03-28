@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import operator
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
@@ -51,7 +52,6 @@ __all__ = [
     "display_phase_separator",
     "display_scan_header",
     "create_scan_progress",
-    "display_summary_panel",
     "display_code_context_panel",
     "display_risk_level_badge",
     "display_severity_inline",
@@ -1039,6 +1039,10 @@ def _build_summary_panel_markup(scan_result: ScanResult) -> str:
 def display_summary_panel(scan_result: ScanResult) -> None:
     """Render a bordered summary panel with risk level, file stats, and severity breakdown.
 
+    Deprecated: superseded by display_clean_summary_panel and
+    display_violation_summary_panel which provide split clean/violation UI.
+    Retained for test coverage only — not part of the public API.
+
     Args:
         scan_result: The completed scan result to summarise.
     """
@@ -1377,7 +1381,9 @@ def _build_dashboard_category_table(category_totals: dict[str, int]) -> Table:
     if not category_totals:
         table.add_row(_DASHBOARD_NO_CATEGORIES_TEXT, "")
         return table
-    for category, count in sorted(category_totals.items(), key=lambda pair: pair[1], reverse=True):
+    for category, count in sorted(
+        category_totals.items(), key=operator.itemgetter(1), reverse=True
+    ):
         table.add_row(category, str(count))
     return table
 
