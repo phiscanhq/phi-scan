@@ -171,6 +171,19 @@ def test_scan_quiet_on_clean_directory_exits_zero(tmp_path: Path) -> None:
     assert result.exit_code == EXIT_CODE_CLEAN
 
 
+def test_scan_quiet_flag_produces_no_table_output(tmp_path: Path) -> None:
+    result = _runner.invoke(app, ["scan", str(tmp_path), "--quiet"])
+
+    assert result.output.strip() == ""
+
+
+def test_scan_quiet_with_json_format_still_emits_json(tmp_path: Path) -> None:
+    result = _runner.invoke(app, ["scan", str(tmp_path), "--quiet", "--output", "json"])
+
+    parsed = json.loads(result.output)
+    assert isinstance(parsed, dict)
+
+
 def test_scan_json_output_is_valid_json(tmp_path: Path) -> None:
     result = _runner.invoke(app, ["scan", str(tmp_path), "--output", "json"])
 

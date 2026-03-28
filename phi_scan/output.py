@@ -6,6 +6,7 @@ import csv
 import io
 import json
 import operator
+import sys
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -29,6 +30,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Column, Table
+from rich.text import Text
 from rich.tree import Tree
 
 from phi_scan import __version__
@@ -69,9 +71,51 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Module-level Rich console — all display functions write to this instance.
 # Rich automatically respects the NO_COLOR environment variable (no-color.org).
+# Note: NO_COLOR suppresses ANSI color codes only — Unicode glyphs are unaffected,
+# which is correct per the no-color.org specification.
 # ---------------------------------------------------------------------------
 
 _console: Console = Console()
+
+# ---------------------------------------------------------------------------
+# Unicode support detection
+# Defined before symbol constants so _resolve_symbol is available at constant
+# initialization time. Detection is done once at import and stored as a module
+# constant to avoid repeated encoding lookups on every render call.
+# ---------------------------------------------------------------------------
+
+_UNICODE_ENCODING_PREFIX: str = "UTF"
+
+
+def _detect_unicode_support() -> bool:
+    """Return True when the terminal encoding can represent Unicode characters.
+
+    Checks sys.stdout.encoding. Falls back to False when encoding is absent or
+    non-UTF — covers ASCII-only terminals, legacy Windows cmd.exe, and pipes
+    redirected to ASCII sinks.
+
+    Returns:
+        True if the stdout encoding starts with "UTF" (e.g. UTF-8, UTF-16).
+    """
+    encoding: str = getattr(sys.stdout, "encoding", None) or ""
+    return encoding.upper().startswith(_UNICODE_ENCODING_PREFIX)
+
+
+_UNICODE_SUPPORTED: bool = _detect_unicode_support()
+
+
+def _resolve_symbol(unicode_char: str, ascii_char: str) -> str:
+    """Return unicode_char when the terminal supports Unicode, else ascii_char.
+
+    Args:
+        unicode_char: The preferred Unicode glyph (emoji, box-drawing, etc.).
+        ascii_char: The ASCII-safe fallback for non-UTF-8 terminals.
+
+    Returns:
+        unicode_char if _UNICODE_SUPPORTED, ascii_char otherwise.
+    """
+    return unicode_char if _UNICODE_SUPPORTED else ascii_char
+
 
 # ---------------------------------------------------------------------------
 # Rich style strings
@@ -85,6 +129,9 @@ _STYLE_BOLD_GREEN: str = "bold green"
 _STYLE_DIM: str = "dim"
 _STYLE_BOLD: str = "bold"
 _STYLE_BOLD_CYAN: str = "bold cyan"
+_STYLE_CYAN: str = "cyan"
+_STYLE_DIM_YELLOW: str = "dim yellow"
+_STYLE_BOLD_WHITE_ON_RED: str = "bold white on red"
 
 # ---------------------------------------------------------------------------
 # Severity and risk level → Rich style mappings
@@ -104,6 +151,63 @@ _RISK_LEVEL_STYLE: dict[RiskLevel, str] = {
     RiskLevel.LOW: _STYLE_GREEN,
     RiskLevel.CLEAN: _STYLE_BOLD_GREEN,
 }
+
+# ---------------------------------------------------------------------------
+# Unicode symbols — raw pairs and resolved constants
+# Each symbol has a Unicode form (UTF-8 terminals) and an ASCII fallback
+# (legacy terminals, ASCII-only pipes). _resolve_symbol selects at import time.
+# IMPORTANT: The resolved _ICON_* / _CODE_CONTEXT_ARROW / _CONFIDENCE_DOT_* constants
+# below are frozen at module import and are NOT affected by later monkeypatching of
+# _UNICODE_SUPPORTED. Tests must call _resolve_symbol directly (not read the resolved
+# constants) to exercise the Unicode vs ASCII selection paths.
+# ---------------------------------------------------------------------------
+
+_UNICODE_ICON_CLEAN: str = "✅"
+_ASCII_ICON_CLEAN: str = "[OK]"
+_UNICODE_ICON_VIOLATION: str = "⚠"
+_ASCII_ICON_VIOLATION: str = "[!]"
+_UNICODE_ICON_FILE: str = "📄"
+_ASCII_ICON_FILE: str = "[f]"
+_UNICODE_ICON_FOLDER: str = "📁"
+_ASCII_ICON_FOLDER: str = "[d]"
+_UNICODE_CODE_CONTEXT_ARROW: str = "►"
+_ASCII_CODE_CONTEXT_ARROW: str = ">"
+_UNICODE_CONFIDENCE_DOT_FILLED: str = "●"
+_ASCII_CONFIDENCE_DOT_FILLED: str = "#"
+_UNICODE_CONFIDENCE_DOT_EMPTY: str = "○"
+_ASCII_CONFIDENCE_DOT_EMPTY: str = "."
+_UNICODE_SEVERITY_HIGH: str = "🔴"
+_ASCII_SEVERITY_HIGH: str = "[H]"
+_UNICODE_SEVERITY_MEDIUM: str = "🟡"
+_ASCII_SEVERITY_MEDIUM: str = "[M]"
+_UNICODE_SEVERITY_LOW: str = "🟢"
+_ASCII_SEVERITY_LOW: str = "[L]"
+_UNICODE_SEVERITY_INFO: str = "⚪"
+_ASCII_SEVERITY_INFO: str = "[I]"
+
+_ICON_CLEAN: str = _resolve_symbol(_UNICODE_ICON_CLEAN, _ASCII_ICON_CLEAN)
+_ICON_VIOLATION: str = _resolve_symbol(_UNICODE_ICON_VIOLATION, _ASCII_ICON_VIOLATION)
+_ICON_FILE: str = _resolve_symbol(_UNICODE_ICON_FILE, _ASCII_ICON_FILE)
+_ICON_FOLDER: str = _resolve_symbol(_UNICODE_ICON_FOLDER, _ASCII_ICON_FOLDER)
+_CODE_CONTEXT_ARROW: str = _resolve_symbol(_UNICODE_CODE_CONTEXT_ARROW, _ASCII_CODE_CONTEXT_ARROW)
+_CONFIDENCE_DOT_FILLED: str = _resolve_symbol(
+    _UNICODE_CONFIDENCE_DOT_FILLED, _ASCII_CONFIDENCE_DOT_FILLED
+)
+_CONFIDENCE_DOT_EMPTY: str = _resolve_symbol(
+    _UNICODE_CONFIDENCE_DOT_EMPTY, _ASCII_CONFIDENCE_DOT_EMPTY
+)
+_SEVERITY_ICON_HIGH: str = _resolve_symbol(_UNICODE_SEVERITY_HIGH, _ASCII_SEVERITY_HIGH)
+_SEVERITY_ICON_MEDIUM: str = _resolve_symbol(_UNICODE_SEVERITY_MEDIUM, _ASCII_SEVERITY_MEDIUM)
+_SEVERITY_ICON_LOW: str = _resolve_symbol(_UNICODE_SEVERITY_LOW, _ASCII_SEVERITY_LOW)
+_SEVERITY_ICON_INFO: str = _resolve_symbol(_UNICODE_SEVERITY_INFO, _ASCII_SEVERITY_INFO)
+
+# Confidence visualization — dots rendered in the findings table confidence column.
+_CONFIDENCE_DOT_COUNT: int = 5
+
+# Banner gradient colors — applied line-by-line across the pyfiglet ASCII art.
+_BANNER_GRADIENT_COLORS: tuple[str, ...] = ("cyan", "blue", "magenta")
+# Offset to convert a 1-based color count to a 0-based maximum valid index.
+_COLOR_INDEX_OFFSET: int = 1
 
 # ---------------------------------------------------------------------------
 # SARIF 2.1.0 protocol constants
@@ -131,7 +235,7 @@ _SEVERITY_TO_SARIF_LEVEL: dict[SeverityLevel, str] = {
 # ---------------------------------------------------------------------------
 
 _PANEL_LABEL_STYLE: str = _STYLE_BOLD_CYAN
-_PANEL_BORDER_STYLE: str = "cyan"
+_PANEL_BORDER_STYLE: str = _STYLE_CYAN
 _RULE_STYLE: str = _STYLE_DIM
 _VIOLATION_BORDER_STYLE: str = _STYLE_BOLD_RED
 
@@ -156,7 +260,7 @@ _PHASE_SEPARATOR_COLLECTING: str = "Collecting Files"
 _PHASE_SEPARATOR_SCANNING: str = "Scanning for PHI/PII"
 _PHASE_SEPARATOR_AUDIT: str = "Writing Audit Log"
 _PHASE_SEPARATOR_REPORT: str = "Generating Report"
-_PHASE_SEPARATOR_STYLE: str = "bold cyan"
+_PHASE_SEPARATOR_STYLE: str = _STYLE_BOLD_CYAN
 
 _SPINNER_STYLE: str = "dots"
 
@@ -215,12 +319,12 @@ _CATEGORY_BAR_DENOMINATOR_FLOOR: int = 1
 # Clean result display
 # ---------------------------------------------------------------------------
 
-_CLEAN_RESULT_ICON: str = "✅"
+_CLEAN_RESULT_ICON: str = _ICON_CLEAN
 _CLEAN_RESULT_TEXT: str = "CLEAN — No PHI or PII Detected"
 _CLEAN_RESULT_STYLE: str = _STYLE_BOLD_GREEN
 _CLEAN_SUMMARY_PANEL_TITLE: str = "Scan Complete"
 _CLEAN_SUMMARY_BORDER_STYLE: str = _STYLE_BOLD_GREEN
-_CLEAN_SUMMARY_STATUS_VALUE: str = "✅  CLEAN"
+_CLEAN_SUMMARY_STATUS_VALUE: str = f"{_ICON_CLEAN}  CLEAN"
 _CLEAN_SUMMARY_STATUS_LABEL: str = "Status"
 _CLEAN_SUMMARY_FILES_LABEL: str = "Files Scanned"
 _CLEAN_SUMMARY_TIME_LABEL: str = "Scan Time"
@@ -234,27 +338,27 @@ _EXIT_CODE_VIOLATION_STYLE: str = _STYLE_BOLD_RED
 # Violation display
 # ---------------------------------------------------------------------------
 
-_VIOLATION_ALERT_ICON: str = "⚠"
+_VIOLATION_ALERT_ICON: str = _ICON_VIOLATION
 _VIOLATION_ALERT_MESSAGE_FORMAT: str = (
     "{icon}  PHI/PII DETECTED — {count} {finding_word} in {files} {file_word}"
 )
 _VIOLATION_ALERT_BOX_STYLE: str = _STYLE_BOLD_RED
-_RISK_LEVEL_BADGE_STYLE: dict[str, str] = {
-    "CRITICAL": "bold white on red",
-    "HIGH": _STYLE_BOLD_RED,
-    "MODERATE": _STYLE_YELLOW,
-    "LOW": "dim yellow",
-    "CLEAN": _STYLE_BOLD_GREEN,
+_RISK_LEVEL_BADGE_STYLE: dict[RiskLevel, str] = {
+    RiskLevel.CRITICAL: _STYLE_BOLD_WHITE_ON_RED,
+    RiskLevel.HIGH: _STYLE_BOLD_RED,
+    RiskLevel.MODERATE: _STYLE_YELLOW,
+    RiskLevel.LOW: _STYLE_DIM_YELLOW,
+    RiskLevel.CLEAN: _STYLE_BOLD_GREEN,
 }
-_SEVERITY_ICON: dict[str, str] = {
-    "high": "🔴",
-    "medium": "🟡",
-    "low": "🟢",
-    "info": "⚪",
+_SEVERITY_ICON: dict[SeverityLevel, str] = {
+    SeverityLevel.HIGH: _SEVERITY_ICON_HIGH,
+    SeverityLevel.MEDIUM: _SEVERITY_ICON_MEDIUM,
+    SeverityLevel.LOW: _SEVERITY_ICON_LOW,
+    SeverityLevel.INFO: _SEVERITY_ICON_INFO,
 }
 _SEVERITY_INLINE_SEPARATOR: str = "    "
 _SEVERITY_INLINE_FORMAT: str = "{icon} {level}: {count}"
-_VIOLATION_SUMMARY_STATUS_VALUE: str = "⚠  VIOLATION"
+_VIOLATION_SUMMARY_STATUS_VALUE: str = f"{_ICON_VIOLATION}  VIOLATION"
 _VIOLATION_SUMMARY_STATUS_LABEL: str = "Status"
 _VIOLATION_SUMMARY_RISK_LABEL: str = "Risk Level"
 _VIOLATION_SUMMARY_FINDINGS_LABEL: str = "Findings"
@@ -294,8 +398,8 @@ _DASHBOARD_LAST_SCAN_LABEL: str = "Last scan: "
 _DASHBOARD_NO_HISTORY_TEXT: str = "No scan history found."
 _DASHBOARD_NO_CATEGORIES_TEXT: str = "No findings recorded yet."
 _DASHBOARD_WATCHER_INACTIVE_TEXT: str = "File watcher: Not active  (run phi-scan watch <path>)"
-_DASHBOARD_HISTORY_CLEAN_STATUS: str = "✅ CLEAN"
-_DASHBOARD_HISTORY_VIOLATION_STATUS: str = "⚠  VIOLATION"
+_DASHBOARD_HISTORY_CLEAN_STATUS: str = f"{_ICON_CLEAN} CLEAN"
+_DASHBOARD_HISTORY_VIOLATION_STATUS: str = f"{_ICON_VIOLATION}  VIOLATION"
 _DASHBOARD_HISTORY_CLEAN_STYLE: str = _STYLE_BOLD_GREEN
 _DASHBOARD_HISTORY_VIOLATION_STYLE: str = _STYLE_BOLD_RED
 _DASHBOARD_BOOLEAN_CLEAN: int = 1
@@ -333,13 +437,13 @@ _WATCH_COL_RESULT: str = "Result"
 _WATCH_TIMESTAMP_FORMAT: str = "%H:%M:%S"
 # Style strings derived from WatchEvent.is_clean in _build_watch_event_table.
 # Kept here (display layer) so WatchEvent only carries the typed is_clean bool.
-_WATCH_RESULT_CLEAN_STYLE: str = "bold green"
-_WATCH_RESULT_VIOLATION_STYLE: str = "bold red"
+_WATCH_RESULT_CLEAN_STYLE: str = _STYLE_BOLD_GREEN
+_WATCH_RESULT_VIOLATION_STYLE: str = _STYLE_BOLD_RED
 # Result text constants are public (no underscore) because cli.py imports them to
 # build _WatchScanOutcome. Keeping them here rather than in constants.py preserves
 # the display-layer boundary — they format terminal strings, not domain values.
-WATCH_RESULT_CLEAN_TEXT: str = "✅ Clean"
-WATCH_RESULT_VIOLATION_FORMAT: str = "⚠  {count} findings detected"
+WATCH_RESULT_CLEAN_TEXT: str = f"{_ICON_CLEAN} Clean"
+WATCH_RESULT_VIOLATION_FORMAT: str = _ICON_VIOLATION + "  {count} findings detected"
 # Rich inline markup template: "[{style}]text[/{style}]". Extracted so the
 # literal tag syntax does not appear as a magic string in rendering logic.
 _RICH_STYLED_TEXT_FORMAT: str = "[{style}]{text}[/{style}]"
@@ -415,6 +519,62 @@ _VIOLATION_DETECTED_SUFFIX: str = "detected"
 # ---------------------------------------------------------------------------
 # Private helper functions
 # ---------------------------------------------------------------------------
+
+
+def _build_confidence_dots(confidence: float) -> str:
+    """Render a confidence score as a row of filled and empty dot characters.
+
+    Maps 0.0–1.0 to a sequence of _CONFIDENCE_DOT_COUNT symbols, e.g. "●●●○○"
+    for 0.6 with a count of 5. Filled/empty glyphs are resolved via _resolve_symbol
+    so ASCII terminals receive "#" and "." instead of Unicode dots.
+
+    Args:
+        confidence: A float in [0.0, 1.0].
+
+    Returns:
+        A string of dot characters representing the confidence level.
+    """
+    filled_count = round(confidence * _CONFIDENCE_DOT_COUNT)
+    empty_count = _CONFIDENCE_DOT_COUNT - filled_count
+    return _CONFIDENCE_DOT_FILLED * filled_count + _CONFIDENCE_DOT_EMPTY * empty_count
+
+
+def _select_banner_gradient_color(line_index: int, total_lines: int) -> str:
+    """Pick a gradient color for a banner line by evenly distributing across the palette.
+
+    Args:
+        line_index: Zero-based position of the line within the banner.
+        total_lines: Total number of lines in the banner.
+
+    Returns:
+        A Rich color name from _BANNER_GRADIENT_COLORS.
+    """
+    color_count = len(_BANNER_GRADIENT_COLORS)
+    max_color_index = color_count - _COLOR_INDEX_OFFSET
+    color_index = min(int(line_index * color_count / total_lines), max_color_index)
+    return _BANNER_GRADIENT_COLORS[color_index]
+
+
+def _build_banner_gradient_text(banner_str: str) -> Text:
+    """Wrap the banner string in a Rich Text object with a cyan→blue→magenta gradient.
+
+    Each line of the banner receives a color from _BANNER_GRADIENT_COLORS, distributed
+    evenly from top to bottom. Under NO_COLOR, Rich strips ANSI codes automatically —
+    the Text object renders as plain text with no color escapes.
+
+    Args:
+        banner_str: The pyfiglet ASCII art string (or plain text fallback).
+
+    Returns:
+        A Rich Text object with per-line color spans applied.
+    """
+    gradient_text = Text()
+    lines = banner_str.splitlines()
+    total_lines = max(len(lines), 1)
+    for index, line in enumerate(lines):
+        color = _select_banner_gradient_color(index, total_lines)
+        gradient_text.append(line + "\n", style=color)
+    return gradient_text
 
 
 def _serialize_finding_to_dict(finding: ScanFinding) -> dict[str, object]:
@@ -493,7 +653,7 @@ def _build_findings_table(findings: tuple[ScanFinding, ...], title: str) -> Tabl
     table.add_column(_COL_CONFIDENCE, justify=_JUSTIFY_RIGHT)
     for finding in findings:
         style = _SEVERITY_STYLE[finding.severity]
-        confidence_str = _CONFIDENCE_FORMAT.format(finding.confidence)
+        confidence_str = _build_confidence_dots(finding.confidence)
         table.add_row(
             str(finding.file_path),
             str(finding.line_number),
@@ -639,7 +799,7 @@ def _build_severity_inline_text(severity_counts: MappingProxyType[SeverityLevel,
         count = severity_counts.get(level, _ZERO_FINDINGS)
         if count == _ZERO_FINDINGS:
             continue
-        icon = _SEVERITY_ICON.get(level.value, "")
+        icon = _SEVERITY_ICON.get(level, "")
         style = _SEVERITY_STYLE[level]
         count_markup = f"[{style}]{count}[/{style}]"
         severity_entries.append(
@@ -831,8 +991,8 @@ def _build_ascii_banner_text() -> str:
 
 
 def display_banner() -> None:
-    """Render the PhiScan ASCII art banner, tagline, and separator rule."""
-    _console.print(_build_ascii_banner_text(), style=_BANNER_STYLE)
+    """Render the PhiScan ASCII art banner with a cyan→blue→magenta gradient, tagline, and rule."""
+    _console.print(_build_banner_gradient_text(_build_ascii_banner_text()))
     _console.print(
         _BANNER_TAGLINE_TEMPLATE.format(version=__version__),
         style=_BANNER_TAGLINE_STYLE,
@@ -1043,7 +1203,7 @@ def _highest_severity_icon(file_findings: list[ScanFinding]) -> str:
     file_severities = {f.severity for f in file_findings}
     for level in _SEVERITY_DESCENDING_ORDER:
         if level in file_severities:
-            return _SEVERITY_ICON.get(level.value, "")
+            return _SEVERITY_ICON.get(level, "")
     return ""
 
 
@@ -1053,7 +1213,7 @@ def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
     Args:
         findings: All findings from a scan result.
     """
-    tree = Tree(_FILE_TREE_TITLE, style=_PANEL_LABEL_STYLE)
+    tree = Tree(f"{_ICON_FOLDER} {_FILE_TREE_TITLE}", style=_PANEL_LABEL_STYLE)
     findings_by_file = _group_findings_by_file(findings)
     # Path objects sort lexicographically — produces alphabetical file order intentionally.
     for file_path, file_findings in sorted(findings_by_file.items()):
@@ -1235,7 +1395,7 @@ def display_risk_level_badge(scan_result: ScanResult) -> None:
         scan_result: The completed scan result whose risk level to badge.
     """
     level_name = scan_result.risk_level.value
-    badge_style = _RISK_LEVEL_BADGE_STYLE.get(level_name, _STYLE_BOLD)
+    badge_style = _RISK_LEVEL_BADGE_STYLE.get(scan_result.risk_level, _STYLE_BOLD)
     _console.print(f"[{badge_style}] {level_name} [/{badge_style}]")
 
 
@@ -1260,7 +1420,7 @@ def _build_violation_summary_panel_markup(scan_result: ScanResult) -> str:
     """
     label_style = _PANEL_LABEL_STYLE
     risk_level_name = scan_result.risk_level.value
-    badge_style = _RISK_LEVEL_BADGE_STYLE.get(risk_level_name, _STYLE_BOLD)
+    badge_style = _RISK_LEVEL_BADGE_STYLE.get(scan_result.risk_level, _STYLE_BOLD)
     duration_str = _DURATION_FORMAT.format(scan_result.scan_duration)
     severity_inline = _build_severity_inline_text(scan_result.severity_counts)
     files_line = _VIOLATION_SUMMARY_FILES_FORMAT.format(
@@ -1315,7 +1475,7 @@ def display_code_context_panel(finding: ScanFinding) -> None:
     )
     content = "\n".join(
         [
-            finding.code_context,
+            f"{_CODE_CONTEXT_ARROW} {finding.code_context}",
             "",
             f"[{severity_style}]{_CODE_CONTEXT_REMEDIATION_PREFIX}"
             f"{finding.remediation_hint}[/{severity_style}]",

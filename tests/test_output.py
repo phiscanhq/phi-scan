@@ -16,6 +16,7 @@ from rich.table import Table
 from phi_scan.constants import DetectionLayer, PhiCategory, RiskLevel, SeverityLevel
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 from phi_scan.output import (
+    WATCH_RESULT_CLEAN_TEXT,
     WATCH_RESULT_VIOLATION_FORMAT,
     WatchEvent,
     build_dashboard_layout,
@@ -706,7 +707,7 @@ def test_highest_severity_icon_returns_red_for_high() -> None:
     findings = [_make_finding(severity=SeverityLevel.HIGH)]
     icon = _highest_severity_icon(findings)
 
-    assert icon == _SEVERITY_ICON["high"]
+    assert icon == _SEVERITY_ICON[SeverityLevel.HIGH]
 
 
 # ---------------------------------------------------------------------------
@@ -926,7 +927,7 @@ def test_build_dashboard_layout_with_data_does_not_raise() -> None:
 _WATCH_EMPTY_EVENTS: tuple[WatchEvent, ...] = ()
 _WATCH_SAMPLE_DATETIME_ONE: datetime = datetime(2026, 3, 28, 14, 32, 5)
 _WATCH_SAMPLE_FILE_ONE: str = "src/api/patient.py"
-_WATCH_SAMPLE_RESULT_TEXT_CLEAN: str = "✅ Clean"
+_WATCH_SAMPLE_RESULT_TEXT_CLEAN: str = WATCH_RESULT_CLEAN_TEXT
 _WATCH_SAMPLE_DATETIME_TWO: datetime = datetime(2026, 3, 28, 14, 33, 10)
 _WATCH_SAMPLE_FILE_TWO: str = "src/models/user.py"
 _WATCH_SAMPLE_VIOLATION_COUNT: int = 2
@@ -1005,3 +1006,235 @@ def test_build_watch_event_table_non_empty_has_correct_row_count(
     table = _build_watch_event_table(watch_sample_events)
 
     assert table.row_count == len(watch_sample_events)
+
+
+# ---------------------------------------------------------------------------
+# 1C.7a — Color palette constants
+# ---------------------------------------------------------------------------
+
+_EXPECTED_HIGH_STYLE: str = "bold red"
+_EXPECTED_MEDIUM_STYLE: str = "yellow"
+_EXPECTED_LOW_STYLE: str = "green"
+_EXPECTED_CLEAN_STYLE: str = "bold green"
+_EXPECTED_PANEL_BORDER_STYLE: str = "cyan"
+_EXPECTED_PHASE_SEPARATOR_STYLE: str = "bold cyan"
+
+
+def test_severity_style_maps_high_to_bold_red() -> None:
+    from phi_scan.output import _SEVERITY_STYLE
+
+    assert _SEVERITY_STYLE[SeverityLevel.HIGH] == _EXPECTED_HIGH_STYLE
+
+
+def test_severity_style_maps_medium_to_yellow() -> None:
+    from phi_scan.output import _SEVERITY_STYLE
+
+    assert _SEVERITY_STYLE[SeverityLevel.MEDIUM] == _EXPECTED_MEDIUM_STYLE
+
+
+def test_severity_style_maps_low_to_green() -> None:
+    from phi_scan.output import _SEVERITY_STYLE
+
+    assert _SEVERITY_STYLE[SeverityLevel.LOW] == _EXPECTED_LOW_STYLE
+
+
+def test_watch_result_clean_style_is_bold_green() -> None:
+    from phi_scan.output import _WATCH_RESULT_CLEAN_STYLE
+
+    assert _WATCH_RESULT_CLEAN_STYLE == _EXPECTED_CLEAN_STYLE
+
+
+def test_watch_result_violation_style_is_bold_red() -> None:
+    from phi_scan.output import _WATCH_RESULT_VIOLATION_STYLE
+
+    assert _WATCH_RESULT_VIOLATION_STYLE == _EXPECTED_HIGH_STYLE
+
+
+def test_panel_border_style_is_cyan() -> None:
+    from phi_scan.output import _PANEL_BORDER_STYLE
+
+    assert _PANEL_BORDER_STYLE == _EXPECTED_PANEL_BORDER_STYLE
+
+
+def test_phase_separator_style_is_bold_cyan() -> None:
+    from phi_scan.output import _PHASE_SEPARATOR_STYLE
+
+    assert _PHASE_SEPARATOR_STYLE == _EXPECTED_PHASE_SEPARATOR_STYLE
+
+
+# ---------------------------------------------------------------------------
+# 1C.7b — Unicode symbols
+# ---------------------------------------------------------------------------
+
+_EXPECTED_CLEAN_ICON_UNICODE: str = "✅"
+_EXPECTED_VIOLATION_ICON_UNICODE: str = "⚠"
+_EXPECTED_FOLDER_ICON_UNICODE: str = "📁"
+_EXPECTED_FOLDER_ICON_ASCII: str = "[d]"
+_EXPECTED_CONTEXT_ARROW_UNICODE: str = "►"
+_EXPECTED_CONTEXT_ARROW_ASCII: str = ">"
+_EXPECTED_CONFIDENCE_DOT_FILLED_UNICODE: str = "●"
+_EXPECTED_CONFIDENCE_DOT_EMPTY_UNICODE: str = "○"
+_CONFIDENCE_ZERO: float = 0.0
+_CONFIDENCE_FULL: float = 1.0
+_CONFIDENCE_THREE_FIFTHS: float = 0.6
+_EXPECTED_DOT_COUNT: int = 5
+_EXPECTED_FILLED_AT_THREE_FIFTHS: int = 3
+
+
+def test_clean_result_icon_contains_checkmark_on_utf8_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("phi_scan.output._UNICODE_SUPPORTED", True)
+    from phi_scan.output import _resolve_symbol
+
+    icon = _resolve_symbol(_EXPECTED_CLEAN_ICON_UNICODE, "[OK]")
+
+    assert _EXPECTED_CLEAN_ICON_UNICODE in icon
+
+
+def test_violation_alert_icon_contains_warning_on_utf8_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("phi_scan.output._UNICODE_SUPPORTED", True)
+    from phi_scan.output import _resolve_symbol
+
+    icon = _resolve_symbol(_EXPECTED_VIOLATION_ICON_UNICODE, "[!]")
+
+    assert _EXPECTED_VIOLATION_ICON_UNICODE in icon
+
+
+def test_code_context_arrow_unicode_raw_value_is_correct() -> None:
+    from phi_scan.output import _UNICODE_CODE_CONTEXT_ARROW
+
+    assert _UNICODE_CODE_CONTEXT_ARROW == _EXPECTED_CONTEXT_ARROW_UNICODE
+
+
+def test_code_context_arrow_ascii_fallback_is_correct() -> None:
+    from phi_scan.output import _ASCII_CODE_CONTEXT_ARROW
+
+    assert _ASCII_CODE_CONTEXT_ARROW == _EXPECTED_CONTEXT_ARROW_ASCII
+
+
+def test_folder_icon_unicode_raw_value_is_correct() -> None:
+    from phi_scan.output import _UNICODE_ICON_FOLDER
+
+    assert _UNICODE_ICON_FOLDER == _EXPECTED_FOLDER_ICON_UNICODE
+
+
+def test_folder_icon_ascii_fallback_is_correct() -> None:
+    from phi_scan.output import _ASCII_ICON_FOLDER
+
+    assert _ASCII_ICON_FOLDER == _EXPECTED_FOLDER_ICON_ASCII
+
+
+def test_build_confidence_dots_all_empty_for_zero() -> None:
+    from phi_scan.output import _CONFIDENCE_DOT_COUNT, _CONFIDENCE_DOT_EMPTY, _build_confidence_dots
+
+    dots = _build_confidence_dots(_CONFIDENCE_ZERO)
+
+    assert dots == _CONFIDENCE_DOT_EMPTY * _CONFIDENCE_DOT_COUNT
+
+
+def test_build_confidence_dots_all_filled_for_one() -> None:
+    from phi_scan.output import (
+        _CONFIDENCE_DOT_COUNT,
+        _CONFIDENCE_DOT_FILLED,
+        _build_confidence_dots,
+    )
+
+    dots = _build_confidence_dots(_CONFIDENCE_FULL)
+
+    assert dots == _CONFIDENCE_DOT_FILLED * _CONFIDENCE_DOT_COUNT
+
+
+def test_build_confidence_dots_partial_for_mid_confidence() -> None:
+    from phi_scan.output import (
+        _CONFIDENCE_DOT_COUNT,
+        _CONFIDENCE_DOT_EMPTY,
+        _CONFIDENCE_DOT_FILLED,
+        _build_confidence_dots,
+    )
+
+    dots = _build_confidence_dots(_CONFIDENCE_THREE_FIFTHS)
+
+    assert len(dots) == _CONFIDENCE_DOT_COUNT
+    assert dots.startswith(_CONFIDENCE_DOT_FILLED * _EXPECTED_FILLED_AT_THREE_FIFTHS)
+    assert dots.endswith(
+        _CONFIDENCE_DOT_EMPTY * (_CONFIDENCE_DOT_COUNT - _EXPECTED_FILLED_AT_THREE_FIFTHS)
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1C.7c — Unicode support detection and fallback
+# ---------------------------------------------------------------------------
+
+
+def test_detect_unicode_support_returns_bool() -> None:
+    from phi_scan.output import _detect_unicode_support
+
+    is_unicode_supported = _detect_unicode_support()
+
+    assert isinstance(is_unicode_supported, bool)
+
+
+def test_resolve_symbol_returns_unicode_when_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("phi_scan.output._UNICODE_SUPPORTED", True)
+    from phi_scan.output import _resolve_symbol
+
+    result = _resolve_symbol(_EXPECTED_CLEAN_ICON_UNICODE, "[OK]")
+
+    assert result == _EXPECTED_CLEAN_ICON_UNICODE
+
+
+def test_resolve_symbol_returns_ascii_when_not_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("phi_scan.output._UNICODE_SUPPORTED", False)
+    from phi_scan.output import _resolve_symbol
+
+    result = _resolve_symbol(_EXPECTED_CLEAN_ICON_UNICODE, "[OK]")
+
+    assert result == "[OK]"
+
+
+# ---------------------------------------------------------------------------
+# 1C.7e — NO_COLOR environment variable
+# ---------------------------------------------------------------------------
+
+_EXPECTED_ANSI_ESCAPE_PREFIX: str = "\x1b["
+_RICH_RED_MARKUP: str = "[bold red]test[/bold red]"
+_EXPECTED_PLAIN_TEXT: str = "test"
+
+
+def test_console_with_no_color_env_produces_no_ansi_sequences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import io
+
+    from rich.console import Console
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    buf = io.StringIO()
+    console = Console(file=buf, no_color=True)
+
+    console.print(_RICH_RED_MARKUP)
+
+    assert _EXPECTED_ANSI_ESCAPE_PREFIX not in buf.getvalue()
+    assert _EXPECTED_PLAIN_TEXT in buf.getvalue()
+
+
+def test_no_color_console_strips_markup_but_preserves_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import io
+
+    from rich.console import Console
+
+    buf = io.StringIO()
+    console = Console(file=buf, no_color=True)
+
+    console.print(_RICH_RED_MARKUP)
+
+    assert _EXPECTED_PLAIN_TEXT in buf.getvalue()
