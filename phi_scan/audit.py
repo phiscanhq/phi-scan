@@ -157,6 +157,22 @@ def create_audit_schema(database_path: Path) -> None:
         connection.close()
 
 
+def _assemble_scan_event_row(scan_result: ScanResult) -> tuple[str | int | float, ...]:
+    repository_hash = hashlib.sha256(_get_current_repository_path().encode()).hexdigest()
+    branch_hash = hashlib.sha256(_get_current_branch().encode()).hexdigest()
+    return (
+        _get_current_timestamp(),
+        __version__,
+        repository_hash,
+        branch_hash,
+        scan_result.files_scanned,
+        len(scan_result.findings),
+        _serialize_findings(scan_result.findings),
+        _BOOLEAN_TRUE if scan_result.is_clean else _BOOLEAN_FALSE,
+        scan_result.scan_duration,
+    )
+
+
 def insert_scan_event(database_path: Path, scan_result: ScanResult) -> None:
     """Record a completed scan as an immutable audit entry.
 
@@ -173,20 +189,7 @@ def insert_scan_event(database_path: Path, scan_result: ScanResult) -> None:
     Raises:
         AuditLogError: If the database cannot be written to.
     """
-    is_clean_flag = _BOOLEAN_TRUE if scan_result.is_clean else _BOOLEAN_FALSE
-    repository_hash = hashlib.sha256(_get_current_repository_path().encode()).hexdigest()
-    branch_hash = hashlib.sha256(_get_current_branch().encode()).hexdigest()
-    scan_event_row = (
-        _get_current_timestamp(),
-        __version__,
-        repository_hash,
-        branch_hash,
-        scan_result.files_scanned,
-        len(scan_result.findings),
-        _serialize_findings(scan_result.findings),
-        is_clean_flag,
-        scan_result.scan_duration,
-    )
+    scan_event_row = _assemble_scan_event_row(scan_result)
     connection = _open_database(database_path)
     try:
         connection.execute(_INSERT_SCAN_EVENT_SQL, scan_event_row)

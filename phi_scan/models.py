@@ -32,6 +32,9 @@ __all__ = [
 ]
 
 _MINIMUM_LINE_NUMBER: int = 1
+_MAXIMUM_ENTITY_TYPE_LENGTH: int = 255
+_MAXIMUM_CODE_CONTEXT_LENGTH: int = 4096
+_MAXIMUM_REMEDIATION_HINT_LENGTH: int = 1024
 # Both fields can legitimately be zero: a scan of an empty directory has
 # files_scanned=0, and a scan that finds no PHI has files_with_findings=0.
 _MINIMUM_FILE_COUNT: int = 0
@@ -126,6 +129,9 @@ class ScanFinding:
         _reject_invalid_line_number(self)
         _reject_invalid_value_hash(self)
         _reject_out_of_range_confidence(self)
+        _reject_oversized_entity_type(self)
+        _reject_oversized_code_context(self)
+        _reject_oversized_remediation_hint(self)
 
 
 def _reject_invalid_line_number(finding: ScanFinding) -> None:
@@ -154,6 +160,30 @@ def _reject_out_of_range_confidence(finding: ScanFinding) -> None:
         raise PhiDetectionError(
             f"confidence {finding.confidence!r} is outside the valid range "
             f"[{CONFIDENCE_SCORE_MINIMUM}, {CONFIDENCE_SCORE_MAXIMUM}]"
+        )
+
+
+def _reject_oversized_entity_type(finding: ScanFinding) -> None:
+    if len(finding.entity_type) > _MAXIMUM_ENTITY_TYPE_LENGTH:
+        raise PhiDetectionError(
+            f"entity_type length {len(finding.entity_type)} exceeds maximum "
+            f"of {_MAXIMUM_ENTITY_TYPE_LENGTH} characters"
+        )
+
+
+def _reject_oversized_code_context(finding: ScanFinding) -> None:
+    if len(finding.code_context) > _MAXIMUM_CODE_CONTEXT_LENGTH:
+        raise PhiDetectionError(
+            f"code_context length {len(finding.code_context)} exceeds maximum "
+            f"of {_MAXIMUM_CODE_CONTEXT_LENGTH} characters"
+        )
+
+
+def _reject_oversized_remediation_hint(finding: ScanFinding) -> None:
+    if len(finding.remediation_hint) > _MAXIMUM_REMEDIATION_HINT_LENGTH:
+        raise PhiDetectionError(
+            f"remediation_hint length {len(finding.remediation_hint)} exceeds maximum "
+            f"of {_MAXIMUM_REMEDIATION_HINT_LENGTH} characters"
         )
 
 

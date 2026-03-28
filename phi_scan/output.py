@@ -1318,6 +1318,23 @@ def _build_dashboard_top_panel(last_scan: dict[str, Any] | None) -> Panel:
     )
 
 
+def _format_dashboard_history_row(row: dict[str, Any]) -> tuple[str, str, str, str, str]:
+    is_clean = row.get("is_clean") == _DASHBOARD_BOOLEAN_CLEAN
+    status_text = (
+        _DASHBOARD_HISTORY_CLEAN_STATUS if is_clean else _DASHBOARD_HISTORY_VIOLATION_STATUS
+    )
+    row_style = _DASHBOARD_HISTORY_CLEAN_STYLE if is_clean else _DASHBOARD_HISTORY_VIOLATION_STYLE
+    timestamp = str(row.get("timestamp", ""))[:_DASHBOARD_TIMESTAMP_DISPLAY_LENGTH]
+    duration_str = _DURATION_FORMAT.format(float(row.get("scan_duration", 0.0)))
+    return (
+        timestamp,
+        f"[{row_style}]{status_text}[/{row_style}]",
+        str(row.get("files_scanned", 0)),
+        str(row.get("findings_count", 0)),
+        duration_str,
+    )
+
+
 def _build_dashboard_history_table(recent_scans: list[dict[str, Any]]) -> Table:
     """Build the recent scan history table for the dashboard left panel.
 
@@ -1342,22 +1359,7 @@ def _build_dashboard_history_table(recent_scans: list[dict[str, Any]]) -> Table:
         table.add_row(_DASHBOARD_NO_HISTORY_TEXT, "", "", "", "")
         return table
     for row in recent_scans:
-        is_clean = row.get("is_clean") == _DASHBOARD_BOOLEAN_CLEAN
-        status_text = (
-            _DASHBOARD_HISTORY_CLEAN_STATUS if is_clean else _DASHBOARD_HISTORY_VIOLATION_STATUS
-        )
-        row_style = (
-            _DASHBOARD_HISTORY_CLEAN_STYLE if is_clean else _DASHBOARD_HISTORY_VIOLATION_STYLE
-        )
-        timestamp = str(row.get("timestamp", ""))[:_DASHBOARD_TIMESTAMP_DISPLAY_LENGTH]
-        duration_str = _DURATION_FORMAT.format(float(row.get("scan_duration", 0.0)))
-        table.add_row(
-            timestamp,
-            f"[{row_style}]{status_text}[/{row_style}]",
-            str(row.get("files_scanned", 0)),
-            str(row.get("findings_count", 0)),
-            duration_str,
-        )
+        table.add_row(*_format_dashboard_history_row(row))
     return table
 
 

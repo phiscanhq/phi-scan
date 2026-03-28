@@ -89,5 +89,41 @@
       "pytest": "pass"
     },
     "notes": "All 7 review issues from latest Claude review were already resolved in prior commits (8a21904, 1c90c78). Merge blocked: CI did not run on latest 2 commits because GITHUB_TOKEN pushes cannot trigger downstream workflows. Auto-merge disabled on repo. PR comment posted to guide human re-trigger."
+  },
+  {
+    "timestamp_utc": "2026-03-28T16:04:00Z",
+    "mode": "Phase B",
+    "is_clean": false,
+    "skipped": false,
+    "skip_reason": null,
+    "issues_found": 14,
+    "issues_fixed": 4,
+    "issues_deferred": 3,
+    "cost_usd_estimated": 0.72,
+    "turns_used": 38,
+    "test_coverage_pct": 93.0,
+    "files_changed": [
+      "phi_scan/audit.py",
+      "phi_scan/models.py",
+      "phi_scan/output.py",
+      "tests/test_audit.py"
+    ],
+    "fix_cycles": 1,
+    "pr_number": null,
+    "subagent_findings": {
+      "performance": 1,
+      "dry": 2,
+      "python_fp": 2,
+      "documentation": 2,
+      "test_quality": 2,
+      "code_quality": 2,
+      "hipaa_compliance": 1
+    },
+    "validation": {
+      "ruff": "pass",
+      "mypy": "pass",
+      "pytest": "pass"
+    },
+    "notes": "Branch chore/self-heal-20260328-1604 pushed. PR creation via MCP blocked (403). Branch available for manual PR open."
   }
 ]
