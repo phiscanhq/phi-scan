@@ -6,7 +6,8 @@
       "Bash(git push:*)",
       "Bash(gh pr list:*)",
       "Bash(gh pr list --state open --json number,title,headRefName,statusCheckRollup)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(git -C /home/pycharm/development/projects/phi-scan log --oneline main)"
     ]
   }
 }
