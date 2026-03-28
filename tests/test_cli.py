@@ -9,7 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from phi_scan import __version__
-from phi_scan.cli import app
+from phi_scan.cli import _truncate_filename_for_progress, app
 from phi_scan.constants import DEFAULT_CONFIG_FILENAME, EXIT_CODE_CLEAN
 
 # ---------------------------------------------------------------------------
@@ -51,6 +51,10 @@ _EXPECTED_DASHBOARD_MESSAGE_FRAGMENT: str = "phi-scan dashboard"
 # Observable messages from report / history commands.
 _EXPECTED_NO_LAST_SCAN_MESSAGE: str = "No scan record found. Run `phi-scan scan` first."
 _EXPECTED_NO_SCAN_HISTORY_MESSAGE: str = "No scan history found."
+_SHORT_FILE_PATH: str = "src/phi_scan/cli.py"
+_LONG_FILE_PATH: str = "a/very/deep/nested/path/that/exceeds/the/column/width/limit/some_module.py"
+_LONG_FILE_ELLIPSIS_PREFIX: str = "…"
+_PROGRESS_FILENAME_MAX_CHARS: int = 38
 
 # ---------------------------------------------------------------------------
 # Shared runner
@@ -376,8 +380,97 @@ def test_setup_command_prints_stub_message() -> None:
     assert _EXPECTED_SETUP_MESSAGE_FRAGMENT in result.output
 
 
-def test_dashboard_command_prints_stub_message() -> None:
+def test_dashboard_command_exits_cleanly_on_keyboard_interrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("phi_scan.cli.DEFAULT_DATABASE_PATH", str(tmp_path / "audit.db"))
+    monkeypatch.setattr("phi_scan.cli.query_recent_scans", lambda *_: [])
+    monkeypatch.setattr("phi_scan.cli.get_last_scan", lambda *_: None)
+
+    def _raise_keyboard_interrupt(_: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("phi_scan.cli.time.sleep", _raise_keyboard_interrupt)
+
     result = _runner.invoke(app, ["dashboard"])
 
-    assert result.exit_code == _EXIT_CODE_SUCCESS
-    assert _EXPECTED_DASHBOARD_MESSAGE_FRAGMENT in result.output
+    assert result.exit_code == EXIT_CODE_CLEAN
+
+
+# ---------------------------------------------------------------------------
+# _truncate_filename_for_progress
+# ---------------------------------------------------------------------------
+
+
+def test_truncate_filename_for_progress_returns_path_unchanged_when_short_enough() -> None:
+    result = _truncate_filename_for_progress(Path(_SHORT_FILE_PATH))
+
+    assert result == _SHORT_FILE_PATH
+
+
+def test_truncate_filename_for_progress_truncates_long_path_with_ellipsis() -> None:
+    result = _truncate_filename_for_progress(Path(_LONG_FILE_PATH))
+
+    assert result.startswith(_LONG_FILE_ELLIPSIS_PREFIX)
+    assert len(result) <= _PROGRESS_FILENAME_MAX_CHARS + len(_LONG_FILE_ELLIPSIS_PREFIX)
+
+
+def test_truncate_filename_for_progress_truncated_result_ends_with_original_suffix() -> None:
+    result = _truncate_filename_for_progress(Path(_LONG_FILE_PATH))
+
+    assert result.endswith(_LONG_FILE_PATH[-_PROGRESS_FILENAME_MAX_CHARS:])
+
+
+# ---------------------------------------------------------------------------
+# _aggregate_category_totals (1C.5)
+# ---------------------------------------------------------------------------
+
+_AGGREGATE_EMPTY_SCANS: list[dict[str, object]] = []
+_AGGREGATE_CATEGORY_SSN: str = "SSN"
+_AGGREGATE_CATEGORY_EMAIL: str = "EMAIL"
+_AGGREGATE_SINGLE_SCAN_ROW: list[dict[str, object]] = [
+    {
+        "findings_json": (
+            '[{"hipaa_category": "SSN"}, {"hipaa_category": "SSN"}, {"hipaa_category": "EMAIL"}]'
+        )
+    }
+]
+_AGGREGATE_TWO_SCAN_ROWS: list[dict[str, object]] = [
+    {"findings_json": '[{"hipaa_category": "SSN"}]'},
+    {"findings_json": '[{"hipaa_category": "SSN"}, {"hipaa_category": "EMAIL"}]'},
+]
+
+
+def test_aggregate_category_totals_empty_scans_returns_empty_dict() -> None:
+    from phi_scan.cli import _aggregate_category_totals
+
+    totals = _aggregate_category_totals(_AGGREGATE_EMPTY_SCANS)
+
+    assert totals == {}
+
+
+def test_aggregate_category_totals_single_scan_sums_correctly() -> None:
+    from phi_scan.cli import _aggregate_category_totals
+
+    totals = _aggregate_category_totals(_AGGREGATE_SINGLE_SCAN_ROW)
+
+    assert totals[_AGGREGATE_CATEGORY_SSN] == 2
+    assert totals[_AGGREGATE_CATEGORY_EMAIL] == 1
+
+
+def test_aggregate_category_totals_multiple_scans_combines_counts() -> None:
+    from phi_scan.cli import _aggregate_category_totals
+
+    totals = _aggregate_category_totals(_AGGREGATE_TWO_SCAN_ROWS)
+
+    assert totals[_AGGREGATE_CATEGORY_SSN] == 2
+    assert totals[_AGGREGATE_CATEGORY_EMAIL] == 1
+
+
+def test_aggregate_category_totals_missing_findings_json_skips_row() -> None:
+    from phi_scan.cli import _aggregate_category_totals
+
+    scans: list[dict[str, object]] = [{"timestamp": "2026-03-27"}]
+    totals = _aggregate_category_totals(scans)
+
+    assert totals == {}

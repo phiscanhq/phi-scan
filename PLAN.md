@@ -306,11 +306,11 @@ polished, informative, and visually striking. Users should enjoy running this to
 
 #### 1C.1 — Scan Startup Visuals
 
-- [ ] **1C.1a** ASCII banner via pyfiglet — "PhiScan" rendered in a bold font (e.g., `slant` or `big`)
-- [ ] **1C.1b** Banner styled with Rich gradient coloring (cyan → blue → purple)
-- [ ] **1C.1c** Version + tagline below banner: `v0.1.0 — HIPAA-Compliant PHI/PII Scanner`
-- [ ] **1C.1d** `console.rule()` separator with styled title: `─── Initializing Scan ───`
-- [ ] **1C.1e** Scan header panel — bordered box showing:
+- [x] **1C.1a** ASCII banner via pyfiglet — "PhiScan" rendered in a bold font (e.g., `slant` or `big`)
+- [x] **1C.1b** Banner styled with Rich gradient coloring (cyan → blue → purple)
+- [x] **1C.1c** Version + tagline below banner: `v0.1.0 — HIPAA-Compliant PHI/PII Scanner`
+- [x] **1C.1d** `console.rule()` separator with styled title: `─── Initializing Scan ───`
+- [x] **1C.1e** Scan header panel — bordered box showing:
   - Target path being scanned
   - Config file in use (or "defaults")
   - Severity threshold
@@ -318,26 +318,26 @@ polished, informative, and visually striking. Users should enjoy running this to
 
 #### 1C.2 — Live Scan Progress
 
-- [ ] **1C.2a** Rich Progress bar with multiple columns:
+- [x] **1C.2a** Rich Progress bar with multiple columns:
   - Animated spinner (dots style)
   - Progress bar with percentage `[████████░░░░░░░░] 52%`
   - File count: `1,247 / 2,390 files`
   - Current file name (truncated to fit): `src/api/handlers/patient.py`
   - Elapsed time: `[00:03.2s]`
-- [ ] **1C.2b** Phase separators between scan stages:
+- [x] **1C.2b** Phase separators between scan stages:
   - `─── Collecting Files ───`
   - `─── Scanning for PHI/PII ───`
   - `─── Writing Audit Log ───`
   - `─── Generating Report ───`
-- [ ] **1C.2c** File type summary after collection phase:
+- [x] **1C.2c** File type summary after collection phase:
   - Mini table: `.py: 342 | .json: 128 | .yaml: 45 | .ts: 890 | other: 95`
-- [ ] **1C.2d** Spinner with status text during config load and audit log writes
+- [x] **1C.2d** Spinner with status text during config load and audit log writes
 
 #### 1C.3 — Clean Scan Result (Zero Findings)
 
-- [ ] **1C.3a** Large green shield/checkmark symbol: `✅` or ASCII art shield
-- [ ] **1C.3b** Bold green text: `CLEAN — No PHI or PII Detected`
-- [ ] **1C.3c** Summary panel with green border:
+- [x] **1C.3a** Large green shield/checkmark symbol: `✅` or ASCII art shield
+- [x] **1C.3b** Bold green text: `CLEAN — No PHI or PII Detected`
+- [x] **1C.3c** Summary panel with green border:
   ```
   ╭─────────────────── Scan Complete ───────────────────╮
   │  Status:        ✅ CLEAN                            │
@@ -346,29 +346,29 @@ polished, informative, and visually striking. Users should enjoy running this to
   │  Risk level:    CLEAN                               │
   ╰─────────────────────────────────────────────────────╯
   ```
-- [ ] **1C.3d** Exit with green-colored exit code message: `Exit code: 0 (clean)`
+- [x] **1C.3d** Exit with green-colored exit code message: `Exit code: 0 (clean)`
 
 #### 1C.4 — Violation Result (Findings Detected)
 
-- [ ] **1C.4a** Red alert banner — full-width, bold:
+- [x] **1C.4a** Red alert banner — full-width, bold:
   ```
   ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
   ┃  ⚠  PHI/PII DETECTED — 12 findings in 4 files       ┃
   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
   ```
-- [ ] **1C.4b** Risk level badge — color-coded:
+- [x] **1C.4b** Risk level badge — color-coded:
   - `[CRITICAL]` — bold red background, white text
   - `[HIGH]` — red text
   - `[MODERATE]` — yellow text
   - `[LOW]` — dim yellow text
 
-- [ ] **1C.4c** Severity breakdown — inline colored counters:
+- [x] **1C.4c** Severity breakdown — inline colored counters:
 
   ```
   🔴 HIGH: 4    🟡 MEDIUM: 5    🟢 LOW: 3
   ```
 
-- [ ] **1C.4d** HIPAA category breakdown table:
+- [x] **1C.4d** HIPAA category breakdown table:
 
   ```
   ┌─────────────────────┬───────┬──────────────────────┐
@@ -382,7 +382,7 @@ polished, informative, and visually striking. Users should enjoy running this to
   └─────────────────────┴───────┴──────────────────────┘
   ```
 
-- [ ] **1C.4e** Affected files tree — Rich Tree view:
+- [x] **1C.4e** Affected files tree — Rich Tree view:
 
   ```
   📁 Affected Files (4 files, 12 findings)
@@ -392,7 +392,7 @@ polished, informative, and visually striking. Users should enjoy running this to
   └── 🟡 config/test_database.yml              (2 findings)
   ```
 
-- [ ] **1C.4f** Detailed findings table — Rich Table with columns:
+- [x] **1C.4f** Detailed findings table — Rich Table with columns:
 
   ```
   ┌────┬──────────────────────────────────┬──────┬──────────┬────────┬────────────┐
@@ -404,7 +404,7 @@ polished, informative, and visually striking. Users should enjoy running this to
   └────┴──────────────────────────────────┴──────┴──────────┴────────┴────────────┘
   ```
 
-- [ ] **1C.4g** Code context panel per finding — Rich Syntax with line numbers:
+- [x] **1C.4g** Code context panel per finding — Rich Syntax with line numbers:
 
   ```
   ╭─── tests/fixtures/patient_data.json:42 ─── SSN (HIGH) ───╮
@@ -419,7 +419,7 @@ polished, informative, and visually striking. Users should enjoy running this to
   ╰───────────────────────────────────────────────────────────╯
   ```
 
-- [ ] **1C.4h** Summary panel with red/yellow border (matches risk level):
+- [x] **1C.4h** Summary panel with red/yellow border (matches risk level):
   ```
   ╭────────────────────── Scan Complete ──────────────────────╮
   │  Status:        ⚠  VIOLATION                             │
@@ -434,14 +434,14 @@ polished, informative, and visually striking. Users should enjoy running this to
 
 #### 1C.5 — Dashboard Mode (`phi-scan dashboard`)
 
-- [ ] **1C.5a** Rich Live display — auto-refreshing terminal dashboard
-- [ ] **1C.5b** Dashboard layout panels:
+- [x] **1C.5a** Rich Live display — auto-refreshing terminal dashboard
+- [x] **1C.5b** Dashboard layout panels:
   - Top: ASCII banner (compact) + scan status
   - Left: recent scan history (last 10 scans from audit log)
   - Right: HIPAA category totals across all scans
   - Bottom: live file watcher status (if watching)
-- [ ] **1C.5c** Color-coded scan history rows: green = clean, red = violation
-- [ ] **1C.5d** Auto-refresh interval: 2 seconds
+- [x] **1C.5c** Color-coded scan history rows: green = clean, red = violation
+- [x] **1C.5d** Auto-refresh interval: 2 seconds
 
 #### 1C.6 — Watch Mode Visuals (`phi-scan watch`)
 

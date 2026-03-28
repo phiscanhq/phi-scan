@@ -228,7 +228,7 @@ def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
     """Scan every file in scan_targets and return the aggregated ScanResult.
 
     Responsibility: run the scan loop. Result construction is delegated to
-    _build_scan_result so this function is describable in one sentence.
+    build_scan_result so this function is describable in one sentence.
 
     Args:
         scan_targets: Ordered list of files to scan, as returned by
@@ -245,7 +245,7 @@ def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
         file_findings = scan_file(file_path, config)
         all_findings.extend(file_findings)
     scan_duration = time.monotonic() - scan_start
-    return _build_scan_result(tuple(all_findings), len(scan_targets), scan_duration)
+    return build_scan_result(tuple(all_findings), len(scan_targets), scan_duration)
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +253,7 @@ def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
 # ---------------------------------------------------------------------------
 
 
-def _build_scan_result(
+def build_scan_result(
     findings: tuple[ScanFinding, ...],
     files_scanned: int,
     scan_duration: float,
