@@ -41,7 +41,7 @@ WEEKLY_BUDGET_CAP = 30.00
 weekly_spend = sum(r.cost_usd_estimated for r in history if r is this week and not r.skipped)
 ```
 
-If `weekly_spend >= 30.00`:
+If `weekly_spend >= WEEKLY_BUDGET_CAP`:
 1. Append a skip entry to history (see Phase C format, set `skipped=true`, `skip_reason="weekly_budget_cap"`, `cost_usd_estimated=0`)
 2. Commit history
 3. Send skip alert email if Gmail MCP is available (see Phase C)

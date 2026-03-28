@@ -89,13 +89,34 @@ def _print_tool_call_name(message: AssistantMessage) -> None:
 
 
 def _write_result_file(metrics: RunMetrics) -> None:
-    """Write a machine-readable result file for downstream workflow steps."""
+    """Write a machine-readable result file for downstream workflow steps.
+
+    Only structured metrics are written — no summary text. The agent's
+    completion message is intentionally excluded because the self-heal
+    agent may quote scanner findings, and quoted scanner output could
+    contain raw PHI values. The result file is persisted as a GitHub
+    Actions artifact; stdout is ephemeral and safe for free-text output.
+    """
     with open(RESULT_OUTPUT_FILE, "w", encoding="utf-8") as output_file:
         output_file.write(f"subtype: {metrics.result_subtype}\n")
         output_file.write(f"cost_usd: {metrics.run_cost_usd:.4f}\n")
         output_file.write(f"turns: {metrics.turns_used}\n")
-        if metrics.run_completion_text:
-            output_file.write(f"summary: {metrics.run_completion_text[:MAX_SUMMARY_LENGTH]}\n")
+
+
+def _print_run_summary_text(metrics: RunMetrics) -> None:
+    """Print the agent's completion text to the workflow log (stdout only).
+
+    Routed to stdout rather than the artifact file because stdout is
+    ephemeral — it is not persisted beyond the GitHub Actions log
+    retention window — while artifact files are explicitly stored and
+    downloadable. Scanner findings quoted in the summary must never
+    be written to a persistent file.
+
+    Args:
+        metrics: The completed run metrics containing the summary text.
+    """
+    if metrics.run_completion_text:
+        print(metrics.run_completion_text[:MAX_SUMMARY_LENGTH])
 
 
 def _map_subtype_to_exit_code(result_subtype: ResultSubtype) -> int:
@@ -107,16 +128,17 @@ def _map_subtype_to_exit_code(result_subtype: ResultSubtype) -> int:
 
 def _print_run_outcome(metrics: RunMetrics) -> None:
     """Print a human-readable outcome message for the workflow log."""
-    if metrics.result_subtype == ResultSubtype.SUCCESS:
-        print("Self-heal completed successfully.")
-    elif metrics.result_subtype == ResultSubtype.MAX_BUDGET:
-        print(f"Self-heal hit the ${MAX_BUDGET_USD:.2f} budget cap.")
-        print("Increase MAX_BUDGET_USD in self_heal_runner.py if needed.")
-    elif metrics.result_subtype == ResultSubtype.MAX_TURNS:
-        print(f"Self-heal hit the {MAX_TURNS}-turn limit.")
-        print("Increase MAX_TURNS in self_heal_runner.py if needed.")
-    else:
-        print(f"Self-heal stopped: {metrics.result_subtype}")
+    match metrics.result_subtype:
+        case ResultSubtype.SUCCESS:
+            print("Self-heal completed successfully.")
+        case ResultSubtype.MAX_BUDGET:
+            print(f"Self-heal hit the ${MAX_BUDGET_USD:.2f} budget cap.")
+            print("Increase MAX_BUDGET_USD in self_heal_runner.py if needed.")
+        case ResultSubtype.MAX_TURNS:
+            print(f"Self-heal hit the {MAX_TURNS}-turn limit.")
+            print("Increase MAX_TURNS in self_heal_runner.py if needed.")
+        case _:
+            print(f"Self-heal stopped: {metrics.result_subtype}")
 
 
 def _print_result_summary(metrics: RunMetrics) -> None:
@@ -198,6 +220,7 @@ async def execute_self_heal_cycle() -> int:
     metrics = await _stream_agent_metrics()
 
     _write_result_file(metrics)
+    _print_run_summary_text(metrics)
     _print_run_outcome(metrics)
 
     return _map_subtype_to_exit_code(metrics.result_subtype)
