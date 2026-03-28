@@ -78,6 +78,8 @@ _SCANNER_VERSION_COLUMN: str = "scanner_version"
 _IS_CLEAN_COLUMN: str = "is_clean"
 _FINDINGS_COUNT_COLUMN: str = "findings_count"
 _SCAN_DURATION_COLUMN: str = "scan_duration"
+_TEST_DB_FILENAME: str = "audit.db"
+_EXPECTED_TWO_AUDIT_ROWS: int = 2
 _SCAN_EVENTS_COUNT_QUERY: str = f"SELECT COUNT(*) FROM {_SCAN_EVENTS_TABLE}"
 _SCHEMA_META_COUNT_QUERY: str = f"SELECT COUNT(*) FROM {_SCHEMA_META_TABLE}"
 _SCHEMA_VERSION_QUERY: str = (
@@ -952,3 +954,29 @@ def test_get_current_repository_path_returns_cwd_on_os_error() -> None:
 
     assert isinstance(repo_path, str)
     assert repo_path  # not empty
+
+
+# ---------------------------------------------------------------------------
+# Audit log immutability (HIPAA 45 CFR §164.530(j))
+# ---------------------------------------------------------------------------
+
+
+def test_insert_scan_event_appends_new_row_instead_of_replacing_existing(
+    tmp_path: Path, patched_git_info: None
+) -> None:
+    """Verify audit log immutability — INSERT-only (HIPAA 45 CFR §164.530(j))."""
+    # Arrange
+    database_path = tmp_path / _TEST_DB_FILENAME
+    create_audit_schema(database_path)
+    first_scan = _build_clean_scan_result()
+    second_scan = _build_clean_scan_result()
+
+    # Act
+    insert_scan_event(database_path, first_scan)
+    insert_scan_event(database_path, second_scan)
+
+    # Assert
+    connection = sqlite3.connect(str(database_path))
+    row_count = connection.execute(f"SELECT COUNT(*) FROM {_SCAN_EVENTS_TABLE}").fetchone()[0]
+    connection.close()
+    assert row_count == _EXPECTED_TWO_AUDIT_ROWS
