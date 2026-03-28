@@ -115,16 +115,47 @@ def _print_run_outcome(metrics: RunMetrics) -> None:
         print(f"Self-heal stopped: {metrics.result_subtype}")
 
 
+def _print_result_summary(metrics: RunMetrics) -> None:
+    """Print the result summary line for the workflow log."""
+    print(f"Result:     {metrics.result_subtype}")
+    print(f"Turns used: {metrics.turns_used}")
+    print(f"Cost:       ${metrics.run_cost_usd:.4f}")
+
+
+def _extract_metrics_from_result(message: ResultMessage) -> RunMetrics:
+    """Extract RunMetrics from a completed ResultMessage.
+
+    Args:
+        message: The SDK ResultMessage containing subtype, turns, cost, and result.
+
+    Returns:
+        RunMetrics populated from the message fields.
+    """
+    result_subtype = ResultSubtype(message.subtype)
+    run_cost_usd = message.total_cost_usd if message.total_cost_usd is not None else 0.0
+    run_completion_text = (
+        message.result if result_subtype == ResultSubtype.SUCCESS and message.result else ""
+    )
+    return RunMetrics(
+        result_subtype=result_subtype,
+        run_cost_usd=run_cost_usd,
+        turns_used=message.num_turns,
+        run_completion_text=run_completion_text,
+    )
+
+
 async def _collect_run_metrics() -> RunMetrics:
     """Stream the self-heal agent run and collect result metrics.
 
     Returns:
         RunMetrics dataclass with subtype, cost, turns, and completion text.
     """
-    result_subtype: ResultSubtype = DEFAULT_RESULT_SUBTYPE
-    run_cost_usd: float = 0.0
-    turns_used: int = 0
-    run_completion_text: str = ""
+    metrics = RunMetrics(
+        result_subtype=DEFAULT_RESULT_SUBTYPE,
+        run_cost_usd=0.0,
+        turns_used=0,
+        run_completion_text="",
+    )
 
     async for message in query(
         prompt=SELF_HEAL_PROMPT,
@@ -142,28 +173,13 @@ async def _collect_run_metrics() -> RunMetrics:
             _print_tool_call_name(message)
 
         if isinstance(message, ResultMessage):
-            result_subtype = ResultSubtype(message.subtype)
-            turns_used = message.num_turns
+            metrics = _extract_metrics_from_result(message)
+            _print_result_summary(metrics)
 
-            if message.total_cost_usd is not None:
-                run_cost_usd = message.total_cost_usd
-
-            if result_subtype == ResultSubtype.SUCCESS and message.result:
-                run_completion_text = message.result
-
-            print(f"Result:     {result_subtype}")
-            print(f"Turns used: {turns_used}")
-            print(f"Cost:       ${run_cost_usd:.4f}")
-
-    return RunMetrics(
-        result_subtype=result_subtype,
-        run_cost_usd=run_cost_usd,
-        turns_used=turns_used,
-        run_completion_text=run_completion_text,
-    )
+    return metrics
 
 
-async def run_self_heal() -> int:
+async def execute_self_heal_cycle() -> int:
     """Orchestrate the self-heal run and return an exit code for the workflow.
 
     Returns:
@@ -184,4 +200,4 @@ if __name__ == "__main__":
         print(f"ERROR: {ANTHROPIC_API_KEY_ENV_VAR} is not set.")
         sys.exit(EXIT_CODE_FAILURE)
 
-    sys.exit(asyncio.run(run_self_heal()))
+    sys.exit(asyncio.run(execute_self_heal_cycle()))

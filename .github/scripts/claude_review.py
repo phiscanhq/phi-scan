@@ -173,9 +173,9 @@ def _extract_verdict(review_text: str) -> ReviewVerdict:
     for line in review_text.splitlines():
         stripped_line = line.strip()
         if stripped_line.startswith(VERDICT_LINE_PREFIX):
-            raw_verdict = stripped_line.split(":", maxsplit=1)[1].strip()
+            verdict_text = stripped_line.split(":", maxsplit=1)[1].strip()
             try:
-                return ReviewVerdict(raw_verdict)
+                return ReviewVerdict(verdict_text)
             except ValueError:
                 return DEFAULT_VERDICT
     return DEFAULT_VERDICT
@@ -194,8 +194,8 @@ def _write_verdict_file(review_text: str) -> None:
         result_file.write(verdict)
 
 
-def write_review_comment(review_text: str) -> None:
-    """Write the review comment and verdict result files.
+def write_review_output(review_text: str) -> None:
+    """Write the human-readable review comment and machine-readable verdict files.
 
     Args:
         review_text: Full review text returned by Claude.
@@ -217,7 +217,7 @@ def run_review() -> None:
     print(f"Diff size: {len(diff)} characters")
 
     review_text = request_claude_review(pr_title, diff)
-    write_review_comment(review_text)
+    write_review_output(review_text)
 
     print(f"Review written to {REVIEW_OUTPUT_FILE}")
 
