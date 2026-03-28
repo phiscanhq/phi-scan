@@ -263,7 +263,7 @@ def _count_files_in_directory(directory: Path) -> int:
     )
 
 
-class _FileChangeReporter(FileSystemEventHandler):
+class _FileChangeMonitor(FileSystemEventHandler):
     """Watchdog event handler for Phase 1 watch mode.
 
     Phase 1 behavior: on any non-directory file system event, traverse the
@@ -570,7 +570,7 @@ def _observe_directory(watch_path: Path) -> None:
     Args:
         watch_path: Root directory to watch recursively.
     """
-    event_handler = _FileChangeReporter(watch_path)
+    event_handler = _FileChangeMonitor(watch_path)
     observer = Observer()
     observer.schedule(event_handler, str(watch_path), recursive=True)
     observer.start()

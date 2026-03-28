@@ -31,5 +31,40 @@
       "mypy": "pass",
       "pytest": "pass"
     }
+  },
+  {
+    "timestamp_utc": "2026-03-28T03:45:00Z",
+    "mode": "Both",
+    "is_clean": false,
+    "skipped": false,
+    "skip_reason": null,
+    "issues_found": 15,
+    "issues_fixed": 5,
+    "issues_deferred": 0,
+    "cost_usd_estimated": 1.25,
+    "turns_used": 48,
+    "test_coverage_pct": 93.02,
+    "files_changed": [
+      "tests/test_audit.py",
+      "phi_scan/audit.py",
+      "phi_scan/cli.py",
+      "tests/test_config.py"
+    ],
+    "fix_cycles": 1,
+    "pr_number": 38,
+    "subagent_findings": {
+      "performance": 2,
+      "dry": 2,
+      "python_fp": 2,
+      "documentation": 2,
+      "test_quality": 2,
+      "code_quality": 2,
+      "hipaa_compliance": 2
+    },
+    "validation": {
+      "ruff": "pass",
+      "mypy": "pass",
+      "pytest": "pass"
+    }
   }
 ]

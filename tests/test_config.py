@@ -11,6 +11,8 @@ import yaml
 from phi_scan.config import create_default_config, load_config
 from phi_scan.constants import (
     AUDIT_RETENTION_DAYS,
+    CONFIDENCE_SCORE_MAXIMUM,
+    CONFIDENCE_SCORE_MINIMUM,
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_DATABASE_PATH,
     MAX_FILE_SIZE_MB,
@@ -311,6 +313,36 @@ def test_load_config_raises_configuration_error_for_confidence_threshold_below_m
 
     with pytest.raises(ConfigurationError):
         load_config(config_file)
+
+
+def test_load_config_accepts_confidence_threshold_at_minimum_boundary(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    config = _build_minimal_config()
+    config["scan"] = {"confidence_threshold": CONFIDENCE_SCORE_MINIMUM}
+
+    # Act
+    config_file = _write_config(tmp_path, config)
+    scan_config = load_config(config_file)
+
+    # Assert
+    assert scan_config.confidence_threshold == CONFIDENCE_SCORE_MINIMUM
+
+
+def test_load_config_accepts_confidence_threshold_at_maximum_boundary(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    config = _build_minimal_config()
+    config["scan"] = {"confidence_threshold": CONFIDENCE_SCORE_MAXIMUM}
+
+    # Act
+    config_file = _write_config(tmp_path, config)
+    scan_config = load_config(config_file)
+
+    # Assert
+    assert scan_config.confidence_threshold == CONFIDENCE_SCORE_MAXIMUM
 
 
 def test_load_config_expands_tilde_in_database_path(tmp_path: Path) -> None:
