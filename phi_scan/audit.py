@@ -94,7 +94,10 @@ _CREATE_SCHEMA_META_SQL: str = f"""
     )
 """
 _INSERT_META_SQL: str = f"INSERT OR IGNORE INTO {_SCHEMA_META_TABLE} (key, value) VALUES (?, ?)"
-_UPDATE_META_SQL: str = f"INSERT OR REPLACE INTO {_SCHEMA_META_TABLE} (key, value) VALUES (?, ?)"
+_UPSERT_SCHEMA_VERSION_SQL: str = (
+    f"INSERT INTO {_SCHEMA_META_TABLE} (key, value) VALUES (?, ?)"
+    f" ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+)
 _INSERT_SCAN_EVENT_SQL: str = f"""
     INSERT INTO {_SCAN_EVENTS_TABLE}
         (timestamp, scanner_version, repository_hash, branch_hash,
@@ -108,6 +111,9 @@ _SELECT_LAST_SCAN_SQL: str = (
     f"SELECT * FROM {_SCAN_EVENTS_TABLE} ORDER BY id DESC LIMIT {_LAST_SCAN_LIMIT}"
 )
 _SELECT_SCHEMA_VERSION_SQL: str = f"SELECT value FROM {_SCHEMA_META_TABLE} WHERE key = ?"
+_CREATE_SCAN_EVENTS_TIMESTAMP_INDEX_SQL: str = (
+    f"CREATE INDEX IF NOT EXISTS idx_scan_events_timestamp ON {_SCAN_EVENTS_TABLE} (timestamp DESC)"
+)
 
 # Migration map: from_version → SQL to advance the schema by one version.
 # Add entries here when AUDIT_SCHEMA_VERSION is incremented. Never remove entries
@@ -139,6 +145,7 @@ def create_audit_schema(database_path: Path) -> None:
     connection = _open_database(database_path)
     try:
         connection.execute(_CREATE_SCAN_EVENTS_SQL)
+        connection.execute(_CREATE_SCAN_EVENTS_TIMESTAMP_INDEX_SQL)
         connection.execute(_CREATE_SCHEMA_META_SQL)
         connection.execute(_INSERT_META_SQL, (_SCHEMA_VERSION_KEY, str(AUDIT_SCHEMA_VERSION)))
         connection.execute(_INSERT_META_SQL, (_CREATED_AT_KEY, timestamp))
@@ -326,7 +333,8 @@ def _apply_migration_steps(
                 )
             )
         connection.execute(_MIGRATIONS[current_version])
-        connection.execute(_UPDATE_META_SQL, (_SCHEMA_VERSION_KEY, str(current_version + 1)))
+        next_version = str(current_version + 1)
+        connection.execute(_UPSERT_SCHEMA_VERSION_SQL, (_SCHEMA_VERSION_KEY, next_version))
         current_version += 1
 
 
