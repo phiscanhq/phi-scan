@@ -1329,9 +1329,9 @@ def _build_watch_header_panel(watch_path: Path) -> Panel:
     Returns:
         Rich Panel with the watching path and Ctrl+C instruction.
     """
-    content = _WATCH_HEADER_FORMAT.format(path=str(watch_path))
+    watch_header_text = _WATCH_HEADER_FORMAT.format(path=str(watch_path))
     return Panel(
-        content,
+        watch_header_text,
         title=_WATCH_HEADER_PANEL_TITLE,
         subtitle=_WATCH_PHASE_ONE_NOTE,
         style=_STYLE_BOLD_CYAN,

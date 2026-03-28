@@ -133,10 +133,8 @@ _WATCH_LOG_MAX_EVENTS: int = 10
 _WATCH_TIMESTAMP_FORMAT: str = "%H:%M:%S"
 _WATCH_RESULT_CLEAN_TEXT: str = "✅ Clean"
 _WATCH_RESULT_VIOLATION_FORMAT: str = "⚠  {count} findings detected"
-_WATCH_RESULT_INACTIVE_TEXT: str = "⚪ Detection not active"
 _WATCH_RESULT_CLEAN_STYLE: str = "bold green"
 _WATCH_RESULT_VIOLATION_STYLE: str = "bold red"
-_WATCH_RESULT_INACTIVE_STYLE: str = "dim"
 
 # ---------------------------------------------------------------------------
 # History command
@@ -334,6 +332,11 @@ class _FileChangeMonitor(FileSystemEventHandler):
         if event.is_directory:
             return
         changed_path = Path(str(event.src_path))
+        # HIPAA traversal rule: never follow symlinks — a watchdog event can fire
+        # for a symlinked path, which could point outside the watched directory and
+        # expose files containing PHI that were never intended to be scanned.
+        if changed_path.is_symlink():
+            return
         findings = scan_file(changed_path, self._scan_config)
         result_text, result_style = _build_watch_result(findings)
         self._watch_events.append(
