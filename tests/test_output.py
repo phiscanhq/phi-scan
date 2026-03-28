@@ -12,6 +12,10 @@ from rich.table import Table
 from phi_scan.constants import DetectionLayer, PhiCategory, RiskLevel, SeverityLevel
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 from phi_scan.output import (
+    WATCH_EVENT_KEY_FILE,
+    WATCH_EVENT_KEY_RESULT_STYLE,
+    WATCH_EVENT_KEY_RESULT_TEXT,
+    WATCH_EVENT_KEY_TIME,
     build_dashboard_layout,
     build_watch_layout,
     create_scan_progress,
@@ -917,38 +921,45 @@ def test_build_dashboard_layout_with_data_does_not_raise() -> None:
 # build_watch_layout (1C.6a–1C.6d)
 # ---------------------------------------------------------------------------
 
-_WATCH_PATH: Path = Path("/tmp/src")
 _WATCH_EMPTY_EVENTS: list[dict[str, str]] = []
+_WATCH_SAMPLE_TIMESTAMP_ONE: str = "14:32:05"
+_WATCH_SAMPLE_FILE_ONE: str = "src/api/patient.py"
+_WATCH_SAMPLE_RESULT_TEXT_CLEAN: str = "✅ Clean"
+_WATCH_SAMPLE_RESULT_STYLE_CLEAN: str = "bold green"
+_WATCH_SAMPLE_TIMESTAMP_TWO: str = "14:33:10"
+_WATCH_SAMPLE_FILE_TWO: str = "src/models/user.py"
+_WATCH_SAMPLE_RESULT_TEXT_VIOLATION: str = "⚠  2 findings detected"
+_WATCH_SAMPLE_RESULT_STYLE_VIOLATION: str = "bold red"
 _WATCH_SAMPLE_EVENTS: list[dict[str, str]] = [
     {
-        "time": "14:32:05",
-        "file": "src/api/patient.py",
-        "result_text": "✅ Clean",
-        "result_style": "bold green",
+        WATCH_EVENT_KEY_TIME: _WATCH_SAMPLE_TIMESTAMP_ONE,
+        WATCH_EVENT_KEY_FILE: _WATCH_SAMPLE_FILE_ONE,
+        WATCH_EVENT_KEY_RESULT_TEXT: _WATCH_SAMPLE_RESULT_TEXT_CLEAN,
+        WATCH_EVENT_KEY_RESULT_STYLE: _WATCH_SAMPLE_RESULT_STYLE_CLEAN,
     },
     {
-        "time": "14:33:10",
-        "file": "src/models/user.py",
-        "result_text": "⚠  2 findings detected",
-        "result_style": "bold red",
+        WATCH_EVENT_KEY_TIME: _WATCH_SAMPLE_TIMESTAMP_TWO,
+        WATCH_EVENT_KEY_FILE: _WATCH_SAMPLE_FILE_TWO,
+        WATCH_EVENT_KEY_RESULT_TEXT: _WATCH_SAMPLE_RESULT_TEXT_VIOLATION,
+        WATCH_EVENT_KEY_RESULT_STYLE: _WATCH_SAMPLE_RESULT_STYLE_VIOLATION,
     },
 ]
 
 
-def test_build_watch_layout_empty_events_does_not_raise() -> None:
-    build_watch_layout(_WATCH_PATH, _WATCH_EMPTY_EVENTS)
+def test_build_watch_layout_empty_events_does_not_raise(tmp_path: Path) -> None:
+    build_watch_layout(tmp_path, _WATCH_EMPTY_EVENTS)
 
 
-def test_build_watch_layout_with_events_does_not_raise() -> None:
-    build_watch_layout(_WATCH_PATH, _WATCH_SAMPLE_EVENTS)
+def test_build_watch_layout_with_events_does_not_raise(tmp_path: Path) -> None:
+    build_watch_layout(tmp_path, _WATCH_SAMPLE_EVENTS)
 
 
-def test_build_watch_header_panel_contains_path() -> None:
+def test_build_watch_header_panel_contains_path(tmp_path: Path) -> None:
     from phi_scan.output import _build_watch_header_panel
 
-    panel = _build_watch_header_panel(_WATCH_PATH)
+    panel = _build_watch_header_panel(tmp_path)
 
-    assert str(_WATCH_PATH) in str(panel.renderable)
+    assert str(tmp_path) in str(panel.renderable)
 
 
 def test_build_watch_event_table_empty_shows_waiting_text() -> None:

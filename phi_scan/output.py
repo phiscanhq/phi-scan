@@ -317,7 +317,12 @@ _DASHBOARD_TIMESTAMP_DISPLAY_LENGTH: int = 19
 
 _WATCH_HEADER_PANEL_TITLE: str = "PhiScan — Watch Mode"
 _WATCH_HEADER_FORMAT: str = "Watching: {path}  —  Press [bold]Ctrl+C[/bold] to stop"
-_WATCH_HEADER_HEIGHT: int = 3
+# Shown in the panel subtitle so it appears inside the Rich alternate-screen buffer,
+# not on stdout before Live() takes over (which would immediately scroll out of view).
+_WATCH_PHASE_ONE_NOTE: str = (
+    "Detection engine not loaded — run `phi-scan setup` to enable full scanning."
+)
+_WATCH_HEADER_HEIGHT: int = 4
 _WATCH_HEADER_SECTION: str = "watch_header"
 _WATCH_BODY_SECTION: str = "watch_body"
 _WATCH_LOG_PANEL_TITLE: str = "Recent Events"
@@ -1325,7 +1330,12 @@ def _build_watch_header_panel(watch_path: Path) -> Panel:
         Rich Panel with the watching path and Ctrl+C instruction.
     """
     content = _WATCH_HEADER_FORMAT.format(path=str(watch_path))
-    return Panel(content, title=_WATCH_HEADER_PANEL_TITLE, style=_STYLE_BOLD_CYAN)
+    return Panel(
+        content,
+        title=_WATCH_HEADER_PANEL_TITLE,
+        subtitle=_WATCH_PHASE_ONE_NOTE,
+        style=_STYLE_BOLD_CYAN,
+    )
 
 
 def _build_watch_event_table(events: Sequence[dict[str, Any]]) -> Table:

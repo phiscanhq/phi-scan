@@ -127,9 +127,6 @@ _SCAN_NO_CACHE_HELP: str = (
 # ---------------------------------------------------------------------------
 
 _WATCH_PATH_HELP: str = "Directory to watch for file system changes."
-_WATCH_PHASE_ONE_NOTE: str = (
-    "Detection engine not loaded — run `phi-scan setup` to enable full scanning."
-)
 _WATCH_POLL_INTERVAL_SECONDS: float = 1.0
 _WATCH_LIVE_REFRESH_RATE: float = 4.0
 _WATCH_LOG_MAX_EVENTS: int = 10
@@ -687,9 +684,9 @@ def _run_watch_live_loop(
                 live.update(build_watch_layout(watch_path, list(watch_events)))
                 time.sleep(_WATCH_POLL_INTERVAL_SECONDS)
     except KeyboardInterrupt:
-        pass
-
-
+        # Ctrl+C is the standard exit for watch mode — caught here to suppress the
+        # default traceback and allow Rich to close the screen buffer cleanly.
+        return
 
 
 # ---------------------------------------------------------------------------
@@ -799,7 +796,6 @@ def watch(
     watch_path = path.resolve()
     scan_config = ScanConfig()
     watch_events: deque[dict[str, str]] = deque(maxlen=_WATCH_LOG_MAX_EVENTS)
-    typer.echo(_WATCH_PHASE_ONE_NOTE)
     event_handler = _FileChangeMonitor(watch_path, watch_events, scan_config)
     observer = Observer()
     observer.schedule(event_handler, str(watch_path), recursive=True)
