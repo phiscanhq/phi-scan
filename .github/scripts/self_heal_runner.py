@@ -79,7 +79,7 @@ class RunMetrics:
 def _print_tool_call_name(message: AssistantMessage) -> None:
     """Print each tool call name for workflow log visibility."""
     for block in message.content:
-        if hasattr(block, "type") and block.type == TOOL_USE_BLOCK_TYPE:
+        if hasattr(block, "type") and block.type == TOOL_USE_BLOCK_TYPE and hasattr(block, "name"):
             print(f"{TOOL_LOG_PREFIX}{block.name}")
 
 
@@ -131,7 +131,11 @@ def _extract_metrics_from_result(message: ResultMessage) -> RunMetrics:
     Returns:
         RunMetrics populated from the message fields.
     """
-    result_subtype = ResultSubtype(message.subtype)
+    try:
+        result_subtype = ResultSubtype(message.subtype)
+    except ValueError:
+        print(f"WARNING: unrecognized result subtype '{message.subtype}' — defaulting to UNKNOWN")
+        result_subtype = DEFAULT_RESULT_SUBTYPE
     run_cost_usd = message.total_cost_usd if message.total_cost_usd is not None else 0.0
     run_completion_text = (
         message.result if result_subtype == ResultSubtype.SUCCESS and message.result else ""

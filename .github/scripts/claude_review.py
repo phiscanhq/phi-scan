@@ -177,6 +177,7 @@ def _extract_verdict(review_text: str) -> ReviewVerdict:
             try:
                 return ReviewVerdict(verdict_text)
             except ValueError:
+                print(f"WARNING: unrecognized verdict '{verdict_text}' — defaulting to WARNING")
                 return DEFAULT_VERDICT
     return DEFAULT_VERDICT
 
@@ -194,16 +195,6 @@ def _write_verdict_file(review_text: str) -> None:
         result_file.write(verdict)
 
 
-def write_review_output(review_text: str) -> None:
-    """Write the human-readable review comment and machine-readable verdict files.
-
-    Args:
-        review_text: Full review text returned by Claude.
-    """
-    _write_review_comment_file(review_text)
-    _write_verdict_file(review_text)
-
-
 def run_review() -> None:
     """Orchestrate the full review flow."""
     pr_title = os.environ.get("PR_TITLE", "Untitled PR")
@@ -217,7 +208,8 @@ def run_review() -> None:
     print(f"Diff size: {len(diff)} characters")
 
     review_text = request_claude_review(pr_title, diff)
-    write_review_output(review_text)
+    _write_review_comment_file(review_text)
+    _write_verdict_file(review_text)
 
     print(f"Review written to {REVIEW_OUTPUT_FILE}")
 
