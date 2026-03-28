@@ -977,6 +977,8 @@ def test_insert_scan_event_appends_new_row_instead_of_replacing_existing(
 
     # Assert
     connection = sqlite3.connect(str(database_path))
-    row_count = connection.execute(f"SELECT COUNT(*) FROM {_SCAN_EVENTS_TABLE}").fetchone()[0]
+    row = connection.execute(_SCAN_EVENTS_COUNT_QUERY).fetchone()
     connection.close()
+    assert row is not None
+    row_count = row[0]
     assert row_count == _EXPECTED_TWO_AUDIT_ROWS
