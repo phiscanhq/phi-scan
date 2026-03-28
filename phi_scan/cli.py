@@ -867,10 +867,14 @@ def scan(
         display_phase_audit()
     with display_status_spinner(_SPINNER_AUDIT_WRITE_MESSAGE, is_active=is_rich_mode):
         _write_audit_record(scan_result, scan_config.database_path)
-    if not is_quiet and is_rich_mode:
+    # is_rich_mode is already False when is_quiet=True, so display_phase_report() is
+    # suppressed without a redundant is_quiet guard. _emit_scan_output is always called:
+    # when is_quiet=True with table format it is a no-op (is_rich_mode=False returns
+    # immediately); with serialized formats (json/csv/sarif) it emits to stdout so that
+    # --quiet suppresses Rich UI only, not machine-readable output.
+    if is_rich_mode:
         display_phase_report()
-    if not is_quiet:
-        _emit_scan_output(scan_result, output_format, is_rich_mode)
+    _emit_scan_output(scan_result, output_format, is_rich_mode)
     raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
 
 

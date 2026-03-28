@@ -453,7 +453,7 @@ polished, informative, and visually striking. Users should enjoy running this to
 
 #### 1C.7 — Color Theme & Consistency
 
-- [ ] **1C.7a** Consistent color palette across all output:
+- [x] **1C.7a** Consistent color palette across all output:
   - Severity HIGH: `red` / `bold red`
   - Severity MEDIUM: `yellow`
   - Severity LOW: `green` (informational, not alarming)
@@ -461,16 +461,16 @@ polished, informative, and visually striking. Users should enjoy running this to
   - Headers/labels: `cyan` / `bold cyan`
   - Metadata/secondary: `dim` / `grey`
   - Banner accent: gradient `cyan → blue → magenta`
-- [ ] **1C.7b** Consistent Unicode symbols:
+- [x] **1C.7b** Consistent Unicode symbols:
   - Clean: ✅ or ✔
   - Violation: ⚠ or 🚨
   - File: 📄
   - Folder: 📁
   - Severity dots: ● (filled) ○ (empty) for confidence visualization
   - Arrow: ► for highlighted line in code context
-- [ ] **1C.7c** Graceful fallback for terminals without Unicode — ASCII alternatives
-- [ ] **1C.7d** Respect `--quiet` flag — suppress all visual output, return only exit code
-- [ ] **1C.7e** Respect `NO_COLOR` environment variable (per no-color.org standard)
+- [x] **1C.7c** Graceful fallback for terminals without Unicode — ASCII alternatives
+- [x] **1C.7d** Respect `--quiet` flag — suppress all visual output, return only exit code
+- [x] **1C.7e** Respect `NO_COLOR` environment variable (per no-color.org standard)
 
 ### 1D — Git Hook Integration
 
