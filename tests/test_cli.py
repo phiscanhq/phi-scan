@@ -10,7 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from phi_scan import __version__
-from phi_scan.cli import _truncate_filename_for_progress, app
+from phi_scan.cli import _GIT_DIR_NOT_FOUND_MESSAGE, _truncate_filename_for_progress, app
 from phi_scan.constants import (
     DEFAULT_CONFIG_FILENAME,
     EXIT_CODE_CLEAN,
@@ -293,7 +293,7 @@ def test_history_invalid_period_non_numeric_raises_bad_parameter(tmp_path: Path)
 
 def test_install_hook_creates_hook_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
-    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
     monkeypatch.setattr("phi_scan.cli._PRE_COMMIT_HOOK_PATH", str(hook_path))
 
     result = _runner.invoke(app, ["install-hook"])
@@ -307,7 +307,7 @@ def test_install_hook_prints_installed_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
-    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
     monkeypatch.setattr("phi_scan.cli._PRE_COMMIT_HOOK_PATH", str(hook_path))
 
     result = _runner.invoke(app, ["install-hook"])
@@ -358,6 +358,7 @@ def test_uninstall_hook_prints_not_found_when_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
+    (tmp_path / ".git").mkdir()
     monkeypatch.setattr("phi_scan.cli._PRE_COMMIT_HOOK_PATH", str(hook_path))
 
     result = _runner.invoke(app, ["uninstall-hook"])
@@ -378,6 +379,30 @@ def test_uninstall_hook_does_not_remove_foreign_hook(
 
     assert result.exit_code == _EXIT_CODE_SUCCESS
     assert hook_path.exists()
+
+
+def test_install_hook_exits_with_error_when_not_in_git_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
+    monkeypatch.setattr("phi_scan.cli._PRE_COMMIT_HOOK_PATH", str(hook_path))
+
+    result = _runner.invoke(app, ["install-hook"])
+
+    assert result.exit_code != _EXIT_CODE_SUCCESS
+    assert _GIT_DIR_NOT_FOUND_MESSAGE in result.output
+
+
+def test_uninstall_hook_exits_with_error_when_not_in_git_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
+    monkeypatch.setattr("phi_scan.cli._PRE_COMMIT_HOOK_PATH", str(hook_path))
+
+    result = _runner.invoke(app, ["uninstall-hook"])
+
+    assert result.exit_code != _EXIT_CODE_SUCCESS
+    assert _GIT_DIR_NOT_FOUND_MESSAGE in result.output
 
 
 # ---------------------------------------------------------------------------

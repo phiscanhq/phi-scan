@@ -183,6 +183,7 @@ _HOOK_IS_SYMLINK_MESSAGE: str = "Hook at {path} is a symlink — not reading or 
 _HOOK_SYMLINKED_COMPONENT_ERROR: str = (
     "Hook path component {component!r} is a symlink — refusing to write."
 )
+_GIT_DIR_NOT_FOUND_MESSAGE: str = "Not a git repository — .git directory not found."
 # Marker written into every hook we install; used to identify our hooks on uninstall.
 _HOOK_MARKER: str = "phi-scan scan"
 _HOOK_FILE_PERMISSIONS: int = 0o755
@@ -658,6 +659,24 @@ def _reject_hook_path_with_symlinked_component(hook_path: Path) -> None:
             raise typer.Exit(code=_EXIT_CODE_ERROR)
 
 
+def _reject_non_git_repository(git_dir: Path) -> None:
+    """Reject if git_dir does not exist as a directory.
+
+    Hook operations require a .git directory — running install-hook or
+    uninstall-hook outside a git repository would silently write into a
+    non-standard path. This guard catches that before any read or write occurs.
+
+    Args:
+        git_dir: Expected .git directory path (typically hook_path.parent.parent).
+
+    Raises:
+        typer.Exit: If git_dir does not exist as a directory.
+    """
+    if not git_dir.is_dir():
+        typer.echo(_GIT_DIR_NOT_FOUND_MESSAGE, err=True)
+        raise typer.Exit(code=_EXIT_CODE_ERROR)
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers — watch command
 # ---------------------------------------------------------------------------
@@ -932,6 +951,7 @@ def display_history(
 def install_hook() -> None:
     """Install phi-scan as a git pre-commit hook."""
     hook_path = Path(_PRE_COMMIT_HOOK_PATH)
+    _reject_non_git_repository(hook_path.parent.parent)
     if hook_path.exists() or hook_path.is_symlink():
         typer.echo(_HOOK_ALREADY_EXISTS_MESSAGE.format(path=hook_path))
         return
@@ -946,6 +966,7 @@ def install_hook() -> None:
 def uninstall_hook() -> None:
     """Remove the phi-scan git pre-commit hook."""
     hook_path = Path(_PRE_COMMIT_HOOK_PATH)
+    _reject_non_git_repository(hook_path.parent.parent)
     if not hook_path.exists():
         typer.echo(_HOOK_NOT_FOUND_MESSAGE.format(path=hook_path))
         return
