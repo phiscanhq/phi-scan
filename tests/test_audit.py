@@ -138,7 +138,13 @@ def _build_dirty_scan_result(file_path: Path) -> ScanResult:
 
 @pytest.fixture()
 def patched_git_info() -> Generator[None, None, None]:
-    """Patch git subprocess calls to return deterministic values in audit tests."""
+    """Patch git subprocess calls to return deterministic values in audit tests.
+
+    Side-effect-only fixture — patches two module-level functions and yields
+    nothing. Test signatures omit the type annotation for this parameter
+    because the yielded value is not meaningful; the fixture is used only
+    for its patching side effects.
+    """
     with (
         patch("phi_scan.audit._get_current_repository_path", return_value=_SAMPLE_GIT_REPO_ROOT),
         patch("phi_scan.audit._get_current_branch", return_value=_SAMPLE_GIT_BRANCH),
