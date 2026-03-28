@@ -183,8 +183,9 @@ _HOOK_IS_SYMLINK_MESSAGE: str = "Hook at {path} is a symlink — not reading or 
 _HOOK_SYMLINKED_COMPONENT_ERROR: str = (
     "Hook path component {component!r} is a symlink — refusing to write."
 )
+_GIT_DIR_NAME: str = ".git"
 # CWD-relative by design — hook commands are always run from the repo root.
-_GIT_DIR_PATH: Path = Path(".git")
+_GIT_DIR_PATH: Path = Path(_GIT_DIR_NAME)
 _GIT_DIR_NOT_FOUND_MESSAGE: str = "Not a git repository — .git directory not found."
 # Marker written into every hook we install; used to identify our hooks on uninstall.
 _HOOK_MARKER: str = "phi-scan scan"
