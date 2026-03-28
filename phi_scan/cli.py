@@ -184,8 +184,7 @@ _HOOK_SYMLINKED_COMPONENT_ERROR: str = (
     "Hook path component {component!r} is a symlink — refusing to write."
 )
 # CWD-relative by design: hook commands are always run from the repo root.
-_GIT_DIR_NAME: str = ".git"
-_GIT_DIR_PATH: Path = Path(_GIT_DIR_NAME)
+_GIT_DIR_PATH: Path = Path(".git")
 _GIT_DIR_NOT_FOUND_MESSAGE: str = "Not a git repository — .git directory not found."
 # Marker written into every hook we install; used to identify our hooks on uninstall.
 _HOOK_MARKER: str = "phi-scan scan"
@@ -662,25 +661,21 @@ def _reject_hook_path_with_symlinked_component(hook_path: Path) -> None:
             raise typer.Exit(code=_EXIT_CODE_ERROR)
 
 
-def _reject_missing_git_directory(git_dir: Path) -> None:
-    """Reject if git_dir does not exist as a directory.
+def _reject_missing_git_directory() -> None:
+    """Reject if the .git directory is absent in the current working directory.
 
     Hook operations require a .git directory — running install-hook or
     uninstall-hook outside a git repository would silently write into a
     non-standard path. This guard catches that before any read or write occurs.
 
-    Args:
-        git_dir: Path to check — callers pass the module-level _GIT_DIR_PATH
-            (a CWD-relative Path(".git")), so the guard always checks for .git
-            in the current working directory, not relative to the hook file.
-            Note: git worktrees replace .git with a plain file (gitdir: ...);
-            is_dir() returns False in that case, so hook commands are intentionally
-            unsupported in worktrees until the guard is extended.
+    Note: git worktrees replace .git with a plain file (gitdir: ...);
+    is_dir() returns False in that case, so hook commands are intentionally
+    unsupported in worktrees until the guard is extended.
 
     Raises:
-        typer.Exit: If git_dir does not exist as a directory.
+        typer.Exit: If _GIT_DIR_PATH does not exist as a directory.
     """
-    if not git_dir.is_dir():
+    if not _GIT_DIR_PATH.is_dir():
         typer.echo(_GIT_DIR_NOT_FOUND_MESSAGE, err=True)
         raise typer.Exit(code=_EXIT_CODE_ERROR)
 
@@ -959,7 +954,7 @@ def display_history(
 def install_hook() -> None:
     """Install phi-scan as a git pre-commit hook."""
     hook_path = Path(_PRE_COMMIT_HOOK_PATH)
-    _reject_missing_git_directory(_GIT_DIR_PATH)
+    _reject_missing_git_directory()
     if hook_path.exists() or hook_path.is_symlink():
         typer.echo(_HOOK_ALREADY_EXISTS_MESSAGE.format(path=hook_path))
         return
@@ -974,7 +969,7 @@ def install_hook() -> None:
 def uninstall_hook() -> None:
     """Remove the phi-scan git pre-commit hook."""
     hook_path = Path(_PRE_COMMIT_HOOK_PATH)
-    _reject_missing_git_directory(_GIT_DIR_PATH)
+    _reject_missing_git_directory()
     if not hook_path.exists():
         typer.echo(_HOOK_NOT_FOUND_MESSAGE.format(path=hook_path))
         return

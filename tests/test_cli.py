@@ -402,7 +402,7 @@ def test_install_hook_exits_with_error_when_not_in_git_repo(
     result = _runner.invoke(app, ["install-hook"])
 
     assert result.exit_code == _EXIT_CODE_ERROR
-    assert _GIT_DIR_NOT_FOUND_MESSAGE in result.stderr
+    assert _GIT_DIR_NOT_FOUND_MESSAGE in result.output
 
 
 def test_uninstall_hook_exits_with_error_when_not_in_git_repo(
@@ -415,7 +415,7 @@ def test_uninstall_hook_exits_with_error_when_not_in_git_repo(
     result = _runner.invoke(app, ["uninstall-hook"])
 
     assert result.exit_code == _EXIT_CODE_ERROR
-    assert _GIT_DIR_NOT_FOUND_MESSAGE in result.stderr
+    assert _GIT_DIR_NOT_FOUND_MESSAGE in result.output
 
 
 # ---------------------------------------------------------------------------
