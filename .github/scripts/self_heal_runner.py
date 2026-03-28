@@ -28,7 +28,6 @@ TOOL_USE_BLOCK_TYPE: str = "tool_use"
 TOOL_LOG_PREFIX: str = "  [tool] "
 
 ALLOWED_SDK_TOOLS: tuple[str, ...] = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent")
-ALLOWED_SDK_TOOLS_LIST: list[str] = list(ALLOWED_SDK_TOOLS)
 
 
 class ResultSubtype(StrEnum):
@@ -64,6 +63,11 @@ Commit rules:
 - No Co-Authored-By tags in any commit message
 - No Anthropic or AI attribution in commits or PR bodies
 - Branch naming for health cycles: chore/self-heal-YYYYMMDD-HHMM
+
+PHI safety rules (non-negotiable):
+- Never include raw PHI values in commit messages, PR bodies, or result output
+- If referencing a finding, use the finding type and file path only — never the raw value
+- Never quote scanner output that may contain PHI in any persisted text
 """
 
 
@@ -168,7 +172,7 @@ async def _collect_run_metrics() -> RunMetrics:
             permission_mode=PERMISSION_MODE_BYPASS,
             max_budget_usd=MAX_BUDGET_USD,
             max_turns=MAX_TURNS,
-            allowed_tools=ALLOWED_SDK_TOOLS_LIST,
+            allowed_tools=list(ALLOWED_SDK_TOOLS),
             setting_sources=["project"],
             effort=DEFAULT_EFFORT,
             model=DEFAULT_MODEL,
