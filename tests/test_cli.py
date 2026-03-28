@@ -321,7 +321,8 @@ def test_install_hook_does_not_overwrite_existing_hook(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
-    hook_path.parent.mkdir(parents=True)
+    (tmp_path / ".git").mkdir()
+    hook_path.parent.mkdir(parents=True, exist_ok=True)
     hook_path.write_text(_FOREIGN_HOOK_CONTENT)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("phi_scan.cli._PRE_COMMIT_HOOK_PATH", str(hook_path))
@@ -334,7 +335,8 @@ def test_install_hook_does_not_overwrite_existing_hook(
 
 def test_uninstall_hook_removes_our_hook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
-    hook_path.parent.mkdir(parents=True)
+    (tmp_path / ".git").mkdir()
+    hook_path.parent.mkdir(parents=True, exist_ok=True)
     hook_path.write_text(_EXPECTED_HOOK_SCRIPT, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("phi_scan.cli._PRE_COMMIT_HOOK_PATH", str(hook_path))
@@ -349,7 +351,8 @@ def test_uninstall_hook_prints_removed_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
-    hook_path.parent.mkdir(parents=True)
+    (tmp_path / ".git").mkdir()
+    hook_path.parent.mkdir(parents=True, exist_ok=True)
     hook_path.write_text(_EXPECTED_HOOK_SCRIPT, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("phi_scan.cli._PRE_COMMIT_HOOK_PATH", str(hook_path))
@@ -377,7 +380,8 @@ def test_uninstall_hook_does_not_remove_foreign_hook(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
-    hook_path.parent.mkdir(parents=True)
+    (tmp_path / ".git").mkdir()
+    hook_path.parent.mkdir(parents=True, exist_ok=True)
     hook_path.write_text(_FOREIGN_HOOK_CONTENT)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("phi_scan.cli._PRE_COMMIT_HOOK_PATH", str(hook_path))

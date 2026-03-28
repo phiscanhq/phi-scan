@@ -184,6 +184,7 @@ _HOOK_SYMLINKED_COMPONENT_ERROR: str = (
     "Hook path component {component!r} is a symlink — refusing to write."
 )
 _GIT_DIR_RELATIVE_PATH: str = ".git"
+_GIT_DIR_PATH: Path = Path(_GIT_DIR_RELATIVE_PATH)
 _GIT_DIR_NOT_FOUND_MESSAGE: str = "Not a git repository — .git directory not found."
 # Marker written into every hook we install; used to identify our hooks on uninstall.
 _HOOK_MARKER: str = "phi-scan scan"
@@ -660,7 +661,7 @@ def _reject_hook_path_with_symlinked_component(hook_path: Path) -> None:
             raise typer.Exit(code=_EXIT_CODE_ERROR)
 
 
-def _reject_non_git_repository(git_dir: Path) -> None:
+def _reject_non_git_directory(git_dir: Path) -> None:
     """Reject if git_dir does not exist as a directory.
 
     Hook operations require a .git directory — running install-hook or
@@ -952,7 +953,7 @@ def display_history(
 def install_hook() -> None:
     """Install phi-scan as a git pre-commit hook."""
     hook_path = Path(_PRE_COMMIT_HOOK_PATH)
-    _reject_non_git_repository(Path(_GIT_DIR_RELATIVE_PATH))
+    _reject_non_git_directory(_GIT_DIR_PATH)
     if hook_path.exists() or hook_path.is_symlink():
         typer.echo(_HOOK_ALREADY_EXISTS_MESSAGE.format(path=hook_path))
         return
@@ -967,7 +968,7 @@ def install_hook() -> None:
 def uninstall_hook() -> None:
     """Remove the phi-scan git pre-commit hook."""
     hook_path = Path(_PRE_COMMIT_HOOK_PATH)
-    _reject_non_git_repository(Path(_GIT_DIR_RELATIVE_PATH))
+    _reject_non_git_directory(_GIT_DIR_PATH)
     if not hook_path.exists():
         typer.echo(_HOOK_NOT_FOUND_MESSAGE.format(path=hook_path))
         return
