@@ -49,4 +49,4 @@ jobs:
           gh release create "$TAG_NAME" \
             --title "phi-scan $TAG_NAME" \
             --generate-notes \
-            dist/*
+            dist/*.whl dist/*.tar.gz
