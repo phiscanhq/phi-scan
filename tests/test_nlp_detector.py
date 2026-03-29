@@ -18,15 +18,14 @@ from phi_scan.constants import (
     PhiCategory,
     SeverityLevel,
 )
+from phi_scan.hashing import compute_value_hash, severity_from_confidence
 from phi_scan.nlp_detector import (  # type: ignore[attr-defined]
     _NLP_AVAILABLE,
     _build_line_start_offsets,
     _build_nlp_finding,
     _clamp_to_nlp_range,
-    _compute_value_hash,
     _NlpScanContext,
     _offset_to_line_number,
-    _severity_from_confidence,
     detect_phi_with_nlp,
 )
 
@@ -120,7 +119,7 @@ class TestClampToNlpRange:
 
 
 # ---------------------------------------------------------------------------
-# _severity_from_confidence
+# severity_from_confidence
 # ---------------------------------------------------------------------------
 
 
@@ -141,36 +140,36 @@ class TestSeverityFromConfidence:
     def test_confidence_maps_to_expected_severity(
         self, confidence: float, expected_severity: SeverityLevel
     ) -> None:
-        severity = _severity_from_confidence(confidence)
+        severity = severity_from_confidence(confidence)
 
         assert severity == expected_severity
 
 
 # ---------------------------------------------------------------------------
-# _compute_value_hash
+# compute_value_hash
 # ---------------------------------------------------------------------------
 
 
 class TestComputeValueHash:
     def test_returns_expected_sha256_digest(self) -> None:
-        computed = _compute_value_hash("John Smith")
+        computed = compute_value_hash("John Smith")
 
         assert computed == _JOHN_SMITH_HASH
 
     def test_returns_64_character_hex_string(self) -> None:
-        computed = _compute_value_hash("any text value")
+        computed = compute_value_hash("any text value")
 
         assert len(computed) == 64
         assert all(character in "0123456789abcdef" for character in computed)
 
     def test_different_inputs_produce_different_hashes(self) -> None:
-        first_hash = _compute_value_hash("Alice")
-        second_hash = _compute_value_hash("Bob")
+        first_hash = compute_value_hash("Alice")
+        second_hash = compute_value_hash("Bob")
 
         assert first_hash != second_hash
 
     def test_same_input_produces_same_hash(self) -> None:
-        assert _compute_value_hash("repeat") == _compute_value_hash("repeat")
+        assert compute_value_hash("repeat") == compute_value_hash("repeat")
 
 
 # ---------------------------------------------------------------------------

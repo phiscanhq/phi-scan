@@ -11,8 +11,8 @@ __all__ = [
     "CACHE_SCHEMA_VERSION",
     "SHA256_HEX_DIGEST_LENGTH",
     "AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX",
-    "CONFIDENCE_FHIR_MAX",
-    "CONFIDENCE_FHIR_MIN",
+    "CONFIDENCE_STRUCTURED_MAX",
+    "CONFIDENCE_STRUCTURED_MIN",
     "CONFIDENCE_HIGH_FLOOR",
     "CONFIDENCE_LOW_FLOOR",
     "CONFIDENCE_MEDIUM_FLOOR",
@@ -171,9 +171,11 @@ CONFIDENCE_REGEX_MAX: float = CONFIDENCE_SCORE_MAXIMUM
 CONFIDENCE_NLP_MIN: float = 0.50
 CONFIDENCE_NLP_MAX: float = 0.90
 
-# Layer 3 — FHIR: schema-based structural match.
-CONFIDENCE_FHIR_MIN: float = 0.80
-CONFIDENCE_FHIR_MAX: float = 0.95
+# Layer 3 — Structured healthcare formats (FHIR R4 + HL7 v2): schema-based structural match.
+# Named STRUCTURED rather than FHIR to correctly cover both Layer 3 sub-scanners —
+# HL7 v2 findings use the same confidence band and must not be attributed to FHIR.
+CONFIDENCE_STRUCTURED_MIN: float = 0.80
+CONFIDENCE_STRUCTURED_MAX: float = 0.95
 
 # Adjustment delta — not a score floor or ceiling.
 # Layer 4 (AI) refines an existing score by at most this amount in either
@@ -434,15 +436,18 @@ class SeverityLevel(StrEnum):
 
 
 class DetectionLayer(StrEnum):
-    """The four detection layers that can produce a ScanFinding.
+    """The detection layers that can produce a ScanFinding.
 
     Layers are applied in order: REGEX first (fastest, highest confidence),
-    then NLP, FHIR, and optionally AI. A finding records which layer observed it.
+    then NLP, FHIR, HL7, and optionally AI. A finding records which layer
+    observed it. FHIR and HL7 are separate values so that audit queries can
+    distinguish FHIR R4 field-name findings from HL7 v2 segment findings.
     """
 
     REGEX = "regex"
     NLP = "nlp"
     FHIR = "fhir"
+    HL7 = "hl7"
     AI = "ai"
 
 
