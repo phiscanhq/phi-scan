@@ -43,13 +43,13 @@ def _load_manifest() -> dict[str, Any]:
     return json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
-def _phi_fixture_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def _extract_phi_fixture_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         f for f in manifest[_MANIFEST_FIXTURES_KEY] if f[_MANIFEST_CATEGORY_KEY] == _CATEGORY_PHI
     ]
 
 
-def _clean_fixture_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def _extract_clean_fixture_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         f for f in manifest[_MANIFEST_FIXTURES_KEY] if f[_MANIFEST_CATEGORY_KEY] == _CATEGORY_CLEAN
     ]
@@ -84,17 +84,17 @@ class TestManifestStructure:
 
     def test_phi_fixture_count_meets_minimum(self) -> None:
         manifest = _load_manifest()
-        phi_entries = _phi_fixture_entries(manifest)
+        phi_entries = _extract_phi_fixture_entries(manifest)
         assert len(phi_entries) >= _MINIMUM_PHI_FIXTURE_COUNT
 
     def test_clean_fixture_count_meets_minimum(self) -> None:
         manifest = _load_manifest()
-        clean_entries = _clean_fixture_entries(manifest)
+        clean_entries = _extract_clean_fixture_entries(manifest)
         assert len(clean_entries) >= _MINIMUM_CLEAN_FIXTURE_COUNT
 
     def test_phi_fixtures_have_positive_min_findings(self) -> None:
         manifest = _load_manifest()
-        for fixture_entry in _phi_fixture_entries(manifest):
+        for fixture_entry in _extract_phi_fixture_entries(manifest):
             assert fixture_entry[_MANIFEST_MIN_FINDINGS_KEY] >= 1, (
                 f"PHI fixture {fixture_entry[_MANIFEST_PATH_KEY]!r} must expect "
                 f"at least 1 finding (got {fixture_entry[_MANIFEST_MIN_FINDINGS_KEY]})"
@@ -102,7 +102,7 @@ class TestManifestStructure:
 
     def test_clean_fixtures_have_zero_max_findings(self) -> None:
         manifest = _load_manifest()
-        for fixture_entry in _clean_fixture_entries(manifest):
+        for fixture_entry in _extract_clean_fixture_entries(manifest):
             assert fixture_entry.get(_MANIFEST_MAX_FINDINGS_KEY) == 0, (
                 f"Clean fixture {fixture_entry[_MANIFEST_PATH_KEY]!r} must declare "
                 f"expected_max_findings: 0"
@@ -139,7 +139,9 @@ class TestFixtureFilesExist:
             for f in manifest[_MANIFEST_FIXTURES_KEY]
             if f[_MANIFEST_CATEGORY_KEY] == _CATEGORY_PHI
         }
-        actual_files = {f"phi/{p.name}" for p in _PHI_FIXTURE_DIR.glob("*.py")}
+        actual_files = {
+            f"phi/{p.name}" for p in _PHI_FIXTURE_DIR.glob("*.py") if not p.is_symlink()
+        }
         undeclared = actual_files - declared_paths
         assert not undeclared, (
             f"PHI fixture files exist on disk but are missing from manifest.json: {undeclared}"
@@ -152,7 +154,9 @@ class TestFixtureFilesExist:
             for f in manifest[_MANIFEST_FIXTURES_KEY]
             if f[_MANIFEST_CATEGORY_KEY] == _CATEGORY_CLEAN
         }
-        actual_files = {f"clean/{p.name}" for p in _CLEAN_FIXTURE_DIR.glob("*.py")}
+        actual_files = {
+            f"clean/{p.name}" for p in _CLEAN_FIXTURE_DIR.glob("*.py") if not p.is_symlink()
+        }
         undeclared = actual_files - declared_paths
         assert not undeclared, (
             f"Clean fixture files exist on disk but are missing from manifest.json: {undeclared}"
@@ -162,7 +166,11 @@ class TestFixtureFilesExist:
 class TestFixtureFileContent:
     @pytest.mark.parametrize(
         "fixture_path",
-        [pytest.param(f"phi/{p.name}", id=p.name) for p in sorted(_PHI_FIXTURE_DIR.glob("*.py"))],
+        [
+            pytest.param(f"phi/{p.name}", id=p.name)
+            for p in sorted(_PHI_FIXTURE_DIR.glob("*.py"))
+            if not p.is_symlink()
+        ],
     )
     def test_phi_fixture_is_non_empty(self, fixture_path: str) -> None:
         full_path = _FIXTURES_ROOT / fixture_path
@@ -173,6 +181,7 @@ class TestFixtureFileContent:
         [
             pytest.param(f"clean/{p.name}", id=p.name)
             for p in sorted(_CLEAN_FIXTURE_DIR.glob("*.py"))
+            if not p.is_symlink()
         ],
     )
     def test_clean_fixture_is_non_empty(self, fixture_path: str) -> None:
@@ -183,6 +192,8 @@ class TestFixtureFileContent:
         """Every PHI fixture must declare its expected finding count in a comment."""
         missing_comment: list[str] = []
         for phi_file in _PHI_FIXTURE_DIR.glob("*.py"):
+            if phi_file.is_symlink():
+                continue
             file_text = phi_file.read_text(encoding="utf-8")
             if "Expected findings:" not in file_text:
                 missing_comment.append(phi_file.name)
@@ -194,6 +205,8 @@ class TestFixtureFileContent:
         """Every clean fixture must declare zero expected findings in a comment."""
         missing_comment: list[str] = []
         for clean_file in _CLEAN_FIXTURE_DIR.glob("*.py"):
+            if clean_file.is_symlink():
+                continue
             file_text = clean_file.read_text(encoding="utf-8")
             if "Expected findings: 0" not in file_text:
                 missing_comment.append(clean_file.name)

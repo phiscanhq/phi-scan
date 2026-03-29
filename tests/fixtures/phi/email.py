@@ -7,5 +7,4 @@ contact_address = "jane.smith@hospital-test.org"
 notification_target = "patient.records@clinic.example"
 
 
-def send_discharge_summary(recipient="patient.jones@example.net"):
-    pass
+def send_discharge_summary(recipient="patient.jones@example.net"): ...
