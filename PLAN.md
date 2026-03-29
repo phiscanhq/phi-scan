@@ -480,10 +480,10 @@ polished, informative, and visually striking. Users should enjoy running this to
 
 ### 1E — Makefile & Installability
 
-- [ ] **1E.1** Makefile targets: `install`, `lint`, `typecheck`, `test`, `scan`, `help`
-- [ ] **1E.2** `make typecheck` runs `mypy phi_scan/` — zero errors required
-- [ ] **1E.3** Verify `pipx install .` works — `phi-scan --version` returns version
-- [ ] **1E.4** Verify `phi-scan --help` shows all commands with descriptions
+- [x] **1E.1** Makefile targets: `install`, `lint`, `typecheck`, `test`, `scan`, `help`
+- [x] **1E.2** `make typecheck` runs `mypy phi_scan/` — zero errors required
+- [x] **1E.3** Verify `pipx install .` works — `phi-scan --version` returns version
+- [x] **1E.4** Verify `phi-scan --help` shows all commands with descriptions
 
 ### 1F — Testing
 
