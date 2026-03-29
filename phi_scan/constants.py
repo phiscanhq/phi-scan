@@ -54,6 +54,7 @@ __all__ = [
     "VCF_GENETIC_DATA_COLUMN_HEADER",
     "ZIP_CODE_DIGIT_COUNT",
     "ZIP_PLUS4_SUFFIX_DIGIT_COUNT",
+    "COMBINATION_REPRESENTATIVE_COUNT",
     "MINIMUM_QUASI_IDENTIFIER_COUNT",
     "OutputFormat",
     "SWEENEY_REIDENTIFICATION_PERCENTAGE",
@@ -253,6 +254,13 @@ QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES: int = 50
 # combination finding. The literal 2 must never appear in detection logic —
 # always import and reference this constant.
 MINIMUM_QUASI_IDENTIFIER_COUNT: int = 2
+
+# Number of representative findings taken from each PHI category when building
+# a combination candidate group. Using one representative per category prevents
+# combinatorial explosion (N×M finding pairs) when multiple findings of the same
+# category are present. The literal 1 must never appear as a slice literal in
+# combination detection logic — always reference this constant.
+COMBINATION_REPRESENTATIVE_COUNT: int = 1
 
 # HIPAA §164.514(b)(2)(i) requires ages "over 90" to be generalized (reported
 # as "90 or older"). "Over 90" means strictly greater than 90, i.e., ages 91+.

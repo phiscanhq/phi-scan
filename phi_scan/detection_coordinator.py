@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 
 from phi_scan.constants import (
+    COMBINATION_REPRESENTATIVE_COUNT,
     CONFIDENCE_HIGH_FLOOR,
     CONFIDENCE_SCORE_MAXIMUM,
     HIPAA_AGE_RESTRICTION_THRESHOLD,
@@ -189,7 +190,8 @@ def evaluate_zip_dob_sex_combination(
         return []
     # Only the first representative of each category is used to avoid
     # combinatorial explosion when multiple geographic or date findings exist.
-    candidate_group = geographic[:1] + dates[:1]
+    representative_count = COMBINATION_REPRESENTATIVE_COUNT
+    candidate_group = geographic[:representative_count] + dates[:representative_count]
     if not _findings_within_proximity_window(candidate_group):
         return []
     return [
@@ -226,7 +228,8 @@ def evaluate_name_date_combination(
         return []
     # Only the first representative of each category is used to avoid
     # combinatorial explosion when multiple name or date findings exist.
-    candidate_group = names[:1] + dates[:1]
+    representative_count = COMBINATION_REPRESENTATIVE_COUNT
+    candidate_group = names[:representative_count] + dates[:representative_count]
     if not _findings_within_proximity_window(candidate_group):
         return []
     return [
@@ -261,7 +264,8 @@ def evaluate_age_geographic_combination(
     geographic = [f for f in findings if f.hipaa_category == PhiCategory.GEOGRAPHIC]
     if not age_findings or not geographic:
         return []
-    candidate_group = age_findings[:1] + geographic[:1]
+    representative_count = COMBINATION_REPRESENTATIVE_COUNT
+    candidate_group = age_findings[:representative_count] + geographic[:representative_count]
     if not _findings_within_proximity_window(candidate_group):
         return []
     return [

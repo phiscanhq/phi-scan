@@ -7,6 +7,7 @@ import json
 import logging
 import time
 import zipfile
+import zlib
 from collections import Counter
 from pathlib import Path
 from types import MappingProxyType
@@ -565,7 +566,21 @@ def _scan_archive_members(
         try:
             member_bytes = archive.read(member_name)
             member_content = member_bytes.decode(DEFAULT_TEXT_ENCODING, errors="replace")
-        except Exception as read_error:
+        except (  # noqa: PERF203 — per-member skip is intentional
+            zipfile.BadZipFile,
+            NotImplementedError,
+            RuntimeError,
+            OSError,
+            zlib.error,
+        ) as read_error:
+            # zipfile.ZipFile.read() raises: BadZipFile (structural corruption),
+            # NotImplementedError (unsupported compression method),
+            # RuntimeError (encrypted member without password),
+            # OSError (underlying I/O failure).
+            # zlib.error (decompression failure on deflate-compressed member).
+            # bytes.decode() with errors="replace" never raises UnicodeDecodeError.
+            # Each failed member is skipped — one unreadable member must never
+            # abort scanning of the remaining members in the archive.
             _logger.warning(
                 _ARCHIVE_MEMBER_READ_ERROR_WARNING.format(
                     member=member_name, path=archive_path, error=read_error
