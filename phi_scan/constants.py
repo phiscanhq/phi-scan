@@ -56,6 +56,7 @@ __all__ = [
     "ZIP_PLUS4_SUFFIX_DIGIT_COUNT",
     "MINIMUM_QUASI_IDENTIFIER_COUNT",
     "OutputFormat",
+    "SWEENEY_REIDENTIFICATION_PERCENTAGE",
     "PHI_SUGGESTIVE_VARIABLE_PATTERNS",
     "VARIABLE_CONTEXT_CONFIDENCE_BOOST",
     "PathspecMatchStyle",
@@ -258,6 +259,11 @@ MINIMUM_QUASI_IDENTIFIER_COUNT: int = 2
 # Logic code must use: age > HIPAA_AGE_RESTRICTION_THRESHOLD.
 # Never compare against the literal 90 in detection logic.
 HIPAA_AGE_RESTRICTION_THRESHOLD: int = 90
+
+# Sweeney (2000) demonstrated that ZIP code + date of birth + sex uniquely
+# re-identifies this percentage of the US population. Used in combination-
+# finding messages — never embed the literal 87 in detection or reporting code.
+SWEENEY_REIDENTIFICATION_PERCENTAGE: int = 87
 
 # ---------------------------------------------------------------------------
 # Variable-name contextual boosting (Phase 2E.4)
@@ -639,7 +645,7 @@ HIPAA_REMEDIATION_GUIDANCE: dict[PhiCategory, str] = {
     PhiCategory.QUASI_IDENTIFIER_COMBINATION: (
         "This finding indicates that multiple individually low-risk fields are present "
         "together in a configuration known to re-identify individuals (e.g., ZIP code + "
-        "date of birth + sex can re-identify 87%% of the US population). Remove or "
+        "date of birth + sex can re-identify 87% of the US population). Remove or "
         "generalize at least one of the quasi-identifiers: use only the first 3 digits of "
         "the ZIP code, replace the full date of birth with birth year only, or remove the "
         "combination entirely from test fixtures. Do not rely on any single field being "

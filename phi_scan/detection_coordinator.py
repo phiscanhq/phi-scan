@@ -27,6 +27,7 @@ from phi_scan.constants import (
     MINIMUM_QUASI_IDENTIFIER_COUNT,
     PHI_SUGGESTIVE_VARIABLE_PATTERNS,
     QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES,
+    SWEENEY_REIDENTIFICATION_PERCENTAGE,
     VARIABLE_CONTEXT_CONFIDENCE_BOOST,
     DetectionLayer,
     PhiCategory,
@@ -103,7 +104,7 @@ def detect_phi_in_text_content(
     all_findings.extend(detect_phi_with_regex(file_content, file_path))
     all_findings.extend(detect_phi_with_nlp(file_content, file_path))
     all_findings.extend(detect_phi_in_structured_content(file_content, file_path))
-    all_findings = apply_variable_name_confidence_boost(all_findings, file_content)
+    all_findings = _apply_variable_name_confidence_boost(all_findings, file_content)
     all_findings.extend(detect_quasi_identifier_combination(all_findings))
     return deduplicate_overlapping_findings(all_findings)
 
@@ -191,7 +192,8 @@ def evaluate_zip_dob_sex_combination(
             source_findings=candidate_group,
             combination_label="ZIP + DOB + SEX",
             note=(
-                "ZIP code + date of birth combination re-identifies 87%% of the "
+                f"ZIP code + date of birth combination re-identifies "
+                f"{SWEENEY_REIDENTIFICATION_PERCENTAGE}% of the "
                 "US population (Sweeney 2000). Generalize at least one field."
             ),
         )
@@ -314,7 +316,7 @@ def evaluate_colocated_identifier_combination(
 # ---------------------------------------------------------------------------
 
 
-def apply_variable_name_confidence_boost(
+def _apply_variable_name_confidence_boost(
     findings: list[ScanFinding],
     file_content: str,
 ) -> list[ScanFinding]:

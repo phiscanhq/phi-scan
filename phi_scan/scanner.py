@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -12,7 +13,7 @@ from types import MappingProxyType
 
 import pathspec
 
-from phi_scan.cache import FileCacheKey, compute_file_hash, get_cached_result, store_cached_result
+from phi_scan.cache import FileCacheKey, get_cached_result, store_cached_result
 from phi_scan.constants import (
     ARCHIVE_EXTENSIONS,
     ARCHIVE_SCANNABLE_EXTENSIONS,
@@ -26,7 +27,7 @@ from phi_scan.constants import (
     SeverityLevel,
 )
 from phi_scan.detection_coordinator import detect_phi_in_text_content
-from phi_scan.exceptions import PhiDetectionError, TraversalError
+from phi_scan.exceptions import FileReadError, PhiDetectionError, TraversalError
 from phi_scan.logging_config import get_logger
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 from phi_scan.suppression import is_finding_suppressed, load_suppressions
@@ -68,7 +69,11 @@ _ARCHIVE_BAD_FORMAT_WARNING: str = (
     "Skipping archive {path!r} — not a valid ZIP/JAR/WAR file: {error}"
 )
 _ARCHIVE_MEMBER_READ_ERROR_WARNING: str = "Skipping archive member {member!r} in {path!r}: {error}"
+_ARCHIVE_MEMBER_UNSAFE_PATH_DEBUG: str = (
+    "Skipping archive member {member!r} in {path!r} — unsafe path traversal sequence detected"
+)
 _CACHE_HIT_DEBUG: str = "Cache hit for {path!r} — returning {count} cached findings"
+_FILE_READ_OS_ERROR_MESSAGE: str = "Skipping {path!r} — cannot read file: {error}"
 
 # ---------------------------------------------------------------------------
 # Implementation constants — traversal and binary detection
@@ -85,6 +90,15 @@ _BINARY_READ_MODE: str = "rb"
 # Jupyter notebook (.ipynb) content extraction keys — used by
 # _extract_notebook_text to pull cell source and output text from
 # the JSON structure without embedding string literals in logic code.
+# Path component used in ZIP-slip attacks. Archive members whose path parts
+# include this component could traverse outside the intended directory if extracted.
+# ZipFile.read() is used (not extract()), but unsafe members are rejected early.
+_DOTDOT_PATH_COMPONENT: str = ".."
+
+# Hash algorithm used to compute the content hash for cache keys. Must match
+# the algorithm used by compute_file_hash in cache.py (sha256).
+_SHA256_ALGORITHM: str = "sha256"
+
 _NOTEBOOK_EXTENSION: str = ".ipynb"
 _NOTEBOOK_CELLS_KEY: str = "cells"
 _NOTEBOOK_CELL_SOURCE_KEY: str = "source"
@@ -254,20 +268,12 @@ def scan_file(file_path: Path, config: ScanConfig) -> list[ScanFinding]:
     """
     if file_path.suffix.lower() in ARCHIVE_EXTENSIONS:
         return _scan_archive_content(file_path, config)
-    file_content = _read_file_content(file_path)
-    if file_content is None:
+    try:
+        content_hash, file_content = _read_file_with_hash(file_path)
+    except FileReadError as read_error:
+        _logger.warning(str(read_error))
         return []
-    cache_key = FileCacheKey(file_path=file_path, content_hash=compute_file_hash(file_path))
-    cached = get_cached_result(cache_key)
-    if cached is not None:
-        _logger.debug(_CACHE_HIT_DEBUG.format(path=file_path, count=len(cached)))
-        return cached
-    scannable_content = _preprocess_content_for_scan(file_content, file_path)
-    raw_findings = detect_phi_in_text_content(scannable_content, file_path)
-    findings = _apply_suppression_filter(raw_findings, file_content)
-    findings = _apply_confidence_filter(findings, config.confidence_threshold)
-    store_cached_result(cache_key, findings)
-    return findings
+    return _execute_scan_with_cache(file_content, content_hash, file_path, config)
 
 
 def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
@@ -299,27 +305,95 @@ def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
 # ---------------------------------------------------------------------------
 
 
-def _read_file_content(file_path: Path) -> str | None:
-    """Read and decode file_path as UTF-8 text, returning None on failure.
+def _read_file_with_hash(file_path: Path) -> tuple[str, str]:
+    """Read file_path as raw bytes, compute its SHA-256 hash, and decode to text.
 
-    Decoding errors are treated as warnings rather than hard failures so that
-    a single malformed file cannot abort an entire scan.
+    Reads the file exactly once in binary mode so that the content hash is
+    computed from the same bytes that are decoded to text — eliminating the
+    TOCTOU race that would occur if hashing and reading were separate operations.
 
     Args:
         file_path: Path to the text file to read.
 
     Returns:
-        Decoded file content, or None if the file cannot be read or decoded.
+        Tuple of (content_hash, file_content) where content_hash is the
+        SHA-256 hex digest of the raw bytes and file_content is the decoded text.
+
+    Raises:
+        FileReadError: If the file cannot be read (OSError) or decoded as
+            DEFAULT_TEXT_ENCODING (UnicodeDecodeError).
     """
     try:
-        return file_path.read_text(encoding=DEFAULT_TEXT_ENCODING)
+        raw_bytes = file_path.read_bytes()
+    except OSError as os_error:
+        raise FileReadError(
+            _FILE_READ_OS_ERROR_MESSAGE.format(path=file_path, error=os_error)
+        ) from os_error
+    content_hash = hashlib.new(_SHA256_ALGORITHM, raw_bytes).hexdigest()
+    try:
+        file_content = raw_bytes.decode(DEFAULT_TEXT_ENCODING)
     except UnicodeDecodeError as decode_error:
-        _logger.warning(
+        raise FileReadError(
             _FILE_DECODE_ERROR_WARNING.format(
                 path=file_path, encoding=DEFAULT_TEXT_ENCODING, error=decode_error
             )
-        )
-        return None
+        ) from decode_error
+    return content_hash, file_content
+
+
+def _execute_scan_with_cache(
+    file_content: str,
+    content_hash: str,
+    file_path: Path,
+    config: ScanConfig,
+) -> list[ScanFinding]:
+    """Look up the cache, detect PHI on a miss, and apply post-scan filters.
+
+    Stores only raw (unfiltered) findings in the cache so that a threshold
+    change takes effect on the next run without invalidating the detection result.
+    Post-scan filters are applied both on cache hits and fresh detections so the
+    threshold is always evaluated against the current config.
+
+    Args:
+        file_content: Decoded text content of the file.
+        content_hash: SHA-256 hex digest of the raw file bytes.
+        file_path: Source path for attribution in findings.
+        config: Scan configuration controlling threshold and suppression.
+
+    Returns:
+        Post-filtered findings for the file.
+    """
+    cache_key = FileCacheKey(file_path=file_path, content_hash=content_hash)
+    cached_raw = get_cached_result(cache_key)
+    if cached_raw is not None:
+        _logger.debug(_CACHE_HIT_DEBUG.format(path=file_path, count=len(cached_raw)))
+        return _apply_post_scan_filters(cached_raw, file_content, config)
+    scannable_content = _preprocess_content_for_scan(file_content, file_path)
+    raw_findings = detect_phi_in_text_content(scannable_content, file_path)
+    store_cached_result(cache_key, raw_findings)
+    return _apply_post_scan_filters(raw_findings, file_content, config)
+
+
+def _apply_post_scan_filters(
+    raw_findings: list[ScanFinding],
+    file_content: str,
+    config: ScanConfig,
+) -> list[ScanFinding]:
+    """Apply suppression and confidence filters to raw detection findings.
+
+    Called after detection (fresh scan) and after cache retrieval so that
+    threshold or suppression changes take effect even when returning cached results.
+
+    Args:
+        raw_findings: Unfiltered findings from detect_phi_in_text_content.
+        file_content: Raw file content used to parse suppression directives.
+        config: Scan configuration controlling the confidence threshold.
+
+    Returns:
+        Findings that passed both suppression and threshold filtering.
+    """
+    filtered = _apply_suppression_filter(raw_findings, file_content)
+    return _apply_confidence_filter(filtered, config.confidence_threshold)
 
 
 def _preprocess_content_for_scan(file_content: str, file_path: Path) -> str:
@@ -435,6 +509,27 @@ def _scan_archive_content(
         return []
 
 
+def _is_safe_archive_member_path(member_name: str) -> bool:
+    """Return True if the archive member path does not contain path traversal sequences.
+
+    Rejects members whose name is an absolute path or whose path components
+    contain ``..`` — both are ZIP-slip attack vectors. Although this scanner
+    uses ZipFile.read() (not extract()), unsafe members are rejected early to
+    avoid constructing invalid virtual_path values that could mislead reporting.
+
+    Args:
+        member_name: The archive member name as returned by ZipFile.namelist().
+
+    Returns:
+        True if the path is safe to process, False if it contains a traversal
+        component or is an absolute path.
+    """
+    member_path = Path(member_name)
+    if member_path.is_absolute():
+        return False
+    return _DOTDOT_PATH_COMPONENT not in member_path.parts
+
+
 def _scan_archive_members(
     archive: zipfile.ZipFile,
     archive_path: Path,
@@ -452,6 +547,11 @@ def _scan_archive_members(
     """
     findings: list[ScanFinding] = []
     for member_name in archive.namelist():
+        if not _is_safe_archive_member_path(member_name):
+            _logger.debug(
+                _ARCHIVE_MEMBER_UNSAFE_PATH_DEBUG.format(member=member_name, path=archive_path)
+            )
+            continue
         if Path(member_name).suffix.lower() not in ARCHIVE_SCANNABLE_EXTENSIONS:
             continue
         try:
@@ -466,8 +566,7 @@ def _scan_archive_members(
             continue
         virtual_path = archive_path / member_name
         raw_findings = detect_phi_in_text_content(member_content, virtual_path)
-        member_findings = _apply_suppression_filter(raw_findings, member_content)
-        member_findings = _apply_confidence_filter(member_findings, config.confidence_threshold)
+        member_findings = _apply_post_scan_filters(raw_findings, member_content, config)
         findings.extend(member_findings)
     return findings
 

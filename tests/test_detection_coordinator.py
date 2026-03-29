@@ -19,7 +19,9 @@ from phi_scan.constants import (
     SeverityLevel,
 )
 from phi_scan.detection_coordinator import (
-    apply_variable_name_confidence_boost,
+    _apply_variable_name_confidence_boost as apply_variable_name_confidence_boost,
+)
+from phi_scan.detection_coordinator import (
     deduplicate_overlapping_findings,
     detect_phi_in_text_content,
     detect_quasi_identifier_combination,
