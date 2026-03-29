@@ -424,6 +424,23 @@ HIPAA requires audit logs to be retained for a minimum of 6 years (45 CFR §164.
 Audit log entries must be immutable — never DELETE or UPDATE rows. Corrections are new
 INSERT rows with a reference to the original entry.
 
+### Fixture Corpus Exception
+
+The rule "never store raw PHI values" applies to production code, audit logs, and runtime
+output. It does **not** apply to `tests/fixtures/phi/`. The fixture corpus is the sole
+exception, subject to all three of the following conditions being met simultaneously:
+
+1. The file lives under `tests/fixtures/phi/` — nowhere else.
+2. The directory is listed in `.phi-scanignore` so PhiScan never scans it as application
+   source code.
+3. The file begins with a comment block that includes `# Synthetic PHI fixture:` and
+   `# Expected findings:` — both are required by `test_fixtures.py` structural tests.
+
+All values in fixture files must be provably fictional: RFC 2606 domains, TEST-NET IP
+ranges (RFC 5737), NANP 555-0100–0199 phone numbers, fictional SSNs outside reserved
+ranges, CMS example-format MBIs, and VINs that intentionally fail their check digit.
+Do not copy real patient records into fixture files under any circumstances.
+
 ---
 
 ## CI/CD Platform Support — 7 First-Class Platforms

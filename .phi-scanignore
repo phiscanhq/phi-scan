@@ -85,3 +85,7 @@ target/
 .terraform/providers/
 .terraform/modules/
 .serverless/
+
+# Synthetic PHI fixture corpus — contains intentional PHI-like patterns for
+# detection testing. Excluding prevents false positives when scanning this repo.
+tests/fixtures/phi/

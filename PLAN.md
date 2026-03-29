@@ -587,6 +587,24 @@ This is the CI for the phiscan project itself, not the CI templates for users (P
 
 ---
 
+### Phase 1I — PHI Detection Fixture Corpus (pre-Phase-2 prerequisite)
+
+**Goal:** Build a deterministic ground-truth benchmark corpus before writing any
+detection code. Every detector added in Phase 2 must be validated against this
+corpus — no detector ships without a fixture proving it fires on a known sample.
+
+- [x] **1I.1** Create `tests/fixtures/phi/` — one synthetic PHI fixture file per HIPAA category
+- [x] **1I.2** Create `tests/fixtures/clean/` — benign files that must never produce findings
+- [x] **1I.3** Create `tests/fixtures/manifest.json` — ground-truth schema: entity types,
+       minimum/maximum findings expected per file
+- [x] **1I.4** Add `tests/fixtures/phi/` to `.phi-scanignore` — prevent false positives when
+       scanning the repo itself
+- [x] **1I.5** Write `tests/test_fixtures.py` — structural tests (manifest valid, all files
+       exist, clean fixtures produce zero findings); detection assertion tests are
+       added per-detector in Phase 2
+
+---
+
 ## Phase 2: Detection Engine (Weeks 5–7)
 
 **Goal:** Wire in the actual PHI/PII detection across all four layers. The CLI shell

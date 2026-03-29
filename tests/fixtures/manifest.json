@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12",
+  "description": "Ground-truth fixture manifest for PhiScan detection tests. Each entry declares the fixture file path (relative to tests/fixtures/), the expected minimum finding count, and the primary entity types that must be detected. Clean fixtures must produce exactly zero findings.",
+  "version": "1.0.0",
+  "fixtures": [
+    {
+      "path": "phi/ssn.py",
+      "category": "phi",
+      "description": "Social Security Number variants — formatted, unformatted, embedded in strings",
+      "expected_min_findings": 4,
+      "primary_entity_types": ["SSN"],
+      "hipaa_identifiers": ["SSN"],
+      "notes": "Reserved-range SSNs in comments must not be counted."
+    },
+    {
+      "path": "phi/email.py",
+      "category": "phi",
+      "description": "Email addresses using RFC 2606 reserved example domains",
+      "expected_min_findings": 3,
+      "primary_entity_types": ["EMAIL_ADDRESS"],
+      "hipaa_identifiers": ["EMAIL_ADDRESS"],
+      "notes": "All addresses use example.com / example.org per RFC 2606."
+    },
+    {
+      "path": "phi/phone.py",
+      "category": "phi",
+      "description": "Phone numbers in multiple formats using 555-xxxx reserved range",
+      "expected_min_findings": 3,
+      "primary_entity_types": ["PHONE_NUMBER"],
+      "hipaa_identifiers": ["PHONE_NUMBER"],
+      "notes": "555-0100 through 555-0199 are reserved for fictional use."
+    },
+    {
+      "path": "phi/dates.py",
+      "category": "phi",
+      "description": "Date-of-birth and treatment dates in ISO, US, and long-form formats",
+      "expected_min_findings": 3,
+      "primary_entity_types": ["DATE"],
+      "hipaa_identifiers": ["DATE"],
+      "notes": "Year-only values are NOT PHI under HIPAA Safe Harbor."
+    },
+    {
+      "path": "phi/names.py",
+      "category": "phi",
+      "description": "Patient and provider names — first+last, with and without titles",
+      "expected_min_findings": 3,
+      "primary_entity_types": ["PERSON"],
+      "hipaa_identifiers": ["NAME"],
+      "notes": "NLP layer required for reliable name detection."
+    },
+    {
+      "path": "phi/medical_ids.py",
+      "category": "phi",
+      "description": "Medical record numbers, health plan numbers, and account numbers",
+      "expected_min_findings": 3,
+      "primary_entity_types": ["MEDICAL_RECORD", "HEALTH_PLAN_NUMBER", "ACCOUNT_NUMBER"],
+      "hipaa_identifiers": ["MRN", "HEALTH_PLAN_NUMBER", "ACCOUNT_NUMBER"],
+      "notes": "Pattern prefixes (MRN-, HP-, ACCT-) are the primary discriminator."
+    },
+    {
+      "path": "phi/geographic.py",
+      "category": "phi",
+      "description": "Street addresses, ZIP codes, and city/state combinations",
+      "expected_min_findings": 2,
+      "primary_entity_types": ["LOCATION", "ZIP_CODE"],
+      "hipaa_identifiers": ["GEOGRAPHIC_DATA"],
+      "notes": "Three-digit ZIP prefix alone is only PHI in patient-geographic context."
+    },
+    {
+      "path": "phi/network.py",
+      "category": "phi",
+      "description": "IP addresses (TEST-NET-3) and URLs (RFC 2606 example.com)",
+      "expected_min_findings": 2,
+      "primary_entity_types": ["IP_ADDRESS", "URL"],
+      "hipaa_identifiers": ["IP_ADDRESS", "URL"],
+      "notes": "Uses 198.51.100.0/24 (TEST-NET-3, RFC 5737) and example.com."
+    },
+    {
+      "path": "phi/device_vehicle.py",
+      "category": "phi",
+      "description": "Vehicle Identification Numbers (VIN) and Unique Device Identifiers (UDI)",
+      "expected_min_findings": 2,
+      "primary_entity_types": ["DEVICE_ID", "VIN"],
+      "hipaa_identifiers": ["DEVICE_IDENTIFIER", "VEHICLE_IDENTIFIER"],
+      "notes": "VIN intentionally fails check-digit to avoid real-world collision."
+    },
+    {
+      "path": "phi/credentials.py",
+      "category": "phi",
+      "description": "NPI numbers, state medical/nursing licenses",
+      "expected_min_findings": 3,
+      "primary_entity_types": ["LICENSE_NUMBER", "NPI"],
+      "hipaa_identifiers": ["CERTIFICATE_LICENSE_NUMBER"],
+      "notes": "NPI is fictional and fails Luhn check intentionally."
+    },
+    {
+      "path": "phi/medicare.py",
+      "category": "phi",
+      "description": "Medicare Beneficiary Identifier (MBI), HICN, and DEA number",
+      "expected_min_findings": 3,
+      "primary_entity_types": ["MBI", "HICN", "DEA_NUMBER"],
+      "hipaa_identifiers": ["MBI", "HICN", "DEA_NUMBER"],
+      "notes": "MBI uses CMS example format. HICN is SSN-based (lower confidence)."
+    },
+    {
+      "path": "phi/genetic.py",
+      "category": "phi",
+      "description": "Genetic identifiers — dbSNP rsIDs, VCF variants, gene panel names",
+      "expected_min_findings": 3,
+      "primary_entity_types": ["GENETIC_ID"],
+      "hipaa_identifiers": ["GENETIC_IDENTIFIER"],
+      "notes": "Covered under HIPAA Safe Harbor + GINA + GDPR Art. 9."
+    },
+    {
+      "path": "phi/quasi_identifiers.py",
+      "category": "phi",
+      "description": "ZIP + DOB + sex quasi-identifier combination — HIGH severity",
+      "expected_min_findings": 1,
+      "primary_entity_types": ["QUASI_IDENTIFIER_COMBINATION"],
+      "hipaa_identifiers": ["GEOGRAPHIC_DATA", "DATE", "QUASI_IDENTIFIER"],
+      "notes": "Combination achieves ~87% unique identification (Sweeney 2000). Must be HIGH severity regardless of individual scores."
+    },
+    {
+      "path": "clean/no_phi.py",
+      "category": "clean",
+      "description": "Pure algorithm code — math functions and named constants with no PHI",
+      "expected_min_findings": 0,
+      "expected_max_findings": 0,
+      "primary_entity_types": [],
+      "hipaa_identifiers": [],
+      "notes": "Any finding here is a false positive. Must produce zero findings."
+    },
+    {
+      "path": "clean/ssn_reserved.py",
+      "category": "clean",
+      "description": "SSN reserved ranges (000, 666, 900-999, mid-00, serial-0000) — must not be flagged",
+      "expected_min_findings": 0,
+      "expected_max_findings": 0,
+      "primary_entity_types": [],
+      "hipaa_identifiers": [],
+      "notes": "Detectors must skip these ranges. Any finding is a false positive."
+    },
+    {
+      "path": "clean/version_numbers.py",
+      "category": "clean",
+      "description": "Version strings, port numbers, HTTP codes — numeric patterns that must not match SSN",
+      "expected_min_findings": 0,
+      "expected_max_findings": 0,
+      "primary_entity_types": [],
+      "hipaa_identifiers": [],
+      "notes": "Tests detector precision. Any finding is a false positive."
+    }
+  ]
+}
