@@ -87,9 +87,6 @@ _IGNORE_COMMENT_PREFIX: str = "#"
 _NULL_BYTE: bytes = b"\x00"
 _BINARY_READ_MODE: str = "rb"
 
-# Jupyter notebook (.ipynb) content extraction keys — used by
-# _extract_notebook_text to pull cell source and output text from
-# the JSON structure without embedding string literals in logic code.
 # Path component used in ZIP-slip attacks. Archive members whose path parts
 # include this component could traverse outside the intended directory if extracted.
 # ZipFile.read() is used (not extract()), but unsafe members are rejected early.
@@ -99,6 +96,9 @@ _DOTDOT_PATH_COMPONENT: str = ".."
 # the algorithm used by compute_file_hash in cache.py (sha256).
 _SHA256_ALGORITHM: str = "sha256"
 
+# Jupyter notebook (.ipynb) content extraction keys — used by
+# _extract_notebook_text to pull cell source and output text from
+# the JSON structure without embedding string literals in logic code.
 _NOTEBOOK_EXTENSION: str = ".ipynb"
 _NOTEBOOK_CELLS_KEY: str = "cells"
 _NOTEBOOK_CELL_SOURCE_KEY: str = "source"

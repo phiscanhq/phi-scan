@@ -32,6 +32,7 @@ from phi_scan.constants import (
     DetectionLayer,
     PhiCategory,
 )
+from phi_scan.exceptions import PhiDetectionError
 from phi_scan.fhir_recognizer import detect_phi_in_structured_content
 from phi_scan.hashing import compute_value_hash, severity_from_confidence
 from phi_scan.models import ScanFinding
@@ -100,13 +101,13 @@ def detect_phi_in_text_content(
         Deduplicated list of ScanFinding objects, sorted by file_path and
         line_number. Empty list when no PHI is found.
     """
-    all_findings: list[ScanFinding] = []
-    all_findings.extend(detect_phi_with_regex(file_content, file_path))
-    all_findings.extend(detect_phi_with_nlp(file_content, file_path))
-    all_findings.extend(detect_phi_in_structured_content(file_content, file_path))
-    all_findings = _apply_variable_name_confidence_boost(all_findings, file_content)
-    all_findings.extend(detect_quasi_identifier_combination(all_findings))
-    return deduplicate_overlapping_findings(all_findings)
+    layer_findings: list[ScanFinding] = []
+    layer_findings.extend(detect_phi_with_regex(file_content, file_path))
+    layer_findings.extend(detect_phi_with_nlp(file_content, file_path))
+    layer_findings.extend(detect_phi_in_structured_content(file_content, file_path))
+    boosted_findings = _apply_variable_name_confidence_boost(layer_findings, file_content)
+    boosted_findings.extend(detect_quasi_identifier_combination(boosted_findings))
+    return deduplicate_overlapping_findings(boosted_findings)
 
 
 def deduplicate_overlapping_findings(
@@ -184,6 +185,8 @@ def evaluate_zip_dob_sex_combination(
     dates = [f for f in findings if f.hipaa_category == PhiCategory.DATE]
     if not geographic or not dates:
         return []
+    # Only the first representative of each category is used to avoid
+    # combinatorial explosion when multiple geographic or date findings exist.
     candidate_group = geographic[:1] + dates[:1]
     if not _findings_within_proximity_window(candidate_group):
         return []
@@ -219,6 +222,8 @@ def evaluate_name_date_combination(
     dates = [f for f in findings if f.hipaa_category == PhiCategory.DATE]
     if not names or not dates:
         return []
+    # Only the first representative of each category is used to avoid
+    # combinatorial explosion when multiple name or date findings exist.
     candidate_group = names[:1] + dates[:1]
     if not _findings_within_proximity_window(candidate_group):
         return []
@@ -292,7 +297,7 @@ def evaluate_colocated_identifier_combination(
     ]
     if len(base_findings) < MINIMUM_QUASI_IDENTIFIER_COUNT:
         return []
-    windowed = _find_densest_window(base_findings)
+    windowed = _find_first_qualifying_window(base_findings)
     if windowed is None:
         return []
     distinct_categories = {f.hipaa_category for f in windowed}
@@ -412,15 +417,16 @@ def _findings_within_proximity_window(findings: list[ScanFinding]) -> bool:
     return max(line_numbers) - min(line_numbers) <= QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES
 
 
-def _find_densest_window(
+def _find_first_qualifying_window(
     findings: list[ScanFinding],
 ) -> list[ScanFinding] | None:
-    """Find the first window of findings with the most distinct PHI categories.
+    """Return the first sliding window with enough distinct PHI categories to qualify.
 
     Slides a QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES-line window over the
-    findings sorted by line_number. Returns the set of findings in the first
-    window that contains MINIMUM_QUASI_IDENTIFIER_COUNT or more distinct
-    hipaa_category values, or None if no qualifying window exists.
+    findings sorted by line_number. Returns the findings in the first window
+    that contains MINIMUM_QUASI_IDENTIFIER_COUNT or more distinct
+    hipaa_category values, or None if no qualifying window exists. The first
+    qualifying window is returned, not necessarily the densest one.
 
     Args:
         findings: Base layer findings (combination findings excluded).
@@ -457,6 +463,10 @@ def _build_combination_finding(
     Returns:
         An immutable ScanFinding for this combination.
     """
+    if not source_findings:
+        raise PhiDetectionError(
+            "_build_combination_finding requires at least one source finding; received empty list"
+        )
     confidence = CONFIDENCE_HIGH_FLOOR
     file_path = source_findings[0].file_path
     line_number = min(f.line_number for f in source_findings)
