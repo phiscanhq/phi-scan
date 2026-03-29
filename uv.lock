@@ -635,6 +635,15 @@ wheels = [
 ]
 
 [[package]]
+name = "hl7"
+version = "0.4.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/3a/67e8f7b695423eecbc38a1e8439bbb69fb234945dd3527fbdfdcec869cd0/hl7-0.4.5.tar.gz", hash = "sha256:b6eb97499ebe236e00c3009d43e6b0f040de002df12a292fa5efbd2ce2a8a838", size = 48796, upload-time = "2022-03-31T11:30:18.604Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/2b/024977b044ca3aa79153e0a4ff13cc465064ccf9cf7b60df46e6eab8340e/hl7-0.4.5-py2.py3-none-any.whl", hash = "sha256:f46bf7c165801fd40e8fcc9f2be41c5794415039adc97646aee7ee6b20ce8ccd", size = 25495, upload-time = "2022-03-31T11:30:16.696Z" },
+]
+
+[[package]]
 name = "httpcore"
 version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -1167,11 +1176,15 @@ fhir = [
 full = [
     { name = "fhir-resources" },
     { name = "fpdf2" },
+    { name = "hl7" },
     { name = "jinja2" },
     { name = "matplotlib" },
     { name = "presidio-analyzer" },
     { name = "presidio-anonymizer" },
     { name = "spacy" },
+]
+hl7 = [
+    { name = "hl7" },
 ]
 nlp = [
     { name = "presidio-analyzer" },
@@ -1198,11 +1211,13 @@ dev = [
 requires-dist = [
     { name = "fhir-resources", marker = "extra == 'fhir'", specifier = ">=7.0" },
     { name = "fpdf2", marker = "extra == 'reports'", specifier = ">=2.7" },
+    { name = "hl7", marker = "extra == 'hl7'", specifier = ">=0.4" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jinja2", marker = "extra == 'reports'", specifier = ">=3.1" },
     { name = "matplotlib", marker = "extra == 'reports'", specifier = ">=3.8" },
     { name = "pathspec", specifier = ">=0.12" },
     { name = "phi-scan", extras = ["fhir"], marker = "extra == 'full'" },
+    { name = "phi-scan", extras = ["hl7"], marker = "extra == 'full'" },
     { name = "phi-scan", extras = ["nlp"], marker = "extra == 'full'" },
     { name = "phi-scan", extras = ["reports"], marker = "extra == 'full'" },
     { name = "presidio-analyzer", marker = "extra == 'nlp'", specifier = ">=2.0" },
@@ -1215,7 +1230,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.24" },
     { name = "watchdog", specifier = ">=4.0" },
 ]
-provides-extras = ["nlp", "fhir", "reports", "full"]
+provides-extras = ["nlp", "fhir", "hl7", "reports", "full"]
 
 [package.metadata.requires-dev]
 dev = [

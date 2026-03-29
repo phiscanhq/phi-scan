@@ -790,10 +790,10 @@ a plugin because it appears in production healthcare codebases at least as often
 
 #### 2D-FHIR — FHIR R4 Schema Awareness
 
-- [ ] **2D.1** Create `fhir_recognizer.py` — custom FHIR R4 pattern detector; its detection logic
+- [x] **2D.1** Create `fhir_recognizer.py` — custom FHIR R4 pattern detector; its detection logic
   is called from `detect_phi_in_structured_content(file_content: str, file_path: Path) -> list[ScanFinding]`,
   the Layer 3 delegated function that consolidates both FHIR and HL7 detection
-- [ ] **2D.2** Detect PHI-bearing FHIR field names in JSON/XML:
+- [x] **2D.2** Detect PHI-bearing FHIR field names in JSON/XML:
   - Patient: name, birthDate, address, telecom, identifier, photo, deceasedDateTime
   - Practitioner: name, identifier (NPI, DEA), telecom, address
   - RelatedPerson: name, birthDate, address, telecom, relationship
@@ -806,10 +806,10 @@ a plugin because it appears in production healthcare codebases at least as often
   - Procedure: subject, performer, note
   - AllergyIntolerance: patient, asserter, note
   - ImagingStudy: subject, referrer (DICOM metadata path — flag field presence, not binary)
-- [ ] **2D.3** Flag FHIR fields only when they contain non-synthetic/non-null values
-- [ ] **2D.4** Wire FHIR detection into `detect_phi_in_structured_content()` — the Layer 3
+- [x] **2D.3** Flag FHIR fields only when they contain non-synthetic/non-null values
+- [x] **2D.4** Wire FHIR detection into `detect_phi_in_structured_content()` — the Layer 3
   delegated function attempts FHIR structure detection on content that does not match HL7 format
-- [ ] **2D.5** Detect FHIR Bundle resources — scan all `entry.resource` objects within a Bundle
+- [x] **2D.5** Detect FHIR Bundle resources — scan all `entry.resource` objects within a Bundle
   regardless of resource type; Bundles are the transport envelope for all FHIR operations
 
 #### 2D-HL7 — HL7 v2 Message Segment Scanning
@@ -818,7 +818,7 @@ HL7 v2 is a pipe-delimited message format used in ADT feeds, lab orders, pharmac
 and billing transactions. Nearly every hospital system generates HL7 v2 today. Files ending
 in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common sources of PHI.
 
-- [ ] **2D.6** Add `Hl7ScanContext` dataclass to `models.py` before implementing any HL7
+- [x] **2D.6** Add `Hl7ScanContext` dataclass to `models.py` before implementing any HL7
   scanning functions. This dataclass is the pre-approved container for HL7 attribution
   context — it exists so `detect_phi_in_hl7_segment()` can accept attribution metadata
   as a single third argument without violating the 3-argument limit at the call site:
@@ -834,9 +834,9 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   `detect_phi_in_hl7_segment(segment, segment_field_categories, context: Hl7ScanContext)`
   — still 3 arguments and compliant. A fourth argument must never be added; add a field
   to `Hl7ScanContext` instead.
-- [ ] **2D.7** Detect HL7 v2 message files — identify by MSH segment header (`MSH|^~\&|`)
+- [x] **2D.7** Detect HL7 v2 message files — identify by MSH segment header (`MSH|^~\&|`)
   in file content regardless of file extension (.hl7, .msg, .txt, .dat)
-- [ ] **2D.8** Implement HL7 v2 scanning functions in `scanner.py` (or a dedicated
+- [x] **2D.8** Implement HL7 v2 scanning functions in `scanner.py` (or a dedicated
   `hl7_scanner.py` module). All names must comply with the project naming standards — the
   plan proposes compliant names but does not grant exemptions from the standards:
   - `is_hl7_message_format(file_content: str) -> bool` — returns True when content
@@ -881,13 +881,13 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   - **DG1** (Diagnosis) — DG1.3 (diagnosis code + description in patient context)
   - **GT1** (Guarantor) — GT1.3 (guarantor name), GT1.5 (address), GT1.6 (phone)
   - **AL1** (Allergy) — AL1.3 (allergy code/description in patient context)
-- [ ] **2D.9** Map HL7 v2 segment fields to HIPAA Safe Harbor categories:
+- [x] **2D.9** Map HL7 v2 segment fields to HIPAA Safe Harbor categories:
   - PID.5 → PhiCategory.NAME; PID.7 → PhiCategory.DATE; PID.19 → PhiCategory.SSN
   - PID.11 → PhiCategory.GEOGRAPHIC; PID.13/14 → PhiCategory.PHONE; etc.
-- [ ] **2D.10** Wire HL7 v2 detection into `detect_phi_in_structured_content()` — the Layer 3
+- [x] **2D.10** Wire HL7 v2 detection into `detect_phi_in_structured_content()` — the Layer 3
   delegated function calls `is_hl7_message_format()` internally to decide whether to parse
   as HL7; if True, it dispatches to the HL7 segment scanner; otherwise it attempts FHIR detection
-- [ ] **2D.11** Graceful degradation: if `hl7` library not installed, raise
+- [x] **2D.11** Graceful degradation: if `hl7` library not installed, raise
   `MissingOptionalDependencyError` at the point of first use inside the function that
   needs the library. The import must be lazy (inside the function body), not at module
   level — a module-level `ImportError` causes the entire `hl7_scanner` module to fail
@@ -909,7 +909,7 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   `MissingOptionalDependencyError` specifically, logs a structured WARNING
   ("HL7 v2 scanning disabled — install phi-scan[hl7] to enable"), and continues with
   other detection layers. Never catch bare `Exception`; never use `except ImportError: pass`.
-- [ ] **2D.12** Add `hl7` to `[project.optional-dependencies]` in `pyproject.toml`:
+- [x] **2D.12** Add `hl7` to `[project.optional-dependencies]` in `pyproject.toml`:
   `hl7 = ["hl7>=0.4"]`; update `full` extra to include it
 
 ### 2E — Detection Integration

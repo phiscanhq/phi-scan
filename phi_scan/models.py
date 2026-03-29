@@ -26,6 +26,7 @@ from phi_scan.constants import (
 from phi_scan.exceptions import ConfigurationError, PhiDetectionError
 
 __all__ = [
+    "Hl7ScanContext",
     "ScanConfig",
     "ScanFinding",
     "ScanResult",
@@ -464,3 +465,22 @@ _FIELD_VALIDATORS: dict[str, Callable[[object], None]] = {
     _ConfigField.OUTPUT_FORMAT: _validate_output_format,
     _ConfigField.DATABASE_PATH: _validate_database_path,
 }
+
+
+@dataclass(frozen=True)
+class Hl7ScanContext:
+    """Immutable attribution context for HL7 v2 segment scanning.
+
+    Passed as the third argument to ``detect_phi_in_hl7_segment`` so that the
+    function can construct complete ``ScanFinding`` objects without exceeding the
+    3-argument limit. Any additional attribution fields required in future phases
+    must be added here rather than as a fourth function argument.
+
+    Args:
+        file_path: Source file the HL7 message was read from.
+        segment_index: Zero-based position of this segment within the HL7 message.
+            Used to compute the 1-indexed line number stored in ScanFinding.
+    """
+
+    file_path: Path
+    segment_index: int
