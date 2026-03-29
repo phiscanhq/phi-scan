@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+import zipfile
 from collections import Counter
 from pathlib import Path
 from types import MappingProxyType
 
 import pathspec
 
+from phi_scan.cache import FileCacheKey, compute_file_hash, get_cached_result, store_cached_result
 from phi_scan.constants import (
+    ARCHIVE_EXTENSIONS,
+    ARCHIVE_SCANNABLE_EXTENSIONS,
     BINARY_CHECK_BYTE_COUNT,
     BYTES_PER_MEGABYTE,
     DEFAULT_TEXT_ENCODING,
@@ -20,9 +25,11 @@ from phi_scan.constants import (
     RiskLevel,
     SeverityLevel,
 )
+from phi_scan.detection_coordinator import detect_phi_in_text_content
 from phi_scan.exceptions import PhiDetectionError, TraversalError
 from phi_scan.logging_config import get_logger
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
+from phi_scan.suppression import is_finding_suppressed, load_suppressions
 
 __all__ = [
     "collect_scan_targets",
@@ -51,14 +58,17 @@ _ROOT_PATH_IS_SYMLINK_ERROR: str = (
     "Scan root {path!r} is a symlink — symlink traversal is prohibited"
 )
 _IGNORE_FILE_MISSING_INFO: str = "Ignore file {path!r} not found — no patterns loaded"
-# Phase 1B stub — emitted once per call to scan_file to prevent silent integration
-# failures if the placeholder is accidentally left in place during Phase 2 wiring.
-_SCAN_FILE_STUB_WARNING: str = (
-    "scan_file is a Phase 1B stub — no PHI detection performed on {path!r}"
-)
 _UNMAPPED_SEVERITY_LEVELS_ERROR: str = (
     "No RiskLevel mapping for severity levels {levels!r} — update _derive_risk_level"
 )
+_FILE_DECODE_ERROR_WARNING: str = (
+    "Skipping {path!r} — could not decode content as {encoding!r}: {error}"
+)
+_ARCHIVE_BAD_FORMAT_WARNING: str = (
+    "Skipping archive {path!r} — not a valid ZIP/JAR/WAR file: {error}"
+)
+_ARCHIVE_MEMBER_READ_ERROR_WARNING: str = "Skipping archive member {member!r} in {path!r}: {error}"
+_CACHE_HIT_DEBUG: str = "Cache hit for {path!r} — returning {count} cached findings"
 
 # ---------------------------------------------------------------------------
 # Implementation constants — traversal and binary detection
@@ -71,6 +81,17 @@ _IGNORE_COMMENT_PREFIX: str = "#"
 # Used by is_binary_file — never embed these literals in logic code.
 _NULL_BYTE: bytes = b"\x00"
 _BINARY_READ_MODE: str = "rb"
+
+# Jupyter notebook (.ipynb) content extraction keys — used by
+# _extract_notebook_text to pull cell source and output text from
+# the JSON structure without embedding string literals in logic code.
+_NOTEBOOK_EXTENSION: str = ".ipynb"
+_NOTEBOOK_CELLS_KEY: str = "cells"
+_NOTEBOOK_CELL_SOURCE_KEY: str = "source"
+_NOTEBOOK_CELL_OUTPUTS_KEY: str = "outputs"
+_NOTEBOOK_OUTPUT_TEXT_KEY: str = "text"
+_NOTEBOOK_CELL_JOIN_SEPARATOR: str = ""
+_NOTEBOOK_SECTION_SEPARATOR: str = "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -139,8 +160,14 @@ def is_binary_file(file_path: Path) -> bool:
             collect_scan_targets have an outer OSError handler; direct callers
             must handle this themselves.
     """
-    if file_path.suffix.lower() in KNOWN_BINARY_EXTENSIONS:
+    extension = file_path.suffix.lower()
+    if extension in KNOWN_BINARY_EXTENSIONS:
         return True
+    # Archive files contain binary data (ZIP magic bytes include null bytes) but
+    # are handled by the archive scanner, not skipped as binary. Returning False
+    # here allows collect_scan_targets to pass archives to scan_file.
+    if extension in ARCHIVE_EXTENSIONS:
+        return False
     # open(_BINARY_READ_MODE).read(N) reads only the first N bytes — read_bytes()
     # would load the entire file before slicing, wasting memory on files near the limit.
     with file_path.open(_BINARY_READ_MODE) as binary_reader:
@@ -212,19 +239,35 @@ def collect_scan_targets(
 def scan_file(file_path: Path, config: ScanConfig) -> list[ScanFinding]:
     """Scan a single file for PHI/PII findings.
 
-    Phase 1B placeholder — detection layers are implemented in Phase 2.
-    Always returns an empty list. A WARNING is logged on every call so that
-    the stub cannot silently survive into Phase 2 wiring without detection.
+    Dispatches to the archive inspector for .jar/.war/.zip files; reads and
+    decodes text for all other file types. Applies the scan cache, all four
+    detection layers via ``detect_phi_in_text_content``, inline suppression
+    directives, and confidence-threshold filtering before returning.
 
     Args:
         file_path: Path to the file to scan.
-        config: Scan configuration (reserved for Phase 2 detection logic).
+        config: Scan configuration controlling the confidence threshold.
 
     Returns:
-        An empty list. Detection logic is added in Phase 2B.
+        List of ScanFinding objects that passed suppression and threshold
+        filtering. Empty list when no reportable PHI is found.
     """
-    _logger.warning(_SCAN_FILE_STUB_WARNING.format(path=file_path))
-    return []
+    if file_path.suffix.lower() in ARCHIVE_EXTENSIONS:
+        return _scan_archive_content(file_path, config)
+    file_content = _read_file_content(file_path)
+    if file_content is None:
+        return []
+    cache_key = FileCacheKey(file_path=file_path, content_hash=compute_file_hash(file_path))
+    cached = get_cached_result(cache_key)
+    if cached is not None:
+        _logger.debug(_CACHE_HIT_DEBUG.format(path=file_path, count=len(cached)))
+        return cached
+    scannable_content = _preprocess_content_for_scan(file_content, file_path)
+    raw_findings = detect_phi_in_text_content(scannable_content, file_path)
+    findings = _apply_suppression_filter(raw_findings, file_content)
+    findings = _apply_confidence_filter(findings, config.confidence_threshold)
+    store_cached_result(cache_key, findings)
+    return findings
 
 
 def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
@@ -254,6 +297,179 @@ def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
 # ---------------------------------------------------------------------------
 # Private helpers — scan execution
 # ---------------------------------------------------------------------------
+
+
+def _read_file_content(file_path: Path) -> str | None:
+    """Read and decode file_path as UTF-8 text, returning None on failure.
+
+    Decoding errors are treated as warnings rather than hard failures so that
+    a single malformed file cannot abort an entire scan.
+
+    Args:
+        file_path: Path to the text file to read.
+
+    Returns:
+        Decoded file content, or None if the file cannot be read or decoded.
+    """
+    try:
+        return file_path.read_text(encoding=DEFAULT_TEXT_ENCODING)
+    except UnicodeDecodeError as decode_error:
+        _logger.warning(
+            _FILE_DECODE_ERROR_WARNING.format(
+                path=file_path, encoding=DEFAULT_TEXT_ENCODING, error=decode_error
+            )
+        )
+        return None
+
+
+def _preprocess_content_for_scan(file_content: str, file_path: Path) -> str:
+    """Return the content to pass to detect_phi_in_text_content.
+
+    For Jupyter notebooks (.ipynb), extracts cell source and output text so
+    the detection layers operate on executable content rather than JSON
+    structure. All other file types are returned unchanged.
+
+    Args:
+        file_content: Raw decoded file content.
+        file_path: Path used only to determine the preprocessing strategy.
+
+    Returns:
+        Text content ready for PHI scanning.
+    """
+    if file_path.suffix.lower() == _NOTEBOOK_EXTENSION:
+        return _extract_notebook_text(file_content)
+    return file_content
+
+
+def _extract_notebook_text(notebook_content: str) -> str:
+    """Extract cell source and output text from a Jupyter notebook JSON string.
+
+    Joins multi-line source lists into single strings and concatenates all
+    cells into a flat text block. Cells that cannot be parsed are skipped.
+    If the top-level JSON is malformed, the raw content is returned so the
+    detection layers can still attempt a scan.
+
+    Args:
+        notebook_content: Raw JSON content of a .ipynb file.
+
+    Returns:
+        Flat text containing all scannable notebook content.
+    """
+    try:
+        notebook = json.loads(notebook_content)
+    except json.JSONDecodeError:
+        return notebook_content
+    text_sections: list[str] = []
+    for cell in notebook.get(_NOTEBOOK_CELLS_KEY, []):
+        source = cell.get(_NOTEBOOK_CELL_SOURCE_KEY, [])
+        if isinstance(source, list):
+            text_sections.append(_NOTEBOOK_CELL_JOIN_SEPARATOR.join(source))
+        elif isinstance(source, str):
+            text_sections.append(source)
+        for output in cell.get(_NOTEBOOK_CELL_OUTPUTS_KEY, []):
+            output_text = output.get(_NOTEBOOK_OUTPUT_TEXT_KEY, [])
+            if isinstance(output_text, list):
+                text_sections.append(_NOTEBOOK_CELL_JOIN_SEPARATOR.join(output_text))
+            elif isinstance(output_text, str):
+                text_sections.append(output_text)
+    return _NOTEBOOK_SECTION_SEPARATOR.join(text_sections)
+
+
+def _apply_suppression_filter(
+    findings: list[ScanFinding],
+    file_content: str,
+) -> list[ScanFinding]:
+    """Remove findings covered by inline phi-scan:ignore directives.
+
+    Args:
+        findings: All findings produced by detect_phi_in_text_content.
+        file_content: Raw file content used to parse suppression directives.
+
+    Returns:
+        Findings not suppressed by any inline directive.
+    """
+    suppression_map = load_suppressions(file_content.splitlines())
+    return [f for f in findings if not is_finding_suppressed(f, suppression_map)]
+
+
+def _apply_confidence_filter(
+    findings: list[ScanFinding],
+    confidence_threshold: float,
+) -> list[ScanFinding]:
+    """Remove findings below the configured confidence threshold.
+
+    Args:
+        findings: Suppression-filtered findings.
+        confidence_threshold: Minimum confidence to retain a finding.
+
+    Returns:
+        Findings at or above confidence_threshold.
+    """
+    return [f for f in findings if f.confidence >= confidence_threshold]
+
+
+def _scan_archive_content(
+    archive_path: Path,
+    config: ScanConfig,
+) -> list[ScanFinding]:
+    """Scan text resources inside a ZIP, JAR, or WAR archive entirely in memory.
+
+    Reads each eligible member using ZipFile.read() into a BytesIO-backed
+    buffer — ZipFile.extract() and ZipFile.extractall() are never called
+    because they write to disk, which would violate the local-execution-only
+    contract. Only members whose extension appears in ARCHIVE_SCANNABLE_EXTENSIONS
+    are scanned; .class files and other binary members are skipped.
+
+    Args:
+        archive_path: Path to the .zip, .jar, or .war file to inspect.
+        config: Scan configuration forwarded to suppression and threshold logic.
+
+    Returns:
+        All findings from eligible archive members. Empty list on failure.
+    """
+    try:
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            return _scan_archive_members(archive, archive_path, config)
+    except zipfile.BadZipFile as bad_zip_error:
+        _logger.warning(_ARCHIVE_BAD_FORMAT_WARNING.format(path=archive_path, error=bad_zip_error))
+        return []
+
+
+def _scan_archive_members(
+    archive: zipfile.ZipFile,
+    archive_path: Path,
+    config: ScanConfig,
+) -> list[ScanFinding]:
+    """Scan every eligible text member inside an open ZipFile.
+
+    Args:
+        archive: Open ZipFile object.
+        archive_path: Path to the archive on disk (used for virtual member paths).
+        config: Scan configuration.
+
+    Returns:
+        Aggregated findings from all eligible members.
+    """
+    findings: list[ScanFinding] = []
+    for member_name in archive.namelist():
+        if Path(member_name).suffix.lower() not in ARCHIVE_SCANNABLE_EXTENSIONS:
+            continue
+        try:
+            member_bytes = archive.read(member_name)
+            member_content = member_bytes.decode(DEFAULT_TEXT_ENCODING, errors="replace")
+        except Exception as read_error:
+            _logger.warning(
+                _ARCHIVE_MEMBER_READ_ERROR_WARNING.format(
+                    member=member_name, path=archive_path, error=read_error
+                )
+            )
+            continue
+        virtual_path = archive_path / member_name
+        raw_findings = detect_phi_in_text_content(member_content, virtual_path)
+        member_findings = _apply_suppression_filter(raw_findings, member_content)
+        member_findings = _apply_confidence_filter(member_findings, config.confidence_threshold)
+        findings.extend(member_findings)
+    return findings
 
 
 def build_scan_result(

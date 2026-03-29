@@ -41,6 +41,8 @@ __all__ = [
     "FICTIONAL_PHONE_SUBSCRIBER_MIN",
     "HIPAA_AGE_RESTRICTION_THRESHOLD",
     "HIPAA_REMEDIATION_GUIDANCE",
+    "ARCHIVE_EXTENSIONS",
+    "ARCHIVE_SCANNABLE_EXTENSIONS",
     "KNOWN_BINARY_EXTENSIONS",
     "BYTES_PER_MEGABYTE",
     "MAX_FILE_SIZE_BYTES",
@@ -54,6 +56,8 @@ __all__ = [
     "ZIP_PLUS4_SUFFIX_DIGIT_COUNT",
     "MINIMUM_QUASI_IDENTIFIER_COUNT",
     "OutputFormat",
+    "PHI_SUGGESTIVE_VARIABLE_PATTERNS",
+    "VARIABLE_CONTEXT_CONFIDENCE_BOOST",
     "PathspecMatchStyle",
     "PhiCategory",
     "QUASI_IDENTIFIER_PROXIMITY_WINDOW_LINES",
@@ -80,9 +84,19 @@ DEFAULT_TEXT_ENCODING: str = "utf-8"
 # Binary file detection
 # ---------------------------------------------------------------------------
 
-# TODO(2E.9): When archive inspection ships, remove .jar and .war from
-# KNOWN_BINARY_EXTENSIONS so those files are passed to the archive inspector
-# instead of being skipped as opaque binary. See PLAN.md Phase 2E.9.
+# Archive formats inspected in-memory by the archive scanner (Phase 2E.9).
+# These extensions are intentionally excluded from KNOWN_BINARY_EXTENSIONS so
+# that collect_scan_targets passes them to scan_file rather than skipping them.
+# ARCHIVE_EXTENSIONS must never overlap with KNOWN_BINARY_EXTENSIONS.
+ARCHIVE_EXTENSIONS: frozenset[str] = frozenset({".jar", ".war", ".zip"})
+
+# Text resource extensions that are eligible for scanning inside archives.
+# Compiled bytecode (.class, .pyc), media, and other binary members are skipped.
+# Only members whose extension appears here are passed to detect_phi_in_text_content.
+ARCHIVE_SCANNABLE_EXTENSIONS: frozenset[str] = frozenset(
+    {".conf", ".json", ".properties", ".xml", ".yaml", ".yml"}
+)
+
 KNOWN_BINARY_EXTENSIONS: frozenset[str] = frozenset(
     {
         ".png",
@@ -94,11 +108,10 @@ KNOWN_BINARY_EXTENSIONS: frozenset[str] = frozenset(
         ".dll",
         ".so",
         ".dylib",
-        ".zip",
+        # .zip, .jar, .war are NOT listed here — they are inspected by the
+        # archive scanner (see ARCHIVE_EXTENSIONS above).
         ".tar",
         ".gz",
-        ".jar",
-        ".war",
         ".pyc",
         ".pyo",
         ".o",
@@ -245,6 +258,35 @@ MINIMUM_QUASI_IDENTIFIER_COUNT: int = 2
 # Logic code must use: age > HIPAA_AGE_RESTRICTION_THRESHOLD.
 # Never compare against the literal 90 in detection logic.
 HIPAA_AGE_RESTRICTION_THRESHOLD: int = 90
+
+# ---------------------------------------------------------------------------
+# Variable-name contextual boosting (Phase 2E.4)
+# ---------------------------------------------------------------------------
+
+# Confidence delta applied when a PHI finding's source line contains an
+# assignment whose left-hand side contains one of PHI_SUGGESTIVE_VARIABLE_PATTERNS.
+# The boosted score is capped at CONFIDENCE_SCORE_MAXIMUM.
+VARIABLE_CONTEXT_CONFIDENCE_BOOST: float = 0.15
+
+# Substrings that, when found in a variable or key name on the same line as a
+# PHI finding, suggest the developer intended to store PHI there — increasing
+# the credibility of the finding. All strings are matched case-insensitively.
+PHI_SUGGESTIVE_VARIABLE_PATTERNS: frozenset[str] = frozenset(
+    {
+        "address",
+        "beneficiary",
+        "birth",
+        "diagnosis",
+        "dob",
+        "email",
+        "insurance",
+        "mrn",
+        "name",
+        "patient",
+        "phone",
+        "ssn",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Identifier structure constants
@@ -449,6 +491,7 @@ class DetectionLayer(StrEnum):
     FHIR = "fhir"
     HL7 = "hl7"
     AI = "ai"
+    COMBINATION = "combination"
 
 
 class RiskLevel(StrEnum):

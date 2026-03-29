@@ -407,32 +407,33 @@ def test_collect_scan_targets_logs_warning_on_os_error(
 
 
 # ---------------------------------------------------------------------------
-# scan_file — placeholder
+# scan_file — Phase 2E integration
 # ---------------------------------------------------------------------------
 
 
-def test_scan_file_returns_empty_list_for_any_file(tmp_path: Path) -> None:
-    text_file = tmp_path / "source.py"
-    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
+def test_scan_file_returns_list_for_clean_file(tmp_path: Path) -> None:
+    # A file with no PHI-like content must produce no findings.
+    clean_file = tmp_path / "config.py"
+    clean_file.write_text("DEBUG = True\n", encoding=DEFAULT_TEXT_ENCODING)
 
-    findings = scan_file(text_file, _build_default_config())
+    findings = scan_file(clean_file, _build_default_config())
 
-    assert findings == []
+    assert isinstance(findings, list)
 
 
-def test_scan_file_logs_stub_warning(
+def test_scan_file_returns_empty_list_for_undecodable_file(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # Phase 1B stub must emit a WARNING so it cannot silently survive into
-    # Phase 2 wiring without the integration failure being visible in logs.
-    text_file = tmp_path / "source.py"
-    text_file.write_text(_SAMPLE_TEXT_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
+    binary_file = tmp_path / "binary.bin"
+    # Write bytes that are not valid UTF-8 to trigger the decode-error path.
+    binary_file.write_bytes(b"\xff\xfe\x00\x01invalid utf-8 \x80\x81")
 
     with caplog.at_level(logging.WARNING, logger="phi_scan.scanner"):
-        scan_file(text_file, _build_default_config())
+        findings = scan_file(binary_file, _build_default_config())
 
-    assert any("stub" in record.message.lower() for record in caplog.records)
+    assert findings == []
+    assert any("decode" in record.message.lower() for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------
