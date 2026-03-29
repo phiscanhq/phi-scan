@@ -538,16 +538,16 @@ polished, informative, and visually striking. Users should enjoy running this to
 
 This is the CI for the phiscan project itself, not the CI templates for users (Phase 6).
 
-- [ ] **1H.1** `.github/workflows/ci.yml` — runs on every push and PR:
+- [x] **1H.1** `.github/workflows/ci.yml` — runs on every push and PR:
   - Matrix: Python 3.12 on ubuntu-latest, macos-latest, windows-latest
   - Steps: checkout → uv sync → ruff lint → mypy typecheck → pytest with coverage
   - Upload coverage report as artifact
   - Fail PR if any step fails
-- [ ] **1H.2** `.github/workflows/release.yml` — runs on version tag push (`v*`):
+- [x] **1H.2** `.github/workflows/release.yml` — runs on version tag push (`v*`):
   - Build sdist and wheel with `uv build`
   - Publish to PyPI with `uv publish` (using PyPI API token from GitHub secret)
   - Create GitHub Release with auto-generated changelog
-- [ ] **1H.3** Branch protection rules documented in README:
+- [x] **1H.3** Branch protection rules documented in README:
   - Require CI pass before merge
   - Require at least one review (when collaborators join)
 
