@@ -35,6 +35,7 @@ from phi_scan.models import ScanFinding
 
 __all__ = [
     "CacheStats",
+    "FileCacheKey",
     "compute_file_hash",
     "get_cache_stats",
     "get_cached_result",
@@ -50,7 +51,7 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 _DEFAULT_CACHE_PATH: str = "~/.phi-scanner/cache.db"
 _HASH_ALGORITHM: str = "sha256"
-_READ_CHUNK_SIZE: int = 65536  # 64 KiB — balance memory and syscall count
+_READ_CHUNK_SIZE_BYTES: int = 65536  # 64 KiB — balance memory and syscall count
 
 # SQL table and column names
 _TABLE_FILE_CACHE: str = "file_cache"
@@ -152,6 +153,26 @@ class CacheStats:
     database_path: Path
 
 
+@dataclass(frozen=True)
+class FileCacheKey:
+    """Immutable key identifying a cached scan result.
+
+    Bundles the three values that together uniquely identify a valid cache
+    entry: which file, what its content was, and what config was active.
+
+    Args:
+        file_path: Path to the source file being cached.
+        content_hash: SHA-256 hex digest of the file's current content.
+        config_hash: SHA-256 hex digest of the active scan configuration.
+            Defaults to the zero-hash sentinel for callers that do not track
+            configuration changes.
+    """
+
+    file_path: Path
+    content_hash: str
+    config_hash: str = _DEFAULT_CONFIG_HASH
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -174,7 +195,7 @@ def compute_file_hash(file_path: Path) -> str:
     digest = hashlib.new(_HASH_ALGORITHM)
     try:
         with file_path.open("rb") as file_handle:
-            while chunk := file_handle.read(_READ_CHUNK_SIZE):
+            while chunk := file_handle.read(_READ_CHUNK_SIZE_BYTES):
                 digest.update(chunk)
     except OSError as exc:
         raise PhiScanError(f"Cannot compute hash for {file_path}: {exc}") from exc
@@ -182,9 +203,7 @@ def compute_file_hash(file_path: Path) -> str:
 
 
 def get_cached_result(
-    file_path: Path,
-    content_hash: str,
-    config_hash: str = _DEFAULT_CONFIG_HASH,
+    cache_key: FileCacheKey,
     cache_path: Path | None = None,
 ) -> list[ScanFinding] | None:
     """Return cached findings for a file if the content and config are unchanged.
@@ -196,11 +215,8 @@ def get_cached_result(
     - The config hash differs (scan configuration changed).
 
     Args:
-        file_path: Path to the file whose findings are requested.
-        content_hash: SHA-256 of the current file content (from compute_file_hash).
-        config_hash: SHA-256 of the active scan configuration. Defaults to a
-            zero-hash sentinel so callers that do not track config changes still
-            get correct invalidation on scanner version bumps.
+        cache_key: FileCacheKey bundling the file path, content hash, and config
+            hash that together identify a valid cache entry.
         cache_path: Override the default cache database location. Defaults to
             ``~/.phi-scanner/cache.db``.
 
@@ -210,13 +226,13 @@ def get_cached_result(
     resolved_cache_path = _resolve_cache_path(cache_path)
     _initialise_cache_schema(resolved_cache_path)
 
-    file_path_hash = _compute_string_hash(str(file_path))
+    file_path_hash = _compute_string_hash(str(cache_key.file_path))
     try:
         with sqlite3.connect(resolved_cache_path) as connection:
             cursor = connection.execute(_SELECT_FILE_CACHE_SQL, (file_path_hash,))
             row = cursor.fetchone()
     except sqlite3.Error as exc:
-        _logger.warning("Cache read failed for %s: %s", file_path, exc)
+        _logger.warning("Cache read failed for %s: %s", cache_key.file_path, exc)
         return None
 
     if row is None:
@@ -224,21 +240,19 @@ def get_cached_result(
 
     cached_content_hash, findings_json, cached_scanner_version, cached_config_hash = row
 
-    if cached_content_hash != content_hash:
+    if cached_content_hash != cache_key.content_hash:
         return None
     if cached_scanner_version != __version__:
         return None
-    if cached_config_hash != config_hash:
+    if cached_config_hash != cache_key.config_hash:
         return None
 
     return _deserialise_findings(findings_json)
 
 
 def store_cached_result(
-    file_path: Path,
-    content_hash: str,
+    cache_key: FileCacheKey,
     findings: list[ScanFinding],
-    config_hash: str = _DEFAULT_CONFIG_HASH,
     cache_path: Path | None = None,
 ) -> None:
     """Persist scan findings for a file into the cache.
@@ -246,16 +260,15 @@ def store_cached_result(
     Performs an upsert — existing entries for the same file path are replaced.
 
     Args:
-        file_path: Path to the scanned file.
-        content_hash: SHA-256 of the file content at scan time.
+        cache_key: FileCacheKey bundling the file path, content hash, and config
+            hash that together identify this cache entry.
         findings: Findings produced by the scan. May be empty (clean file).
-        config_hash: SHA-256 of the active scan configuration.
         cache_path: Override the default cache database location.
     """
     resolved_cache_path = _resolve_cache_path(cache_path)
     _initialise_cache_schema(resolved_cache_path)
 
-    file_path_hash = _compute_string_hash(str(file_path))
+    file_path_hash = _compute_string_hash(str(cache_key.file_path))
     findings_json = _serialise_findings(findings)
     scanned_at = datetime.now(tz=UTC).isoformat()
 
@@ -265,15 +278,15 @@ def store_cached_result(
                 _UPSERT_FILE_CACHE_SQL,
                 (
                     file_path_hash,
-                    content_hash,
+                    cache_key.content_hash,
                     scanned_at,
                     findings_json,
                     __version__,
-                    config_hash,
+                    cache_key.config_hash,
                 ),
             )
     except sqlite3.Error as exc:
-        _logger.warning("Cache write failed for %s: %s", file_path, exc)
+        _logger.warning("Cache write failed for %s: %s", cache_key.file_path, exc)
 
 
 def invalidate_cache(cache_path: Path | None = None) -> None:

@@ -1081,9 +1081,9 @@ def initialize_config() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_explain_topic(explain_markup: str) -> None:
+def _render_explain_topic(topic_markup: str) -> None:
     """Render a help_text constant to the terminal with Rich markup."""
-    get_console().print(explain_markup)
+    get_console().print(topic_markup)
 
 
 @explain_app.command("confidence")

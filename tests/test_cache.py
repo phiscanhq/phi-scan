@@ -9,6 +9,7 @@ import pytest
 
 from phi_scan.cache import (
     CacheStats,
+    FileCacheKey,
     compute_file_hash,
     get_cache_stats,
     get_cached_result,
@@ -109,7 +110,9 @@ class TestCacheMissOnFirstScan:
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
 
-        cached_findings = get_cached_result(source_file, content_hash, cache_path=cache_db)
+        cached_findings = get_cached_result(
+            FileCacheKey(source_file, content_hash), cache_path=cache_db
+        )
 
         assert cached_findings is None
 
@@ -121,9 +124,10 @@ class TestCacheHitOnUnchangedFile:
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
         stored_findings = [_make_finding(source_file)]
+        cache_key = FileCacheKey(source_file, content_hash)
 
-        store_cached_result(source_file, content_hash, stored_findings, cache_path=cache_db)
-        cached_findings = get_cached_result(source_file, content_hash, cache_path=cache_db)
+        store_cached_result(cache_key, stored_findings, cache_path=cache_db)
+        cached_findings = get_cached_result(cache_key, cache_path=cache_db)
 
         assert cached_findings is not None
         assert len(cached_findings) == len(stored_findings)
@@ -134,9 +138,10 @@ class TestCacheHitOnUnchangedFile:
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
         stored_finding = _make_finding(source_file)
+        cache_key = FileCacheKey(source_file, content_hash)
 
-        store_cached_result(source_file, content_hash, [stored_finding], cache_path=cache_db)
-        cached_findings = get_cached_result(source_file, content_hash, cache_path=cache_db)
+        store_cached_result(cache_key, [stored_finding], cache_path=cache_db)
+        cached_findings = get_cached_result(cache_key, cache_path=cache_db)
 
         assert cached_findings is not None
         assert cached_findings[0].file_path == stored_finding.file_path
@@ -146,9 +151,10 @@ class TestCacheHitOnUnchangedFile:
         source_file = tmp_path / "clean.py"
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
+        cache_key = FileCacheKey(source_file, content_hash)
 
-        store_cached_result(source_file, content_hash, [], cache_path=cache_db)
-        cached_findings = get_cached_result(source_file, content_hash, cache_path=cache_db)
+        store_cached_result(cache_key, [], cache_path=cache_db)
+        cached_findings = get_cached_result(cache_key, cache_path=cache_db)
 
         assert cached_findings == []
 
@@ -159,12 +165,14 @@ class TestCacheInvalidation:
         source_file = tmp_path / "app.py"
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         original_hash = compute_file_hash(source_file)
-        store_cached_result(source_file, original_hash, [], cache_path=cache_db)
+        store_cached_result(FileCacheKey(source_file, original_hash), [], cache_path=cache_db)
 
         source_file.write_text(_MODIFIED_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         new_hash = compute_file_hash(source_file)
 
-        cached_findings = get_cached_result(source_file, new_hash, cache_path=cache_db)
+        cached_findings = get_cached_result(
+            FileCacheKey(source_file, new_hash), cache_path=cache_db
+        )
 
         assert cached_findings is None
 
@@ -175,12 +183,12 @@ class TestCacheInvalidation:
         content_hash = compute_file_hash(source_file)
 
         store_cached_result(
-            source_file, content_hash, [], config_hash=_DEFAULT_CONFIG_HASH, cache_path=cache_db
+            FileCacheKey(source_file, content_hash, _DEFAULT_CONFIG_HASH),
+            [],
+            cache_path=cache_db,
         )
         cached_findings = get_cached_result(
-            source_file,
-            content_hash,
-            config_hash=_ALTERNATE_CONFIG_HASH,
+            FileCacheKey(source_file, content_hash, _ALTERNATE_CONFIG_HASH),
             cache_path=cache_db,
         )
 
@@ -191,11 +199,13 @@ class TestCacheInvalidation:
         source_file = tmp_path / "app.py"
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
-        store_cached_result(source_file, content_hash, [], cache_path=cache_db)
+        store_cached_result(FileCacheKey(source_file, content_hash), [], cache_path=cache_db)
 
         invalidate_cache(cache_path=cache_db)
 
-        cached_findings = get_cached_result(source_file, content_hash, cache_path=cache_db)
+        cached_findings = get_cached_result(
+            FileCacheKey(source_file, content_hash), cache_path=cache_db
+        )
         assert cached_findings is None
 
     def test_cache_miss_when_scanner_version_changes(
@@ -205,13 +215,14 @@ class TestCacheInvalidation:
         source_file = tmp_path / "app.py"
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
+        cache_key = FileCacheKey(source_file, content_hash)
 
         # Store a cache entry attributed to the current version.
-        store_cached_result(source_file, content_hash, [], cache_path=cache_db)
+        store_cached_result(cache_key, [], cache_path=cache_db)
 
         # Simulate a scanner version bump.
         monkeypatch.setattr("phi_scan.cache.__version__", "999.0.0")
-        cached_findings = get_cached_result(source_file, content_hash, cache_path=cache_db)
+        cached_findings = get_cached_result(cache_key, cache_path=cache_db)
 
         assert cached_findings is None
 
@@ -234,7 +245,7 @@ class TestGetCacheStats:
         source_file = tmp_path / "app.py"
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
-        store_cached_result(source_file, content_hash, [], cache_path=cache_db)
+        store_cached_result(FileCacheKey(source_file, content_hash), [], cache_path=cache_db)
 
         cache_statistics = get_cache_stats(cache_path=cache_db)
 
@@ -245,7 +256,7 @@ class TestGetCacheStats:
         source_file = tmp_path / "app.py"
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
-        store_cached_result(source_file, content_hash, [], cache_path=cache_db)
+        store_cached_result(FileCacheKey(source_file, content_hash), [], cache_path=cache_db)
         invalidate_cache(cache_path=cache_db)
 
         cache_statistics = get_cache_stats(cache_path=cache_db)
