@@ -110,6 +110,9 @@ _DELETE_ALL_CACHE_SQL: str = f"DELETE FROM {_TABLE_FILE_CACHE}"
 
 _COUNT_CACHE_ENTRIES_SQL: str = f"SELECT COUNT(*) FROM {_TABLE_FILE_CACHE}"
 
+# Column index of the COUNT(*) value returned by _COUNT_CACHE_ENTRIES_SQL.
+_ENTRY_COUNT_COLUMN_INDEX: int = 0
+
 _UPSERT_META_SQL: str = f"""
 INSERT INTO {_TABLE_SCHEMA_META} ({_COL_KEY}, {_COL_VALUE})
 VALUES (?, ?)
@@ -230,15 +233,15 @@ def get_cached_result(
     try:
         with sqlite3.connect(resolved_cache_path) as connection:
             cursor = connection.execute(_SELECT_FILE_CACHE_SQL, (file_path_hash,))
-            row = cursor.fetchone()
+            cache_row = cursor.fetchone()
     except sqlite3.Error as exc:
         _logger.warning("Cache read failed for %s: %s", cache_key.file_path, exc)
         return None
 
-    if row is None:
+    if cache_row is None:
         return None
 
-    cached_content_hash, findings_json, cached_scanner_version, cached_config_hash = row
+    cached_content_hash, findings_json, cached_scanner_version, cached_config_hash = cache_row
 
     if cached_content_hash != cache_key.content_hash:
         return None
@@ -258,6 +261,9 @@ def store_cached_result(
     """Persist scan findings for a file into the cache.
 
     Performs an upsert — existing entries for the same file path are replaced.
+    Write failures are logged as warnings and swallowed so that a cache
+    write error never aborts an in-progress scan — the cache is an optimisation,
+    not a hard dependency.
 
     Args:
         cache_key: FileCacheKey bundling the file path, content hash, and config
@@ -293,7 +299,9 @@ def invalidate_cache(cache_path: Path | None = None) -> None:
     """Delete all entries from the scan cache.
 
     Used when the scanner version changes, the configuration changes, or the
-    user passes ``--no-cache``.
+    user passes ``--no-cache``. Invalidation failures are logged as warnings
+    and swallowed — the scan proceeds, but stale cache entries may remain
+    until the next successful write or explicit invalidation.
 
     Args:
         cache_path: Override the default cache database location.
@@ -324,9 +332,9 @@ def get_cache_stats(cache_path: Path | None = None) -> CacheStats:
     try:
         with sqlite3.connect(resolved_cache_path) as connection:
             cursor = connection.execute(_COUNT_CACHE_ENTRIES_SQL)
-            row = cursor.fetchone()
-            if row is not None:
-                total_entries = row[0]
+            count_row = cursor.fetchone()
+            if count_row is not None:
+                total_entries = count_row[_ENTRY_COUNT_COLUMN_INDEX]
     except sqlite3.Error as exc:
         _logger.warning("Cache stats query failed: %s", exc)
 
@@ -364,18 +372,25 @@ _initialised_cache_paths: set[Path] = set()
 
 
 def _reject_symlink_cache_path(cache_path: Path) -> None:
-    """Raise PhiScanError if the cache path is a symlink.
+    """Raise PhiScanError if the cache path is currently a symlink.
 
-    sqlite3.connect() follows symlinks silently. If an attacker places a symlink
-    at the cache location, the scanner would write to the symlink target instead.
-    This guard is checked after mkdir so the parent directory exists, but before
-    sqlite3.connect so the file handle is never opened through a symlink.
+    sqlite3.connect() follows symlinks silently. If a symlink exists at the
+    cache location at the time of this check, this guard raises before the
+    connection is opened.
+
+    Limitation — TOCTOU race: there is a narrow window between this check and
+    sqlite3.connect() during which an attacker could replace the path with a
+    symlink. In the CI/CD and local-user contexts where phi-scan operates, the
+    cache directory is owned by the same user as the process, making this race
+    window an acceptable residual risk. Complete atomicity would require
+    SQLite's SQLITE_OPEN_NOFOLLOW flag (URI ?nofollow=1, SQLite ≥ 3.31.0),
+    which is not used here to avoid a version dependency on the system SQLite.
 
     Args:
         cache_path: The expanded (not resolved) cache path to validate.
 
     Raises:
-        PhiScanError: If cache_path is a symlink.
+        PhiScanError: If cache_path is a symlink at the time of the check.
     """
     if cache_path.is_symlink():
         raise PhiScanError(
