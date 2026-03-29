@@ -128,12 +128,13 @@ _FINDING_KEY_ENTITY_TYPE: str = "entity_type"
 _FINDING_KEY_HIPAA_CATEGORY: str = "hipaa_category"
 _FINDING_KEY_CONFIDENCE: str = "confidence"
 _FINDING_KEY_DETECTION_LAYER: str = "detection_layer"
-_FINDING_KEY_VALUE_HASH: str = "value_hash"
+_FINDING_KEY_DETECTED_VALUE_SHA256: str = "detected_value_sha256"
 _FINDING_KEY_SEVERITY: str = "severity"
 _FINDING_KEY_CODE_CONTEXT: str = "code_context"
 _FINDING_KEY_REMEDIATION_HINT: str = "remediation_hint"
 
-_DEFAULT_CONFIG_HASH: str = "0" * SHA256_HEX_DIGEST_LENGTH
+_ZERO_HASH_FILL_DIGIT: str = "0"
+_DEFAULT_CONFIG_HASH: str = _ZERO_HASH_FILL_DIGIT * SHA256_HEX_DIGEST_LENGTH
 
 
 # ---------------------------------------------------------------------------
@@ -299,12 +300,15 @@ def invalidate_cache(cache_path: Path | None = None) -> None:
     """Delete all entries from the scan cache.
 
     Used when the scanner version changes, the configuration changes, or the
-    user passes ``--no-cache``. Invalidation failures are logged as warnings
-    and swallowed — the scan proceeds, but stale cache entries may remain
-    until the next successful write or explicit invalidation.
+    user passes ``--no-cache``. Raises PhiScanError on failure because
+    invalidation is a user-invoked action with a clear semantic contract:
+    the caller expects the cache to be empty after this call returns.
 
     Args:
         cache_path: Override the default cache database location.
+
+    Raises:
+        PhiScanError: If the cache cannot be cleared.
     """
     resolved_cache_path = _resolve_cache_path(cache_path)
     _initialise_cache_schema(resolved_cache_path)
@@ -313,7 +317,7 @@ def invalidate_cache(cache_path: Path | None = None) -> None:
             connection.execute(_DELETE_ALL_CACHE_SQL)
         _logger.info("Scan cache invalidated.")
     except sqlite3.Error as exc:
-        _logger.warning("Cache invalidation failed: %s", exc)
+        raise PhiScanError(f"Cache invalidation failed: {exc}") from exc
 
 
 def get_cache_stats(cache_path: Path | None = None) -> CacheStats:
@@ -466,7 +470,7 @@ def _finding_to_dict(finding: ScanFinding) -> dict[str, Any]:
         _FINDING_KEY_HIPAA_CATEGORY: finding.hipaa_category.value,
         _FINDING_KEY_CONFIDENCE: finding.confidence,
         _FINDING_KEY_DETECTION_LAYER: finding.detection_layer.value,
-        _FINDING_KEY_VALUE_HASH: finding.value_hash,
+        _FINDING_KEY_DETECTED_VALUE_SHA256: finding.value_hash,
         _FINDING_KEY_SEVERITY: finding.severity.value,
         _FINDING_KEY_CODE_CONTEXT: finding.code_context,
         _FINDING_KEY_REMEDIATION_HINT: finding.remediation_hint,
@@ -488,7 +492,7 @@ def _dict_to_finding(record: dict[str, Any]) -> ScanFinding:
         hipaa_category=PhiCategory(record[_FINDING_KEY_HIPAA_CATEGORY]),
         confidence=record[_FINDING_KEY_CONFIDENCE],
         detection_layer=DetectionLayer(record[_FINDING_KEY_DETECTION_LAYER]),
-        value_hash=record[_FINDING_KEY_VALUE_HASH],
+        value_hash=record[_FINDING_KEY_DETECTED_VALUE_SHA256],
         severity=SeverityLevel(record[_FINDING_KEY_SEVERITY]),
         code_context=record[_FINDING_KEY_CODE_CONTEXT],
         remediation_hint=record[_FINDING_KEY_REMEDIATION_HINT],
