@@ -50,13 +50,6 @@ _SINGLE_LINE_CONTENT: str = "patient_name = 'John Smith'\n"
 _JOHN_SMITH_START: int = 16
 _JOHN_SMITH_END: int = 26
 
-# Multi-line content for line-offset tests
-_MULTILINE_CONTENT: str = "first_line = 'data'\nsecond_line = 'more'\nthird_line = 'end'\n"
-# Character offset of the start of line 2 (after "first_line = 'data'\n" = 20 chars)
-_SECOND_LINE_OFFSET: int = 20
-# Character offset of the start of line 3 (after first two lines = 40 chars)
-_THIRD_LINE_OFFSET: int = 41
-
 # Confidence values for boundary tests
 _SCORE_BELOW_NLP_MIN: float = CONFIDENCE_NLP_MIN - 0.10
 _SCORE_ABOVE_NLP_MAX: float = CONFIDENCE_NLP_MAX + 0.05
@@ -66,22 +59,22 @@ _SCORE_WITHIN_RANGE: float = (CONFIDENCE_NLP_MIN + CONFIDENCE_NLP_MAX) / 2
 _JOHN_SMITH_HASH: str = hashlib.sha256(b"John Smith").hexdigest()
 
 
-def _make_fake_analyzer_result(
+def _build_mock_analyzer_result(
     entity_type: str,
     start: int,
     end: int,
     score: float,
 ) -> MagicMock:
     """Build a MagicMock that looks like a Presidio RecognizerResult."""
-    fake_result = MagicMock()
-    fake_result.entity_type = entity_type
-    fake_result.start = start
-    fake_result.end = end
-    fake_result.score = score
-    return fake_result
+    mock_result = MagicMock()
+    mock_result.entity_type = entity_type
+    mock_result.start = start
+    mock_result.end = end
+    mock_result.score = score
+    return mock_result
 
 
-def _make_scan_context(
+def _build_scan_context(
     file_content: str,
     file_path: Path = _FAKE_FILE_PATH,
 ) -> _NlpScanContext:
@@ -258,8 +251,8 @@ class TestOffsetToLineNumber:
 
 class TestBuildNlpFinding:
     def test_entity_type_is_preserved_from_analyzer_result(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -268,8 +261,8 @@ class TestBuildNlpFinding:
         assert finding.entity_type == _ENTITY_TYPE_PERSON
 
     def test_person_entity_maps_to_name_phi_category(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -278,8 +271,8 @@ class TestBuildNlpFinding:
         assert finding.hipaa_category == PhiCategory.NAME
 
     def test_org_entity_maps_to_name_phi_category(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_ORG, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -288,8 +281,8 @@ class TestBuildNlpFinding:
         assert finding.hipaa_category == PhiCategory.NAME
 
     def test_location_entity_maps_to_geographic_phi_category(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_LOCATION, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -298,8 +291,8 @@ class TestBuildNlpFinding:
         assert finding.hipaa_category == PhiCategory.GEOGRAPHIC
 
     def test_gpe_entity_maps_to_geographic_phi_category(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_GPE, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -308,8 +301,8 @@ class TestBuildNlpFinding:
         assert finding.hipaa_category == PhiCategory.GEOGRAPHIC
 
     def test_date_time_entity_maps_to_date_phi_category(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_DATE_TIME, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -318,8 +311,8 @@ class TestBuildNlpFinding:
         assert finding.hipaa_category == PhiCategory.DATE
 
     def test_detection_layer_is_nlp(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -328,8 +321,8 @@ class TestBuildNlpFinding:
         assert finding.detection_layer == DetectionLayer.NLP
 
     def test_value_hash_matches_matched_text_hash(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -338,8 +331,8 @@ class TestBuildNlpFinding:
         assert finding.value_hash == _JOHN_SMITH_HASH
 
     def test_confidence_is_clamped_to_nlp_range(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_ABOVE_NLP_MAX
         )
 
@@ -348,8 +341,8 @@ class TestBuildNlpFinding:
         assert finding.confidence == CONFIDENCE_NLP_MAX
 
     def test_line_number_is_one_for_first_line_match(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -358,8 +351,8 @@ class TestBuildNlpFinding:
         assert finding.line_number == 1
 
     def test_code_context_is_the_source_line_stripped_of_trailing_whitespace(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -369,8 +362,8 @@ class TestBuildNlpFinding:
 
     def test_file_path_is_preserved_in_finding(self) -> None:
         custom_path = Path("/project/src/records.py")
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT, file_path=custom_path)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT, file_path=custom_path)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -383,8 +376,8 @@ class TestBuildNlpFinding:
         # "Jane Doe" starts at offset 31 in the above string
         jane_start = content.index("Jane Doe")
         jane_end = jane_start + len("Jane Doe")
-        scan_context = _make_scan_context(content)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(content)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, jane_start, jane_end, _SCORE_WITHIN_RANGE
         )
 
@@ -393,8 +386,8 @@ class TestBuildNlpFinding:
         assert finding.line_number == 2
 
     def test_remediation_hint_is_non_empty_for_name_category(self) -> None:
-        scan_context = _make_scan_context(_SINGLE_LINE_CONTENT)
-        analyzer_result = _make_fake_analyzer_result(
+        scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
+        analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
 
@@ -413,39 +406,30 @@ class TestNlpLayerUnavailable:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", False)
-        monkeypatch.setattr("phi_scan.nlp_detector._nlp_unavailable_warning_issued", False)
 
-        findings = detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            findings = detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
 
         assert findings == []
 
-    def test_warning_is_logged_once_when_nlp_not_installed(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    def test_warning_is_raised_when_nlp_not_installed(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import logging
-
         monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", False)
-        monkeypatch.setattr("phi_scan.nlp_detector._nlp_unavailable_warning_issued", False)
 
-        with caplog.at_level(logging.WARNING, logger="phi_scan.nlp_detector"):
-            detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
+        with pytest.warns(UserWarning, match="phi-scan\\[nlp\\]"):
             detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
 
-        assert sum(1 for record in caplog.records if "phi-scan[nlp]" in record.message) == 1
-
-    def test_warning_message_references_install_command(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    def test_warning_message_references_setup_command(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import logging
-
         monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", False)
-        monkeypatch.setattr("phi_scan.nlp_detector._nlp_unavailable_warning_issued", False)
 
-        with caplog.at_level(logging.WARNING, logger="phi_scan.nlp_detector"):
+        with pytest.warns(UserWarning, match="phi-scan setup"):
             detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
-
-        warning_messages = [r.message for r in caplog.records]
-        assert any("phi-scan[nlp]" in message for message in warning_messages)
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +451,7 @@ class TestDetectPhiWithNlp:
         assert findings == []
 
     def test_returns_one_finding_per_analyzer_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake_result = _make_fake_analyzer_result(
+        fake_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
         mock_engine = MagicMock()
@@ -482,7 +466,7 @@ class TestDetectPhiWithNlp:
     def test_finding_entity_type_matches_analyzer_result(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake_result = _make_fake_analyzer_result(
+        fake_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
         mock_engine = MagicMock()
@@ -526,7 +510,7 @@ class TestDetectPhiWithNlp:
         assert _ENTITY_TYPE_ORG in detected_entities
 
     def test_finding_file_path_matches_input_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake_result = _make_fake_analyzer_result(
+        fake_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
         mock_engine = MagicMock()
@@ -540,7 +524,7 @@ class TestDetectPhiWithNlp:
         assert findings[0].file_path == custom_path
 
     def test_finding_detection_layer_is_nlp(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake_result = _make_fake_analyzer_result(
+        fake_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
         )
         mock_engine = MagicMock()
@@ -561,10 +545,10 @@ class TestDetectPhiWithNlp:
         boston_start = content.index("Boston")
         boston_end = boston_start + len("Boston")
         fake_results = [
-            _make_fake_analyzer_result(
+            _build_mock_analyzer_result(
                 _ENTITY_TYPE_PERSON, john_start, john_end, _SCORE_WITHIN_RANGE
             ),
-            _make_fake_analyzer_result(
+            _build_mock_analyzer_result(
                 _ENTITY_TYPE_GPE, boston_start, boston_end, _SCORE_WITHIN_RANGE
             ),
         ]
@@ -583,7 +567,7 @@ class TestDetectPhiWithNlp:
         content = "name = 'John Smith'\nlocation = 'Boston'\n"
         boston_start = content.index("Boston")
         boston_end = boston_start + len("Boston")
-        fake_result = _make_fake_analyzer_result(
+        fake_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_GPE, boston_start, boston_end, _SCORE_WITHIN_RANGE
         )
         mock_engine = MagicMock()

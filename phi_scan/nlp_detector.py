@@ -22,6 +22,7 @@ import bisect
 import functools
 import hashlib
 import logging
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -101,12 +102,6 @@ _PRESIDIO_ENTITY_TO_PHI_CATEGORY: dict[str, PhiCategory] = {
     _PRESIDIO_ENTITY_DATE_TIME: PhiCategory.DATE,
 }
 
-# ---------------------------------------------------------------------------
-# Warning deduplication
-# ---------------------------------------------------------------------------
-
-# Prevents the NLP-unavailable hint from flooding logs during large-repo scans.
-_nlp_unavailable_warning_issued: bool = False
 
 # ---------------------------------------------------------------------------
 # Private helpers
@@ -142,24 +137,23 @@ def _create_analyzer_engine() -> Any:
         "nlp_engine_name": _NLP_ENGINE_NAME,
         "models": [{"lang_code": _NLP_LANGUAGE_CODE, "model_name": _SPACY_MODEL_NAME}],
     }
-    provider = NlpEngineProvider(nlp_configuration=nlp_configuration)
-    nlp_engine = provider.create_engine()
+    nlp_engine_provider = NlpEngineProvider(nlp_configuration=nlp_configuration)
+    spacy_nlp_engine = nlp_engine_provider.create_engine()
     return AnalyzerEngine(
-        nlp_engine=nlp_engine,
+        nlp_engine=spacy_nlp_engine,
         supported_languages=[_NLP_LANGUAGE_CODE],
     )
 
 
-def _warn_nlp_unavailable_once() -> None:
-    """Log a one-time warning that the NLP layer is disabled.
+def _emit_nlp_unavailable_warning() -> None:
+    """Emit a UserWarning that the NLP layer is disabled.
 
-    Logs at most once per process lifetime — not once per scanned file — to
-    avoid flooding the log during large-repository scans.
+    Uses ``warnings.warn`` so Python's default filter deduplicates automatically
+    — the message is shown at most once per call-site per process, without any
+    module-level mutable flag. ``stacklevel=2`` attributes the warning to the
+    ``detect_phi_with_nlp`` call rather than this internal helper.
     """
-    global _nlp_unavailable_warning_issued
-    if not _nlp_unavailable_warning_issued:
-        _logger.warning(_NLP_INSTALL_HINT)
-        _nlp_unavailable_warning_issued = True
+    warnings.warn(_NLP_INSTALL_HINT, UserWarning, stacklevel=2)
 
 
 def _clamp_to_nlp_range(raw_score: float) -> float:
@@ -321,7 +315,7 @@ def detect_phi_with_nlp(file_content: str, file_path: Path) -> list[ScanFinding]
         Returns an empty list if the NLP layer is unavailable.
     """
     if not _NLP_AVAILABLE:
-        _warn_nlp_unavailable_once()
+        _emit_nlp_unavailable_warning()
         return []
     analyzer = _create_analyzer_engine()
     analyzer_results: list[Any] = analyzer.analyze(
