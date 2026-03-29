@@ -40,6 +40,7 @@ from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 __all__ = [
     "build_dashboard_layout",
     "build_watch_layout",
+    "get_console",
     "WatchEvent",
     "display_banner",
     "display_category_breakdown",
@@ -76,6 +77,17 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 _console: Console = Console()
+
+
+def get_console() -> Console:
+    """Return the shared module-level Rich console.
+
+    Callers that need to print Rich markup should use this rather than
+    constructing their own Console instance — a single instance ensures
+    consistent output buffering and colour detection across the CLI.
+    """
+    return _console
+
 
 # ---------------------------------------------------------------------------
 # Unicode support detection
