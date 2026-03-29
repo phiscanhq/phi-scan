@@ -39,7 +39,7 @@ def compute_value_hash(text: str) -> str:
     Returns:
         64-character lowercase hex digest.
     """
-    return hashlib.sha256(text.encode()).hexdigest()
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def reject_out_of_range_confidence(confidence: float) -> None:

@@ -118,17 +118,21 @@ _FHIR_PHI_FIELD_NAMES: frozenset[str] = frozenset(_FHIR_PHI_FIELD_CATEGORIES)
 # Compiled regex patterns for FHIR JSON and XML formats
 # ---------------------------------------------------------------------------
 
+# HL7/FHIR field names start with a letter and contain only letters and digits.
+# This fragment is shared by all three scan patterns below.
+_FHIR_FIELD_NAME_RE: str = r"[a-zA-Z][a-zA-Z0-9]*"
+
 # Matches JSON key-value pairs: "fieldName": "value"
 _FHIR_JSON_FIELD_PATTERN: re.Pattern[str] = re.compile(
-    r'"(?P<field>[a-zA-Z][a-zA-Z0-9]*)"\s*:\s*"(?P<value>[^"]+)"'
+    rf'"(?P<field>{_FHIR_FIELD_NAME_RE})"\s*:\s*"(?P<value>[^"]+)"'
 )
 # Matches FHIR XML element-attribute pairs: <fieldName value="...">
 _FHIR_XML_ATTR_PATTERN: re.Pattern[str] = re.compile(
-    r"<(?P<field>[a-zA-Z][a-zA-Z0-9]*)\s[^>]*\bvalue=\"(?P<value>[^\"]+)\""
+    rf"<(?P<field>{_FHIR_FIELD_NAME_RE})\s[^>]*\bvalue=\"(?P<value>[^\"]+)\""
 )
 # Matches FHIR XML text-content elements: <fieldName>value</fieldName>
 _FHIR_XML_TEXT_PATTERN: re.Pattern[str] = re.compile(
-    r"<(?P<field>[a-zA-Z][a-zA-Z0-9]*)>(?P<value>[^<]+)</(?P=field)>"
+    rf"<(?P<field>{_FHIR_FIELD_NAME_RE})>(?P<value>[^<]+)</(?P=field)>"
 )
 
 _FHIR_SCAN_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -289,8 +293,12 @@ def detect_phi_in_structured_content(
 
     if hl7_scanner.is_hl7_message_format(file_content):
         try:
-            return hl7_scanner.detect_phi_in_hl7_content(file_content, file_path)
+            # Probe for the optional library before running the full scan so that
+            # MissingOptionalDependencyError is caught only at the import boundary.
+            # Errors raised during the scan itself must propagate unmasked.
+            hl7_scanner._load_hl7_library()
         except MissingOptionalDependencyError:
             _logger.warning(_HL7_UNAVAILABLE_WARNING)
             return []
+        return hl7_scanner.detect_phi_in_hl7_content(file_content, file_path)
     return _detect_phi_in_fhir_content(file_content, file_path)
