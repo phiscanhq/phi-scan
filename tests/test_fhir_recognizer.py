@@ -183,12 +183,6 @@ def test_extract_fhir_matches_from_line_skips_null_value():
     assert matches == []
 
 
-def test_extract_fhir_matches_from_line_preserves_line_text_in_match():
-    matches = _extract_fhir_matches_from_line(_JSON_FAMILY_LINE, _LINE_NUMBER_ONE)
-
-    assert matches[0].line_text == _JSON_FAMILY_LINE
-
-
 # ---------------------------------------------------------------------------
 # _build_fhir_finding
 # ---------------------------------------------------------------------------
@@ -199,7 +193,6 @@ def test_build_fhir_finding_returns_finding_with_correct_category():
         field_name="family",
         raw_value=_FAKE_FAMILY_NAME,
         line_number=_LINE_NUMBER_ONE,
-        line_text=_JSON_FAMILY_LINE,
     )
 
     finding = _build_fhir_finding(_FAKE_FILE_PATH, line_match)
@@ -212,7 +205,6 @@ def test_build_fhir_finding_stores_hash_not_raw_value():
         field_name="family",
         raw_value=_FAKE_FAMILY_NAME,
         line_number=_LINE_NUMBER_ONE,
-        line_text=_JSON_FAMILY_LINE,
     )
 
     finding = _build_fhir_finding(_FAKE_FILE_PATH, line_match)
@@ -226,7 +218,6 @@ def test_build_fhir_finding_uses_fhir_detection_layer():
         field_name="birthDate",
         raw_value=_FAKE_BIRTH_DATE,
         line_number=_LINE_NUMBER_ONE,
-        line_text=_XML_ATTR_BIRTH_DATE_LINE,
     )
 
     finding = _build_fhir_finding(_FAKE_FILE_PATH, line_match)
@@ -239,7 +230,6 @@ def test_build_fhir_finding_applies_base_confidence():
         field_name="family",
         raw_value=_FAKE_FAMILY_NAME,
         line_number=_LINE_NUMBER_ONE,
-        line_text=_JSON_FAMILY_LINE,
     )
 
     finding = _build_fhir_finding(_FAKE_FILE_PATH, line_match)
@@ -247,32 +237,18 @@ def test_build_fhir_finding_applies_base_confidence():
     assert finding.confidence == _FHIR_FIELD_BASE_CONFIDENCE
 
 
-def test_build_fhir_finding_strips_trailing_whitespace_from_code_context():
-    padded_line = _JSON_FAMILY_LINE + "   "
+def test_build_fhir_finding_stores_field_name_and_redacted_placeholder_in_code_context():
     line_match = _FhirLineMatch(
         field_name="family",
         raw_value=_FAKE_FAMILY_NAME,
         line_number=_LINE_NUMBER_ONE,
-        line_text=padded_line,
-    )
-
-    finding = _build_fhir_finding(_FAKE_FILE_PATH, line_match)
-
-    assert not finding.code_context.endswith(" ")
-
-
-def test_build_fhir_finding_redacts_raw_value_in_code_context():
-    line_match = _FhirLineMatch(
-        field_name="family",
-        raw_value=_FAKE_FAMILY_NAME,
-        line_number=_LINE_NUMBER_ONE,
-        line_text=_JSON_FAMILY_LINE,
     )
 
     finding = _build_fhir_finding(_FAKE_FILE_PATH, line_match)
 
     assert _FAKE_FAMILY_NAME not in finding.code_context
     assert _REDACTED_VALUE_PLACEHOLDER in finding.code_context
+    assert "family" in finding.code_context
 
 
 # ---------------------------------------------------------------------------

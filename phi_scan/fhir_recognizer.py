@@ -153,7 +153,6 @@ class _FhirLineMatch:
     field_name: str
     raw_value: str
     line_number: int
-    line_text: str
 
 
 # ---------------------------------------------------------------------------
@@ -200,9 +199,12 @@ def _build_fhir_finding(file_path: Path, line_match: _FhirLineMatch) -> ScanFind
         detection_layer=DetectionLayer.FHIR,
         value_hash=compute_value_hash(line_match.raw_value),
         severity=severity_from_confidence(confidence),
-        code_context=line_match.line_text.replace(
-            line_match.raw_value, _REDACTED_VALUE_PLACEHOLDER, 1
-        ).rstrip(),
+        # Store only the matched field name — never the raw line text.
+        # A single FHIR line may contain multiple PHI fields; using line_text
+        # would expose every other field's value regardless of how many
+        # str.replace() calls are applied. The field name is sufficient for a
+        # developer to locate and remediate the finding.
+        code_context=f'"{line_match.field_name}": {_REDACTED_VALUE_PLACEHOLDER}',
         remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(phi_category, ""),
     )
 
@@ -237,7 +239,6 @@ def _extract_fhir_matches_from_line(
                     field_name=field_name,
                     raw_value=raw_value,
                     line_number=line_number,
-                    line_text=line_text,
                 )
             )
     return line_matches
