@@ -11,6 +11,7 @@ from __future__ import annotations
 __all__ = [
     "AuditLogError",
     "ConfigurationError",
+    "FileReadError",
     "MissingOptionalDependencyError",
     "PhiDetectionError",
     "PhiScanError",
@@ -29,6 +30,19 @@ class PhiScanError(Exception):
     Args:
         message: Human-readable description of the failure including the
             bad value and what was expected where applicable.
+    """
+
+
+class FileReadError(PhiScanError):
+    """Raised when a file cannot be read or decoded during scanning.
+
+    Covers both OS-level failures (PermissionError, I/O error) and encoding
+    failures (UnicodeDecodeError). Callers catch this to skip the file and
+    continue scanning the rest of the targets.
+
+    Args:
+        message: Description of the failure including the file path,
+            the encoding attempted (where relevant), and the underlying cause.
     """
 
 
