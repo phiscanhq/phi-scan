@@ -39,7 +39,7 @@ _MINIMUM_PHI_FIXTURE_COUNT = 13
 _MINIMUM_CLEAN_FIXTURE_COUNT = 3
 
 
-def _load_manifest() -> dict[str, Any]:
+def _read_manifest_file() -> dict[str, Any]:
     return json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
@@ -64,21 +64,21 @@ class TestManifestStructure:
         assert _MANIFEST_PATH.exists(), f"manifest.json not found at {_MANIFEST_PATH}"
 
     def test_manifest_is_valid_json(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         assert isinstance(manifest, dict)
 
     def test_manifest_has_version(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         assert manifest.get(_MANIFEST_VERSION_KEY) == _MANIFEST_VERSION
 
     def test_manifest_has_fixtures_list(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         assert _MANIFEST_FIXTURES_KEY in manifest
         assert isinstance(manifest[_MANIFEST_FIXTURES_KEY], list)
         assert len(manifest[_MANIFEST_FIXTURES_KEY]) > 0
 
     def test_every_fixture_entry_has_required_keys(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         for fixture_entry in manifest[_MANIFEST_FIXTURES_KEY]:
             missing = _REQUIRED_MANIFEST_KEYS - fixture_entry.keys()
             assert not missing, (
@@ -87,17 +87,17 @@ class TestManifestStructure:
             )
 
     def test_phi_fixture_count_meets_minimum(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         phi_entries = _extract_phi_fixture_entries(manifest)
         assert len(phi_entries) >= _MINIMUM_PHI_FIXTURE_COUNT
 
     def test_clean_fixture_count_meets_minimum(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         clean_entries = _extract_clean_fixture_entries(manifest)
         assert len(clean_entries) >= _MINIMUM_CLEAN_FIXTURE_COUNT
 
     def test_phi_fixtures_have_positive_min_findings(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         for fixture_entry in _extract_phi_fixture_entries(manifest):
             assert fixture_entry[_MANIFEST_MIN_FINDINGS_KEY] >= 1, (
                 f"PHI fixture {fixture_entry[_MANIFEST_PATH_KEY]!r} must expect "
@@ -105,7 +105,7 @@ class TestManifestStructure:
             )
 
     def test_clean_fixtures_have_zero_max_findings(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         for fixture_entry in _extract_clean_fixture_entries(manifest):
             assert fixture_entry.get(_MANIFEST_MAX_FINDINGS_KEY) == 0, (
                 f"Clean fixture {fixture_entry[_MANIFEST_PATH_KEY]!r} must declare "
@@ -113,18 +113,20 @@ class TestManifestStructure:
             )
 
     def test_manifest_paths_are_unique(self) -> None:
-        manifest = _load_manifest()
-        paths = [f[_MANIFEST_PATH_KEY] for f in manifest[_MANIFEST_FIXTURES_KEY]]
+        manifest = _read_manifest_file()
+        paths = [
+            fixture_entry[_MANIFEST_PATH_KEY] for fixture_entry in manifest[_MANIFEST_FIXTURES_KEY]
+        ]
         assert len(paths) == len(set(paths)), "Duplicate fixture paths found in manifest"
 
 
 class TestFixtureFilesExist:
     def test_all_manifest_fixture_files_exist_on_disk(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         missing_files: list[str] = []
         for fixture_entry in manifest[_MANIFEST_FIXTURES_KEY]:
             fixture_path = _FIXTURES_ROOT / fixture_entry[_MANIFEST_PATH_KEY]
-            if not fixture_path.exists():
+            if not fixture_path.is_file() or fixture_path.is_symlink():
                 missing_files.append(fixture_entry[_MANIFEST_PATH_KEY])
         assert not missing_files, (
             f"Fixture files declared in manifest but not found: {missing_files}"
@@ -137,7 +139,7 @@ class TestFixtureFilesExist:
         assert _CLEAN_FIXTURE_DIR.is_dir()
 
     def test_no_undeclared_phi_fixtures(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         declared_paths = {
             fixture_entry[_MANIFEST_PATH_KEY]
             for fixture_entry in manifest[_MANIFEST_FIXTURES_KEY]
@@ -152,7 +154,7 @@ class TestFixtureFilesExist:
         )
 
     def test_no_undeclared_clean_fixtures(self) -> None:
-        manifest = _load_manifest()
+        manifest = _read_manifest_file()
         declared_paths = {
             fixture_entry[_MANIFEST_PATH_KEY]
             for fixture_entry in manifest[_MANIFEST_FIXTURES_KEY]
