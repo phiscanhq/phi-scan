@@ -25,6 +25,8 @@ from phi_scan.models import ScanConfig
 _SUPPORTED_VERSION: int = 1
 _CUSTOM_MAX_FILE_SIZE_MB: int = 25
 _TEST_FILE_ENCODING: str = "utf-8"
+_PHI_SCANNER_CONFIG_AUDIT_KEY: str = "audit"
+_PHI_SCANNER_CONFIG_RETENTION_KEY: str = "retention_days"
 
 
 def _write_config(tmp_path: Path, config_dict: dict[str, object]) -> Path:
@@ -456,3 +458,19 @@ def test_load_config_raises_configuration_error_for_non_integer_max_file_size_mb
 
     with pytest.raises(ConfigurationError):
         load_config(config_file)
+
+
+def test_audit_retention_days_matches_config_default(tmp_path: Path) -> None:
+    # Prevent silent drift between AUDIT_RETENTION_DAYS in constants.py and the
+    # retention_days default written by create_default_config. If one is updated
+    # without the other, this test fails and forces the discrepancy to be resolved.
+    config_path = tmp_path / ".phi-scanner.yml"
+
+    create_default_config(config_path)
+
+    with config_path.open(encoding=_TEST_FILE_ENCODING) as config_file:
+        config_document = yaml.safe_load(config_file)
+    assert (
+        config_document[_PHI_SCANNER_CONFIG_AUDIT_KEY][_PHI_SCANNER_CONFIG_RETENTION_KEY]
+        == AUDIT_RETENTION_DAYS
+    )

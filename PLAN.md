@@ -487,38 +487,38 @@ polished, informative, and visually striking. Users should enjoy running this to
 
 ### 1F — Testing
 
-- [ ] **1F.1** `tests/conftest.py` — shared fixtures (tmp dirs with nested files, sample configs)
-- [ ] **1F.2** `tests/test_scanner.py` — `collect_scan_targets()`: multi-depth, binary detection, symlinks, excludes, PermissionError
+- [x] **1F.1** `tests/conftest.py` — shared fixtures (tmp dirs with nested files, sample configs)
+- [x] **1F.2** `tests/test_scanner.py` — `collect_scan_targets()`: multi-depth, binary detection, symlinks, excludes, PermissionError
   - Test: known binary extensions (.png, .exe, .zip) are skipped
   - Test: unknown binary files (null bytes in first 8KB) are skipped
   - Test: text files with unusual extensions (.conf, .cfg, .properties) are included
   - Test: files with no extension are scanned if text content detected
-- [ ] **1F.3** `tests/test_config.py` — loads valid YAML, defaults when missing, raises on invalid
+- [x] **1F.3** `tests/test_config.py` — loads valid YAML, defaults when missing, raises on invalid
   - `test_audit_retention_days_matches_config_default` — asserts `AUDIT_RETENTION_DAYS == 2192`
     to prevent silent drift between `constants.py` and `.phi-scanner.yml`
-- [ ] **1F.4** `tests/test_cli.py` — CLI smoke tests: `--version`, `scan <path>`, `--help`
-- [ ] **1F.5** `tests/test_ignore.py` — `.phi-scanignore` pattern matching at any depth (see Ignore Format Spec)
-- [ ] **1F.6** `tests/test_output.py` — visual output tests:
+- [x] **1F.4** `tests/test_cli.py` — CLI smoke tests: `--version`, `scan <path>`, `--help`
+- [x] **1F.5** `tests/test_ignore.py` — `.phi-scanignore` pattern matching at any depth (see Ignore Format Spec)
+- [x] **1F.6** `tests/test_output.py` — visual output tests:
   - Table format produces Rich-renderable output with correct column count
   - JSON format is valid JSON
   - CSV format has correct headers
   - Clean scan triggers green success panel (no red/alert elements)
   - `--quiet` flag suppresses all Rich output
   - `NO_COLOR` env var produces uncolored output
-- [ ] **1F.7** `tests/test_audit.py` — schema creation, event insert, query, immutability, schema version check
-- [ ] **1F.8** `tests/test_diff.py` — git diff file extraction tests:
+- [x] **1F.7** `tests/test_audit.py` — schema creation, event insert, query, immutability, schema version check
+- [x] **1F.8** `tests/test_diff.py` — git diff file extraction tests:
   - `--diff HEAD~1` returns correct changed files
   - `--diff --staged` returns staged files
   - Renamed files included with new name
   - Deleted files excluded from scan targets
   - Non-git directory raises `TraversalError` with clear message
   - Invalid ref raises `TraversalError`
-- [ ] **1F.9** `tests/test_integration.py` — end-to-end integration tests:
+- [x] **1F.9** `tests/test_integration.py` — end-to-end integration tests:
   - Scan → empty findings → clean output → audit log written → report reads it back
   - Scan → traversal with excludes → correct file count in audit log
   - Config load → scan with config → output respects config settings
   - Full CLI invocation via `CliRunner` → exit code 0 for clean scan
-- [ ] **1F.10** `tests/test_logging.py` — structured logging tests:
+- [x] **1F.10** `tests/test_logging.py` — structured logging tests:
   - Default log level is WARNING (console)
   - `--log-level debug` produces debug output
   - `--quiet` suppresses log output to console
