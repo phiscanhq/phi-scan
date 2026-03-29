@@ -99,6 +99,27 @@ class TestComputeFileHash:
 
 
 # ---------------------------------------------------------------------------
+# Symlink guard
+# ---------------------------------------------------------------------------
+
+
+class TestSymlinkCachePathRejected:
+    def test_raises_phi_scan_error_when_cache_path_is_symlink(self, tmp_path: Path) -> None:
+        from phi_scan.exceptions import PhiScanError
+
+        real_db = tmp_path / "real.db"
+        real_db.touch()
+        symlink_db = tmp_path / "cache.db"
+        symlink_db.symlink_to(real_db)
+        source_file = tmp_path / "app.py"
+        source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
+        content_hash = compute_file_hash(source_file)
+
+        with pytest.raises(PhiScanError, match="symlink"):
+            get_cached_result(FileCacheKey(source_file, content_hash), cache_path=symlink_db)
+
+
+# ---------------------------------------------------------------------------
 # get_cached_result / store_cached_result
 # ---------------------------------------------------------------------------
 

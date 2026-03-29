@@ -346,10 +346,11 @@ def get_cache_stats(cache_path: Path | None = None) -> CacheStats:
 
 
 def _resolve_cache_path(cache_path: Path | None) -> Path:
-    """Return the resolved cache database path, expanding ~ only.
+    """Return the cache database path with ~ expanded.
 
-    Pure function — no filesystem side effects. Directory creation is handled
-    by _ensure_cache_schema so that setup is co-located with the DB open call.
+    Pure function — no filesystem side effects. Directory creation and the
+    symlink guard are handled by _initialise_cache_schema so they are
+    co-located with the sqlite3.connect call.
     """
     return (cache_path or Path(_DEFAULT_CACHE_PATH)).expanduser()
 
@@ -362,6 +363,27 @@ def _resolve_cache_path(cache_path: Path | None) -> Path:
 _initialised_cache_paths: set[Path] = set()
 
 
+def _reject_symlink_cache_path(cache_path: Path) -> None:
+    """Raise PhiScanError if the cache path is a symlink.
+
+    sqlite3.connect() follows symlinks silently. If an attacker places a symlink
+    at the cache location, the scanner would write to the symlink target instead.
+    This guard is checked after mkdir so the parent directory exists, but before
+    sqlite3.connect so the file handle is never opened through a symlink.
+
+    Args:
+        cache_path: The expanded (not resolved) cache path to validate.
+
+    Raises:
+        PhiScanError: If cache_path is a symlink.
+    """
+    if cache_path.is_symlink():
+        raise PhiScanError(
+            f"Cache path must not be a symlink: {cache_path}. "
+            "Remove the symlink and let phi-scan create the cache file directly."
+        )
+
+
 def _initialise_cache_schema(cache_path: Path) -> None:
     """Create the cache directory, tables, and schema_meta if not yet done.
 
@@ -370,8 +392,9 @@ def _initialise_cache_schema(cache_path: Path) -> None:
     """
     if cache_path in _initialised_cache_paths:
         return
-    # Directory must exist before sqlite3.connect opens or creates the file.
+    # Directory must exist before the symlink check and sqlite3.connect.
     cache_path.parent.mkdir(parents=True, exist_ok=True)
+    _reject_symlink_cache_path(cache_path)
     try:
         with sqlite3.connect(cache_path) as connection:
             connection.execute(_CREATE_SCHEMA_META_SQL)
