@@ -53,7 +53,7 @@ _DEFAULT_MAX_FILE_SIZE_MB: int = 10
 _DEFAULT_CONFIDENCE_THRESHOLD: float = 0.6
 
 
-def _build_minimal_scan_config() -> ScanConfig:
+def _build_minimal_scan_configuration() -> ScanConfig:
     """Return a minimal ScanConfig suitable for integration tests."""
     return ScanConfig(
         max_file_size_mb=_DEFAULT_MAX_FILE_SIZE_MB,
@@ -118,7 +118,7 @@ def test_double_star_pattern_matches_at_any_depth() -> None:
     assert is_excluded is True
 
 
-def test_negation_pattern_reincluds_excluded_file() -> None:
+def test_negation_pattern_reincludes_excluded_file() -> None:
     patterns = [_EXTENSION_PATTERN_LOG, _NEGATION_LOG_PATTERN]
     spec = pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, patterns)
 
@@ -181,12 +181,12 @@ def test_collect_scan_targets_excludes_nested_node_modules_at_any_depth(
     app_file = src_dir / "app.py"
     app_file.write_text(_MINIMAL_FILE_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
-    config = _build_minimal_scan_config()
+    scan_configuration = _build_minimal_scan_configuration()
 
     scan_targets = collect_scan_targets(
         root_path=tmp_path,
         excluded_patterns=[_NODE_MODULES_PATTERN],
-        config=config,
+        config=scan_configuration,
     )
 
     assert app_file in scan_targets
@@ -207,12 +207,12 @@ def test_collect_scan_targets_respects_extension_exclusion_at_any_depth(
     py_file = tmp_path / "app.py"
     py_file.write_text(_MINIMAL_FILE_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
 
-    config = _build_minimal_scan_config()
+    scan_configuration = _build_minimal_scan_configuration()
 
     scan_targets = collect_scan_targets(
         root_path=tmp_path,
         excluded_patterns=[_EXTENSION_PATTERN_LOG],
-        config=config,
+        config=scan_configuration,
     )
 
     assert shallow_log not in scan_targets
