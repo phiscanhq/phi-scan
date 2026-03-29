@@ -42,6 +42,7 @@ from phi_scan.models import Hl7ScanContext, ScanFinding
 __all__ = [
     "detect_phi_in_hl7_content",
     "detect_phi_in_hl7_segment",
+    "is_hl7_library_available",
     "is_hl7_message_format",
 ]
 
@@ -183,6 +184,24 @@ def _build_hl7_finding(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def is_hl7_library_available() -> bool:
+    """Return True if the optional ``hl7`` library is installed.
+
+    Callers use this to probe availability before invoking
+    ``detect_phi_in_hl7_content`` so that the graceful-degradation branch
+    stays inside a public, stable contract rather than calling the private
+    ``_load_hl7_library`` across module boundaries.
+
+    Returns:
+        True if the ``hl7`` package can be imported; False otherwise.
+    """
+    try:
+        _load_hl7_library()
+        return True
+    except MissingOptionalDependencyError:
+        return False
 
 
 def is_hl7_message_format(file_content: str) -> bool:

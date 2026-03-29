@@ -35,7 +35,6 @@ from phi_scan.constants import (
     DetectionLayer,
     PhiCategory,
 )
-from phi_scan.exceptions import MissingOptionalDependencyError
 from phi_scan.hashing import compute_value_hash, severity_from_confidence
 from phi_scan.models import ScanFinding
 
@@ -292,12 +291,7 @@ def detect_phi_in_structured_content(
     from phi_scan import hl7_scanner  # lazy import — avoids circular dependency at load time
 
     if hl7_scanner.is_hl7_message_format(file_content):
-        try:
-            # Probe for the optional library before running the full scan so that
-            # MissingOptionalDependencyError is caught only at the import boundary.
-            # Errors raised during the scan itself must propagate unmasked.
-            hl7_scanner._load_hl7_library()
-        except MissingOptionalDependencyError:
+        if not hl7_scanner.is_hl7_library_available():
             _logger.warning(_HL7_UNAVAILABLE_WARNING)
             return []
         return hl7_scanner.detect_phi_in_hl7_content(file_content, file_path)

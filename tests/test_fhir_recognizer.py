@@ -16,7 +16,6 @@ from phi_scan.constants import (
     PhiCategory,
     SeverityLevel,
 )
-from phi_scan.exceptions import MissingOptionalDependencyError
 from phi_scan.fhir_recognizer import (  # type: ignore[attr-defined]
     _FHIR_FIELD_BASE_CONFIDENCE,
     _FHIR_JSON_NULL_SENTINEL,
@@ -344,8 +343,8 @@ def test_detect_phi_in_structured_content_routes_to_hl7_for_msh_content(monkeypa
         "phi_scan.hl7_scanner.is_hl7_message_format",
         lambda _content: True,
     )
-    # Stub the library probe so the test does not require the hl7 package.
-    monkeypatch.setattr("phi_scan.hl7_scanner._load_hl7_library", lambda: None)
+    # Stub the library availability check so the test does not require the hl7 package.
+    monkeypatch.setattr("phi_scan.hl7_scanner.is_hl7_library_available", lambda: True)
     monkeypatch.setattr(
         "phi_scan.hl7_scanner.detect_phi_in_hl7_content",
         lambda _content, _path: hl7_findings,
@@ -366,12 +365,7 @@ def test_detect_phi_in_structured_content_logs_warning_and_returns_empty_when_hl
         "phi_scan.hl7_scanner.is_hl7_message_format",
         lambda _content: True,
     )
-    # Patch only the library probe — detect_phi_in_hl7_content must not be
-    # wrapped by the catch so that scan errors propagate unmasked.
-    monkeypatch.setattr(
-        "phi_scan.hl7_scanner._load_hl7_library",
-        lambda: (_ for _ in ()).throw(MissingOptionalDependencyError("hl7 not installed")),
-    )
+    monkeypatch.setattr("phi_scan.hl7_scanner.is_hl7_library_available", lambda: False)
 
     with caplog.at_level(logging.WARNING, logger="phi_scan.fhir_recognizer"):
         findings = detect_phi_in_structured_content(hl7_content, _FAKE_FILE_PATH)

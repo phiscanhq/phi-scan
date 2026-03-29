@@ -26,6 +26,7 @@ from phi_scan.hl7_scanner import (  # type: ignore[attr-defined]
     _is_null_or_empty_hl7_value,
     detect_phi_in_hl7_content,
     detect_phi_in_hl7_segment,
+    is_hl7_library_available,
     is_hl7_message_format,
 )
 from phi_scan.models import Hl7ScanContext
@@ -154,6 +155,30 @@ def test_is_hl7_message_format_returns_false_for_content_without_pipe():
     result = is_hl7_message_format(non_hl7_content)
 
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# is_hl7_library_available
+# ---------------------------------------------------------------------------
+
+
+def test_is_hl7_library_available_returns_false_when_load_raises(monkeypatch):
+    monkeypatch.setattr(
+        "phi_scan.hl7_scanner._load_hl7_library",
+        lambda: (_ for _ in ()).throw(MissingOptionalDependencyError("hl7 not installed")),
+    )
+
+    result = is_hl7_library_available()
+
+    assert result is False
+
+
+def test_is_hl7_library_available_returns_true_when_load_succeeds(monkeypatch):
+    monkeypatch.setattr("phi_scan.hl7_scanner._load_hl7_library", lambda: object())
+
+    result = is_hl7_library_available()
+
+    assert result is True
 
 
 # ---------------------------------------------------------------------------
