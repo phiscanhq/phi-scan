@@ -773,13 +773,13 @@ and can be wired in before or alongside the detection engine.
 
 ### 2C — Layer 2: NLP Named Entity Recognition
 
-- [ ] **2C.1** Initialize Presidio `AnalyzerEngine` with spaCy `en_core_web_lg`
-- [ ] **2C.2** Configure Presidio recognizers for: PERSON, GPE, DATE, ORG, LOCATION
-- [ ] **2C.3** Map Presidio entity types to HIPAA categories (Names → #1, Geographic → #2, etc.)
-- [ ] **2C.4** Set confidence thresholds — medium confidence findings flagged differently from high
-- [ ] **2C.5** Implement `detect_phi_with_nlp(file_content: str, file_path: Path) -> list[ScanFinding]`
+- [x] **2C.1** Initialize Presidio `AnalyzerEngine` with spaCy `en_core_web_lg`
+- [x] **2C.2** Configure Presidio recognizers for: PERSON, GPE, DATE, ORG, LOCATION
+- [x] **2C.3** Map Presidio entity types to HIPAA categories (Names → #1, Geographic → #2, etc.)
+- [x] **2C.4** Set confidence thresholds — medium confidence findings flagged differently from high
+- [x] **2C.5** Implement `detect_phi_with_nlp(file_content: str, file_path: Path) -> list[ScanFinding]`
   — the Layer 2 delegated function; runs after regex layer; applies Presidio NLP recognition
-- [ ] **2C.6** Graceful degradation: if spaCy model not installed, skip NLP layer with warning log and suggest `phi-scan setup`
+- [x] **2C.6** Graceful degradation: if spaCy model not installed, skip NLP layer with warning log and suggest `phi-scan setup`
 
 ### 2D — Layer 3: Structured Healthcare Formats (FHIR R4 + HL7 v2)
 
