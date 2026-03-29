@@ -1070,20 +1070,20 @@ Generate a git-applicable patch that developers can review and apply in seconds.
 
 ### 2G — Detection Testing
 
-- [ ] **2G.1** Create synthetic test dataset — files with known PHI at various nesting depths
-- [ ] **2G.2** Test each of 18 HIPAA identifiers detected correctly
-- [ ] **2G.3** Test FHIR resource detection for all supported resource types
-- [ ] **2G.4** Test false positive rate on clean code files
-- [ ] **2G.5** Test confidence scoring produces correct severity levels
-- [ ] **2G.6** Benchmark scan performance on a 1000-file synthetic repo
-- [ ] **2G.7** Test variable-name boosting: `patient_name = "John"` scores higher than `x = "John"`
-- [ ] **2G.8** Test auto-fix generates correct synthetic replacements for each HIPAA category
-- [ ] **2G.9** Test `--dry-run` shows diff without modifying files
-- [ ] **2G.10** Test `--apply` modifies files correctly
-- [ ] **2G.11** Test deterministic replacement: same PHI value → same synthetic value across file
-- [ ] **2G.12** Test suppressed lines are not replaced by auto-fix
-- [ ] **2G.13** Test graceful degradation: NLP layer skipped when spaCy model not installed
-- [ ] **2G.14** End-to-end integration: scan → detect → cache → re-scan (cache hit) → output → audit
+- [x] **2G.1** Create synthetic test dataset — files with known PHI at various nesting depths
+- [x] **2G.2** Test each of 18 HIPAA identifiers detected correctly
+- [x] **2G.3** Test FHIR resource detection for all supported resource types
+- [x] **2G.4** Test false positive rate on clean code files
+- [x] **2G.5** Test confidence scoring produces correct severity levels
+- [x] **2G.6** Benchmark scan performance on a 1000-file synthetic repo
+- [x] **2G.7** Test variable-name boosting: `patient_name = "John"` scores higher than `x = "John"`
+- [x] **2G.8** Test auto-fix generates correct synthetic replacements for each HIPAA category (tests/test_fixer.py)
+- [x] **2G.9** Test `--dry-run` shows diff without modifying files (tests/test_fixer.py)
+- [x] **2G.10** Test `--apply` modifies files correctly (tests/test_fixer.py)
+- [x] **2G.11** Test deterministic replacement: same PHI value → same synthetic value across file (tests/test_fixer.py)
+- [x] **2G.12** Test suppressed lines are not replaced by auto-fix (tests/test_fixer.py)
+- [x] **2G.13** Test graceful degradation: NLP layer skipped when spaCy model not installed (tests/test_nlp_detector.py)
+- [x] **2G.14** End-to-end integration: scan → detect → cache → re-scan (cache hit) → output → audit
 
 ### 2H — Compliance Scope & Known Limitations
 
