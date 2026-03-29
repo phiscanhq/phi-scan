@@ -4,34 +4,15 @@ from pathlib import Path
 
 import pytest
 
+from phi_scan.config import create_default_config
+
 # ---------------------------------------------------------------------------
 # Fixture constants — no magic values in fixture bodies
 # ---------------------------------------------------------------------------
 
 _SAMPLE_FILE_CONTENT: str = 'greeting = "hello world"\n'
-_SAMPLE_CONFIG_CONTENT: str = (
-    "version: 1\n"
-    "scan:\n"
-    "  confidence_threshold: 0.6\n"
-    "  severity_threshold: low\n"
-    "  max_file_size_mb: 10\n"
-    "  follow_symlinks: false\n"
-    "  include_extensions: null\n"
-    "  exclude_paths: []\n"
-    "output:\n"
-    "  format: table\n"
-    "  quiet: false\n"
-    "audit:\n"
-    "  database_path: ~/.phi-scanner/audit.db\n"
-)
-
-# Public alias kept for backward-compatibility with existing test imports.
-SAMPLE_FILE_CONTENT: str = _SAMPLE_FILE_CONTENT
 
 
-# Fixture names below are nouns by pytest convention (fixtures describe what they
-# provide, not what they do). This intentionally conflicts with the verb-noun pair
-# rule for functions — the trade-off is accepted for fixtures project-wide.
 @pytest.fixture()
 def tmp_project(tmp_path: Path) -> Path:
     """Create a minimal temporary project directory with nested files for scan tests.
@@ -72,11 +53,14 @@ def tmp_project(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def tmp_config(tmp_path: Path) -> Path:
-    """Write a minimal valid .phi-scanner.yml to tmp_path and return the file path.
+    """Write the default .phi-scanner.yml to tmp_path and return the file path.
+
+    Uses create_default_config so the fixture stays in sync with the schema
+    without duplicating default values inline.
 
     Returns:
         Path to the written config file.
     """
     config_path = tmp_path / ".phi-scanner.yml"
-    config_path.write_text(_SAMPLE_CONFIG_CONTENT, encoding="utf-8")
+    create_default_config(config_path)
     return config_path

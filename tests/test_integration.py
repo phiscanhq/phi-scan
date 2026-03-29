@@ -190,10 +190,11 @@ def test_scan_directory_produces_clean_result_json(tmp_path: Path, runner: CliRu
 def test_scan_report_command_returns_no_record_when_no_scan_performed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: CliRunner
 ) -> None:
-    fresh_database_path = str(tmp_path / "audit.db")
+    fresh_database_path = tmp_path / "audit.db"
     # Patch the name bound in cli.py's namespace — that is the binding used at
     # call time by the report command (imported via `from phi_scan.constants import`).
-    monkeypatch.setattr("phi_scan.cli.DEFAULT_DATABASE_PATH", fresh_database_path)
+    # DEFAULT_DATABASE_PATH is a str constant, so convert Path to str at call site.
+    monkeypatch.setattr("phi_scan.cli.DEFAULT_DATABASE_PATH", str(fresh_database_path))
 
     cli_invocation = runner.invoke(app, ["report"])
 

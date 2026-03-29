@@ -10,7 +10,6 @@ import pathspec
 
 from phi_scan.constants import (
     DEFAULT_TEXT_ENCODING,
-    OutputFormat,
     PathspecMatchStyle,
     SeverityLevel,
 )
@@ -61,7 +60,6 @@ def _build_minimal_scan_configuration() -> ScanConfig:
         severity_threshold=SeverityLevel.LOW,
         include_extensions=None,
         exclude_paths=[],
-        output_format=OutputFormat.TABLE,
     )
 
 
