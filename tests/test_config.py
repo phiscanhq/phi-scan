@@ -27,6 +27,7 @@ _CUSTOM_MAX_FILE_SIZE_MB: int = 25
 _TEST_FILE_ENCODING: str = "utf-8"
 _PHI_SCANNER_CONFIG_AUDIT_KEY: str = "audit"
 _PHI_SCANNER_CONFIG_RETENTION_KEY: str = "retention_days"
+_CUSTOM_CONFIDENCE_THRESHOLD: float = 0.8
 
 
 def _write_config(tmp_path: Path, config_dict: dict[str, object]) -> Path:
@@ -76,12 +77,12 @@ def test_load_config_uses_scan_defaults_when_scan_section_is_absent(
 
 def test_load_config_maps_confidence_threshold_from_yaml(tmp_path: Path) -> None:
     config = _build_minimal_config()
-    config["scan"] = {"confidence_threshold": 0.8}
+    config["scan"] = {"confidence_threshold": _CUSTOM_CONFIDENCE_THRESHOLD}
 
     config_file = _write_config(tmp_path, config)
     scan_config = load_config(config_file)
 
-    assert scan_config.confidence_threshold == 0.8
+    assert scan_config.confidence_threshold == _CUSTOM_CONFIDENCE_THRESHOLD
 
 
 def test_load_config_maps_severity_threshold_low_to_severity_level(

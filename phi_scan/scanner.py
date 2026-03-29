@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from pathlib import Path
 from types import MappingProxyType
 
@@ -472,9 +473,10 @@ def _count_by_severity(
     Returns:
         An immutable mapping from SeverityLevel to finding count.
     """
-    severity_counts: dict[SeverityLevel, int] = {level: 0 for level in SeverityLevel}
-    for finding in findings:
-        severity_counts[finding.severity] += 1
+    raw_counts = Counter(finding.severity for finding in findings)
+    severity_counts: dict[SeverityLevel, int] = {
+        level: raw_counts.get(level, 0) for level in SeverityLevel
+    }
     return MappingProxyType(severity_counts)
 
 
@@ -492,7 +494,8 @@ def _count_by_category(
     Returns:
         An immutable mapping from PhiCategory to finding count.
     """
-    category_counts: dict[PhiCategory, int] = {category: 0 for category in PhiCategory}
-    for finding in findings:
-        category_counts[finding.hipaa_category] += 1
+    raw_counts = Counter(finding.hipaa_category for finding in findings)
+    category_counts: dict[PhiCategory, int] = {
+        category: raw_counts.get(category, 0) for category in PhiCategory
+    }
     return MappingProxyType(category_counts)

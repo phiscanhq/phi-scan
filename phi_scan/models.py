@@ -129,9 +129,15 @@ class ScanFinding:
         _reject_invalid_line_number(self)
         _reject_invalid_value_hash(self)
         _reject_out_of_range_confidence(self)
-        _reject_oversized_entity_type(self)
-        _reject_oversized_code_context(self)
-        _reject_oversized_remediation_hint(self)
+        _reject_field_exceeds_maximum_length(
+            self.entity_type, "entity_type", _MAXIMUM_ENTITY_TYPE_LENGTH
+        )
+        _reject_field_exceeds_maximum_length(
+            self.code_context, "code_context", _MAXIMUM_CODE_CONTEXT_LENGTH
+        )
+        _reject_field_exceeds_maximum_length(
+            self.remediation_hint, "remediation_hint", _MAXIMUM_REMEDIATION_HINT_LENGTH
+        )
 
 
 def _reject_invalid_line_number(finding: ScanFinding) -> None:
@@ -163,27 +169,24 @@ def _reject_out_of_range_confidence(finding: ScanFinding) -> None:
         )
 
 
-def _reject_oversized_entity_type(finding: ScanFinding) -> None:
-    if len(finding.entity_type) > _MAXIMUM_ENTITY_TYPE_LENGTH:
+def _reject_field_exceeds_maximum_length(
+    field_value: str,
+    field_name: str,
+    maximum_length: int,
+) -> None:
+    """Raise PhiDetectionError if field_value exceeds maximum_length characters.
+
+    Args:
+        field_value: The string to check.
+        field_name: Name of the field, for error messages.
+        maximum_length: Maximum allowed character count.
+
+    Raises:
+        PhiDetectionError: If len(field_value) > maximum_length.
+    """
+    if len(field_value) > maximum_length:
         raise PhiDetectionError(
-            f"entity_type length {len(finding.entity_type)} exceeds maximum "
-            f"of {_MAXIMUM_ENTITY_TYPE_LENGTH} characters"
-        )
-
-
-def _reject_oversized_code_context(finding: ScanFinding) -> None:
-    if len(finding.code_context) > _MAXIMUM_CODE_CONTEXT_LENGTH:
-        raise PhiDetectionError(
-            f"code_context length {len(finding.code_context)} exceeds maximum "
-            f"of {_MAXIMUM_CODE_CONTEXT_LENGTH} characters"
-        )
-
-
-def _reject_oversized_remediation_hint(finding: ScanFinding) -> None:
-    if len(finding.remediation_hint) > _MAXIMUM_REMEDIATION_HINT_LENGTH:
-        raise PhiDetectionError(
-            f"remediation_hint length {len(finding.remediation_hint)} exceeds maximum "
-            f"of {_MAXIMUM_REMEDIATION_HINT_LENGTH} characters"
+            f"{field_name} length {len(field_value)} exceeds maximum of {maximum_length} characters"
         )
 
 
