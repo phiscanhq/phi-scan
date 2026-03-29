@@ -632,7 +632,7 @@ Detection logic never lives directly in `scan_file()` — it delegates entirely 
 These were removed from Phase 1 to reduce scope. They don't depend on detection
 and can be wired in before or alongside the detection engine.
 
-- [ ] **2A.1** `suppression.py` — inline suppression comment system
+- [x] **2A.1** `suppression.py` — inline suppression comment system
   - Parse `# phi-scan:ignore` — suppress all findings on that line
   - Parse `# phi-scan:ignore[SSN,MRN]` — suppress only specific entity types
   - Parse `# phi-scan:ignore-next-line` — suppress all findings on the following line
@@ -641,7 +641,7 @@ and can be wired in before or alongside the detection engine.
   - `load_suppressions(file_lines)` → `dict[int, set[str]]` mapping line numbers to suppressed types
   - `is_finding_suppressed(finding, suppressions)` → bool
   - Suppressed findings still logged to audit (with `suppressed=True` flag) for compliance traceability
-- [ ] **2A.2** `cache.py` — content-hash scan cache for incremental scanning
+- [x] **2A.2** `cache.py` — content-hash scan cache for incremental scanning
   - Cache database: `~/.phi-scanner/cache.db` (SQLite) with `CACHE_SCHEMA_VERSION` tracking
   - Schema: `file_cache` (file_path, content_hash_sha256, last_scan_timestamp, findings_json, scanner_version)
   - `compute_file_hash(file_path)` → SHA-256 of file content
@@ -653,11 +653,11 @@ and can be wired in before or alongside the detection engine.
   - `--no-cache` flag to force full re-scan
   - `--cache-stats` flag to display cache hit/miss ratio after scan
   - Cache DB also uses `schema_meta` table for migration support
-- [ ] **2A.3** `help_text.py` — all explain command content stored as named constants
+- [x] **2A.3** `help_text.py` — all explain command content stored as named constants
   - One constant per explain topic (e.g., `EXPLAIN_CONFIDENCE_TEXT`, `EXPLAIN_HIPAA_TEXT`)
   - Formatted with Rich markup for terminal display (bold, colors, tables)
   - Single source of truth — same content used by CLI explain commands and docs generation
-- [ ] **2A.4** Wire `explain` command group into `cli.py`:
+- [x] **2A.4** Wire `explain` command group into `cli.py`:
   - `phi-scan explain confidence` — what confidence scores mean, threshold ranges, per-layer breakdown
   - `phi-scan explain severity` — what HIGH/MEDIUM/LOW mean and how they map to confidence
   - `phi-scan explain risk-levels` — CRITICAL/HIGH/MODERATE/LOW/CLEAN risk assessment criteria
@@ -670,14 +670,14 @@ and can be wired in before or alongside the detection engine.
 
 ### 2A-T — Deferred Feature Tests
 
-- [ ] **2A-T.1** `tests/test_suppression.py` — inline suppression tests:
+- [x] **2A-T.1** `tests/test_suppression.py` — inline suppression tests:
   - `# phi-scan:ignore` suppresses all findings on that line
   - `# phi-scan:ignore[SSN]` suppresses only SSN on that line
   - `# phi-scan:ignore-next-line` suppresses the following line
   - `# phi-scan:ignore-file` in first 5 lines suppresses entire file
   - Different comment syntax: `//`, `#`, `--`, `<!-- -->`
   - Suppressed findings still recorded in audit with `suppressed=True`
-- [ ] **2A-T.2** `tests/test_cache.py` — scan cache tests:
+- [x] **2A-T.2** `tests/test_cache.py` — scan cache tests:
   - Cache miss on first scan, cache hit on unchanged file
   - Cache invalidated when file content changes
   - Cache invalidated when scanner version changes
@@ -687,7 +687,7 @@ and can be wired in before or alongside the detection engine.
 
 ### 2B — Layer 1: Regex / Pattern Matching
 
-- [ ] **2B.1** Build regex pattern registry for all 18 HIPAA identifiers plus additional high-value
+- [x] **2B.1** Build regex pattern registry for all 18 HIPAA identifiers plus additional high-value
   healthcare identifiers. Precision requirements are listed per pattern — over-flagging causes
   alert fatigue; under-flagging is a HIPAA violation risk:
   - **SSN** (XXX-XX-XXXX) — must exclude reserved ranges to suppress false positives on order
@@ -766,9 +766,9 @@ and can be wired in before or alongside the detection engine.
     data (CHROM/POS/REF/ALT columns), gene panel names combined with patient identifiers;
     protected under GINA (federal) and GDPR Article 9 (EU). Never use the literals `7`, `9`,
     or `11` inline in regex quantifiers — build the pattern string from the named constants.
-- [ ] **2B.2** Implement confidence scoring for regex matches (high confidence for structured patterns)
-- [ ] **2B.3** Extract matched value, compute SHA-256 hash (never store raw value)
-- [ ] **2B.4** Implement `detect_phi_with_regex(file_content: str, file_path: Path) -> list[ScanFinding]`
+- [x] **2B.2** Implement confidence scoring for regex matches (high confidence for structured patterns)
+- [x] **2B.3** Extract matched value, compute SHA-256 hash (never store raw value)
+- [x] **2B.4** Implement `detect_phi_with_regex(file_content: str, file_path: Path) -> list[ScanFinding]`
   — the Layer 1 delegated function; scans line-by-line using the pattern registry from 2B.1
 
 ### 2C — Layer 2: NLP Named Entity Recognition

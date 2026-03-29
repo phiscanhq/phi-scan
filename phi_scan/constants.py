@@ -30,6 +30,7 @@ __all__ = [
     "DBSNP_RS_ID_MAX_DIGITS",
     "DBSNP_RS_ID_MIN_DIGITS",
     "DEA_NUMBER_DIGIT_COUNT",
+    "DEA_NUMBER_PREFIX_LENGTH",
     "DetectionLayer",
     "ENSEMBL_GENE_ID_DIGIT_COUNT",
     "EXIT_CODE_CLEAN",
@@ -44,8 +45,13 @@ __all__ = [
     "BYTES_PER_MEGABYTE",
     "MAX_FILE_SIZE_BYTES",
     "MAX_FILE_SIZE_MB",
+    "BIOMETRIC_FIELD_NAMES",
     "MBI_ALLOWED_LETTERS",
     "MBI_CHARACTER_COUNT",
+    "NPI_CMS_LUHN_ISSUER_PREFIX",
+    "VCF_GENETIC_DATA_COLUMN_HEADER",
+    "ZIP_CODE_DIGIT_COUNT",
+    "ZIP_PLUS4_SUFFIX_DIGIT_COUNT",
     "MINIMUM_QUASI_IDENTIFIER_COUNT",
     "OutputFormat",
     "PathspecMatchStyle",
@@ -252,6 +258,7 @@ MBI_CHARACTER_COUNT: int = 11
 # DEA registration number — 2-letter prefix followed by exactly this many digits,
 # validated by a checksum over digits 1, 3, 5, 2, 4, 6.
 DEA_NUMBER_DIGIT_COUNT: int = 7
+DEA_NUMBER_PREFIX_LENGTH: int = 2  # two letter characters before the digit sequence
 
 # Vehicle Identification Number — fixed-length per ISO 3779 (WMI + VDS + VIS).
 # Position 9 is a check digit; I, O, Q are never used.
@@ -264,6 +271,12 @@ DBSNP_RS_ID_MAX_DIGITS: int = 9
 
 # Ensembl gene ID — "ENSG" prefix followed by exactly this many zero-padded digits.
 ENSEMBL_GENE_ID_DIGIT_COUNT: int = 11
+
+# NPI Luhn validation — CMS prepends this ISO 7812 issuer prefix to the 10-digit NPI
+# before computing the Luhn check. The 5-digit prefix "80840" is the Health Care
+# Provider designation assigned by CMS under the ISO 7812 financial card standard.
+NPI_CMS_LUHN_ISSUER_PREFIX: str = "80840"
+
 
 # FCC-reserved fictional NANP telephone exchange and subscriber range.
 # Numbers in this range (555-0100 through 555-0199) are never assigned to real
@@ -308,6 +321,31 @@ SSN_EXCLUDED_AREA_NUMBERS: frozenset[int] = frozenset({666, *range(900, 1000)})
 # The scanner flags any variable name, JSON key, or column name that matches
 # a member of this set as a potential SUD record under 42 CFR Part 2.
 # Detection logic must iterate this constant — never embed these strings inline.
+# Biometric identifiers that must never be stored in source code.
+# Any variable or field with one of these names is flagged as a HIPAA biometric
+# identifier under Safe Harbor §164.514(b)(2) category 16.
+# Use this tuple to build the biometric field name pattern — never embed inline.
+BIOMETRIC_FIELD_NAMES: tuple[str, ...] = (
+    "fingerprint",
+    "iris_scan",
+    "retinal_scan",
+    "face_template",
+    "voiceprint",
+    "palm_print",
+    "gait_signature",
+    "dna_sequence",
+    "biometric_hash",
+)
+
+# VCF (Variant Call Format) genomic data column header sentinel.
+# Presence of this header in source code indicates embedded genomic data,
+# which is a genetic identifier under GINA and GDPR Art. 9 in addition to HIPAA.
+VCF_GENETIC_DATA_COLUMN_HEADER: str = "CHROM"
+
+# ZIP code digit counts for the US Postal Service standard and extended formats.
+ZIP_CODE_DIGIT_COUNT: int = 5  # standard 5-digit ZIP code
+ZIP_PLUS4_SUFFIX_DIGIT_COUNT: int = 4  # ZIP+4 extension suffix
+
 SUD_FIELD_NAME_PATTERNS: frozenset[str] = frozenset(
     {
         "substance_use",
