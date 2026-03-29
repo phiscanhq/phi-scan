@@ -16,7 +16,6 @@ Design constraints from PLAN.md (enforced throughout this module):
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,15 +23,11 @@ from pathlib import Path
 
 from phi_scan.constants import (
     BIOMETRIC_FIELD_NAMES,
-    CONFIDENCE_HIGH_FLOOR,
-    CONFIDENCE_LOW_FLOOR,
-    CONFIDENCE_MEDIUM_FLOOR,
     CONFIDENCE_REGEX_MAX,
     DBSNP_RS_ID_MAX_DIGITS,
     DBSNP_RS_ID_MIN_DIGITS,
     DEA_NUMBER_DIGIT_COUNT,
     DEA_NUMBER_PREFIX_LENGTH,
-    DEFAULT_TEXT_ENCODING,
     ENSEMBL_GENE_ID_DIGIT_COUNT,
     FICTIONAL_PHONE_EXCHANGE,
     FICTIONAL_PHONE_SUBSCRIBER_MAX,
@@ -49,8 +44,8 @@ from phi_scan.constants import (
     ZIP_PLUS4_SUFFIX_DIGIT_COUNT,
     DetectionLayer,
     PhiCategory,
-    SeverityLevel,
 )
+from phi_scan.hashing import compute_value_hash, severity_from_confidence
 from phi_scan.models import ScanFinding
 
 __all__ = ["detect_phi_with_regex"]
@@ -1184,39 +1179,6 @@ _PATTERN_REGISTRY: tuple[PhiPattern, ...] = (
 # ---------------------------------------------------------------------------
 
 
-def _compute_value_hash(matched_text: str) -> str:
-    """Return SHA-256 hex digest of the matched PHI value.
-
-    Matched values are never stored — only their hashes. This satisfies the
-    HIPAA requirement that PHI not persist in audit logs or scanner state.
-
-    Args:
-        matched_text: The raw matched string (never stored by the caller).
-
-    Returns:
-        64-character lowercase SHA-256 hex string.
-    """
-    return hashlib.sha256(matched_text.encode(DEFAULT_TEXT_ENCODING)).hexdigest()
-
-
-def _severity_from_confidence(confidence: float) -> SeverityLevel:
-    """Map a confidence score to SeverityLevel.
-
-    Args:
-        confidence: Float in [0.0, 1.0].
-
-    Returns:
-        HIGH, MEDIUM, LOW, or INFO depending on confidence thresholds.
-    """
-    if confidence >= CONFIDENCE_HIGH_FLOOR:
-        return SeverityLevel.HIGH
-    if confidence >= CONFIDENCE_MEDIUM_FLOOR:
-        return SeverityLevel.MEDIUM
-    if confidence >= CONFIDENCE_LOW_FLOOR:
-        return SeverityLevel.LOW
-    return SeverityLevel.INFO
-
-
 def _determine_confidence(line_text: str, phi_pattern: PhiPattern) -> float:
     """Return the effective confidence for a match on the given line.
 
@@ -1271,8 +1233,8 @@ def _build_finding(
         hipaa_category=phi_pattern.phi_category,
         confidence=confidence,
         detection_layer=DetectionLayer.REGEX,
-        value_hash=_compute_value_hash(matched_text),
-        severity=_severity_from_confidence(confidence),
+        value_hash=compute_value_hash(matched_text),
+        severity=severity_from_confidence(confidence),
         code_context=line_text.rstrip(),
         remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(phi_pattern.phi_category, ""),
     )

@@ -14,10 +14,8 @@ from phi_scan.constants import (
     PhiCategory,
     SeverityLevel,
 )
-from phi_scan.regex_detector import (  # type: ignore[attr-defined]
-    _severity_from_confidence,
-    detect_phi_with_regex,
-)
+from phi_scan.hashing import severity_from_confidence
+from phi_scan.regex_detector import detect_phi_with_regex
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -514,7 +512,7 @@ class TestSeverityMapping:
     def test_confidence_threshold_boundaries(
         self, confidence: float, expected_severity: SeverityLevel
     ) -> None:
-        assert _severity_from_confidence(confidence) == expected_severity
+        assert severity_from_confidence(confidence) == expected_severity
 
 
 # ---------------------------------------------------------------------------

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import bisect
 import functools
-import hashlib
 import logging
 import warnings
 from dataclasses import dataclass
@@ -28,16 +27,13 @@ from pathlib import Path
 from typing import Any
 
 from phi_scan.constants import (
-    CONFIDENCE_HIGH_FLOOR,
-    CONFIDENCE_LOW_FLOOR,
-    CONFIDENCE_MEDIUM_FLOOR,
     CONFIDENCE_NLP_MAX,
     CONFIDENCE_NLP_MIN,
     HIPAA_REMEDIATION_GUIDANCE,
     DetectionLayer,
     PhiCategory,
-    SeverityLevel,
 )
+from phi_scan.hashing import compute_value_hash, severity_from_confidence
 from phi_scan.models import ScanFinding
 
 __all__ = ["detect_phi_with_nlp"]
@@ -172,39 +168,6 @@ def _clamp_to_nlp_range(raw_score: float) -> float:
     return max(CONFIDENCE_NLP_MIN, min(CONFIDENCE_NLP_MAX, raw_score))
 
 
-def _severity_from_confidence(confidence: float) -> SeverityLevel:
-    """Derive SeverityLevel from a confidence score.
-
-    Args:
-        confidence: Score in [CONFIDENCE_SCORE_MINIMUM, CONFIDENCE_SCORE_MAXIMUM].
-
-    Returns:
-        SeverityLevel for the given confidence band.
-    """
-    if confidence >= CONFIDENCE_HIGH_FLOOR:
-        return SeverityLevel.HIGH
-    if confidence >= CONFIDENCE_MEDIUM_FLOOR:
-        return SeverityLevel.MEDIUM
-    if confidence >= CONFIDENCE_LOW_FLOOR:
-        return SeverityLevel.LOW
-    return SeverityLevel.INFO
-
-
-def _compute_value_hash(text: str) -> str:
-    """Return the SHA-256 hex digest of text.
-
-    Raw PHI values are never stored — only their hashes (HIPAA audit
-    requirement). The hash is computed over the UTF-8 encoding of the text.
-
-    Args:
-        text: The raw matched PHI value.
-
-    Returns:
-        64-character lowercase hex digest.
-    """
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
 def _build_line_start_offsets(file_content: str) -> list[int]:
     """Return the character offset of the first character on each line.
 
@@ -281,10 +244,10 @@ def _build_nlp_finding(
         # The matched slice is passed directly to the hash function — no named
         # local variable is created, so the raw PHI value is never bound to a
         # name that could be accidentally referenced elsewhere in this scope.
-        value_hash=_compute_value_hash(
+        value_hash=compute_value_hash(
             scan_context.file_content[analyzer_result.start : analyzer_result.end]
         ),
-        severity=_severity_from_confidence(confidence),
+        severity=severity_from_confidence(confidence),
         code_context=line_text.rstrip(),
         remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(phi_category, ""),
     )

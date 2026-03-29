@@ -43,8 +43,9 @@ Changelog = "https://github.com/joeyessak/phi-scan/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 nlp = ["presidio-analyzer>=2.0", "presidio-anonymizer>=2.0", "spacy>=3.7"]
 fhir = ["fhir.resources>=7.0"]
+hl7 = ["hl7>=0.4"]
 reports = ["fpdf2>=2.7", "jinja2>=3.1", "matplotlib>=3.8"]
-full = ["phi-scan[nlp]", "phi-scan[fhir]", "phi-scan[reports]"]
+full = ["phi-scan[nlp]", "phi-scan[fhir]", "phi-scan[hl7]", "phi-scan[reports]"]
 
 [dependency-groups]  # uv-native; pip users install dev deps via source checkout + uv sync
 dev = [
