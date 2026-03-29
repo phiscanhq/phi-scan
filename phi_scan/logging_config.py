@@ -120,6 +120,9 @@ def _build_file_handler(log_file_path: Path) -> logging.handlers.RotatingFileHan
     expanded_path = log_file_path.expanduser()
     if expanded_path.is_symlink():
         raise PhiScanLoggingError(_SYMLINK_LOG_PATH_ERROR.format(path=expanded_path))
+    # os.path.normpath collapses .. without following symlinks — Path.resolve()
+    # is intentionally avoided here because it resolves symlinks, which would
+    # defeat the symlink-detection guard in _reject_symlinked_parents below.
     normalized_path = Path(os.path.normpath(expanded_path.absolute()))
     _reject_symlinked_parents(normalized_path)
     _create_log_directory(normalized_path.parent)

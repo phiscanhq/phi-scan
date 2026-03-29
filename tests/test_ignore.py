@@ -72,6 +72,18 @@ def test_directory_pattern_excludes_file_at_depth_one() -> None:
     assert is_excluded is True
 
 
+def test_directory_pattern_excludes_path_constructed_from_parts() -> None:
+    # Regression guard for Windows: Path("a") / "b" produces backslash separators
+    # when converted with str() on Windows. is_path_excluded must use as_posix() so
+    # gitignore patterns (which always use forward slashes) match on all platforms.
+    spec = pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, [_NODE_MODULES_PATTERN])
+    parts_path = Path("node_modules") / "index.js"
+
+    is_excluded = is_path_excluded(parts_path, spec)
+
+    assert is_excluded is True
+
+
 def test_directory_pattern_excludes_file_at_depth_three() -> None:
     spec = pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, [_NODE_MODULES_PATTERN])
 

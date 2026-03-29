@@ -527,12 +527,12 @@ polished, informative, and visually striking. Users should enjoy running this to
 
 ### 1G — Cross-Platform Compatibility
 
-- [ ] **1G.1** Use `pathlib.Path` exclusively — never string concatenation for paths
-- [ ] **1G.2** No WSL-specific assumptions: no hardcoded `/mnt/`, no Windows path separators
-- [ ] **1G.3** Test path handling with forward slashes on all platforms
-- [ ] **1G.4** `.phi-scanignore` patterns use forward slashes (normalized internally on Windows)
-- [ ] **1G.5** All file I/O uses `encoding="utf-8"` explicitly — no platform-default encoding
-- [ ] **1G.6** SQLite paths use `pathlib.Path.home()` — no hardcoded `~` expansion
+- [x] **1G.1** Use `pathlib.Path` exclusively — never string concatenation for paths
+- [x] **1G.2** No WSL-specific assumptions: no hardcoded `/mnt/`, no Windows path separators
+- [x] **1G.3** Test path handling with forward slashes on all platforms
+- [x] **1G.4** `.phi-scanignore` patterns use forward slashes (normalized internally on Windows)
+- [x] **1G.5** All file I/O uses `encoding="utf-8"` explicitly — no platform-default encoding
+- [x] **1G.6** SQLite paths use `pathlib.Path.home()` — no hardcoded `~` expansion
 
 ### 1H — PhiScan's Own CI Pipeline
 

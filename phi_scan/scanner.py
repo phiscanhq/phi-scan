@@ -114,7 +114,9 @@ def is_path_excluded(file_path: Path, exclusion_spec: pathspec.PathSpec) -> bool
     Returns:
         True if the path matches at least one exclusion pattern, False otherwise.
     """
-    return exclusion_spec.match_file(str(file_path))
+    # as_posix() ensures forward slashes on Windows; pathspec gitignore patterns
+    # always use forward slashes so str() would produce non-matching backslash paths.
+    return exclusion_spec.match_file(file_path.as_posix())
 
 
 def is_binary_file(file_path: Path) -> bool:
