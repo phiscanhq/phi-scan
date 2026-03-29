@@ -1,8 +1,11 @@
-"""End-to-end integration tests for PhiScan — task 1F.9.
+"""End-to-end integration tests for PhiScan — tasks 1F.9 and 2G.14.
 
 Covers the full pipeline from CLI invocation through scanner → audit → output.
 Each test invokes the CLI via CliRunner and verifies exactly one observable
 behaviour at the integration boundary.
+
+Task 2G.14 tests added at the end of this file: scan → detect → cache → re-scan
+(cache hit) → output verification → audit log verification.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from typer.testing import CliRunner
 from phi_scan.audit import get_last_scan
 from phi_scan.cli import app
 from phi_scan.config import create_default_config
-from phi_scan.constants import EXIT_CODE_CLEAN
+from phi_scan.constants import EXIT_CODE_CLEAN, EXIT_CODE_VIOLATION
 
 # ---------------------------------------------------------------------------
 # Test constants — no magic values
@@ -228,3 +231,150 @@ def test_full_pipeline_scan_then_report(
 
     assert scan_invocation.exit_code == EXIT_CODE_CLEAN
     assert report_invocation.exit_code == EXIT_CODE_CLEAN
+
+
+# ---------------------------------------------------------------------------
+# 2G.14 — End-to-end: scan → detect → cache → re-scan → output → audit
+# ---------------------------------------------------------------------------
+
+# File name and PHI content for the planted-PHI scan target.
+_PHI_FILE_NAME: str = "patient.py"
+# SSN value outside all reserved ranges — triggers the regex layer.
+_PLANTED_SSN_LINE: str = 'patient_ssn = "321-54-9870"\n'
+
+# JSON output keys specific to 2G.14 assertions.
+_JSON_KEY_FINDINGS: str = "findings"
+_JSON_KEY_IS_CLEAN_2G: str = "is_clean"
+_JSON_KEY_FILES_WITH_FINDINGS: str = "files_with_findings"
+
+# Minimum number of findings expected when a file with one SSN is scanned.
+_MINIMUM_FINDINGS_FOR_PLANTED_SSN: int = 1
+
+# Fragment verified in audit record to confirm findings were written.
+_AUDIT_KEY_FINDINGS_COUNT: str = "findings_count"
+
+
+def _create_phi_scan_root(tmp_path: Path) -> tuple[Path, Path]:
+    """Create a scan root with one PHI file and return (scan_root, phi_file_path).
+
+    Keeping the config file in tmp_path (not scan_root) prevents it from being
+    picked up as a scan target.
+
+    Args:
+        tmp_path: pytest tmp_path fixture directory.
+
+    Returns:
+        Tuple of (scan_root Path, planted PHI file Path).
+    """
+    scan_root = tmp_path / _SCAN_TARGET_DIR_NAME
+    scan_root.mkdir()
+    phi_file = scan_root / _PHI_FILE_NAME
+    phi_file.write_text(_PLANTED_SSN_LINE, encoding=_TEST_FILE_ENCODING)
+    return scan_root, phi_file
+
+
+def test_scan_file_with_phi_exits_with_violation_code(tmp_path: Path, runner: CliRunner) -> None:
+    """Scanning a file containing a planted SSN returns EXIT_CODE_VIOLATION."""
+    database_path = tmp_path / "audit.db"
+    configuration_path = _write_test_configuration(tmp_path, database_path)
+    scan_root, _ = _create_phi_scan_root(tmp_path)
+
+    cli_invocation = runner.invoke(
+        app,
+        ["scan", str(scan_root), "--output", "json", "--config", str(configuration_path)],
+    )
+
+    assert cli_invocation.exit_code == EXIT_CODE_VIOLATION
+
+
+def test_scan_file_with_phi_reports_not_clean_in_json_output(
+    tmp_path: Path, runner: CliRunner
+) -> None:
+    """JSON output has is_clean=false when a file containing PHI is scanned."""
+    database_path = tmp_path / "audit.db"
+    configuration_path = _write_test_configuration(tmp_path, database_path)
+    scan_root, _ = _create_phi_scan_root(tmp_path)
+
+    cli_invocation = runner.invoke(
+        app,
+        ["scan", str(scan_root), "--output", "json", "--config", str(configuration_path)],
+    )
+
+    json_output = json.loads(cli_invocation.stdout)
+    assert json_output[_JSON_KEY_IS_CLEAN_2G] is False
+
+
+def test_scan_file_with_phi_reports_findings_in_json_output(
+    tmp_path: Path, runner: CliRunner
+) -> None:
+    """JSON output contains at least one finding when a file containing PHI is scanned."""
+    database_path = tmp_path / "audit.db"
+    configuration_path = _write_test_configuration(tmp_path, database_path)
+    scan_root, _ = _create_phi_scan_root(tmp_path)
+
+    cli_invocation = runner.invoke(
+        app,
+        ["scan", str(scan_root), "--output", "json", "--config", str(configuration_path)],
+    )
+
+    json_output = json.loads(cli_invocation.stdout)
+    assert json_output[_JSON_KEY_FILES_WITH_FINDINGS] >= _MINIMUM_FINDINGS_FOR_PLANTED_SSN
+
+
+def test_scan_file_with_phi_writes_audit_record_with_findings(
+    tmp_path: Path, runner: CliRunner
+) -> None:
+    """Scanning a file with PHI writes an audit record with a non-zero findings count."""
+    database_path = tmp_path / "audit.db"
+    configuration_path = _write_test_configuration(tmp_path, database_path)
+    scan_root, _ = _create_phi_scan_root(tmp_path)
+
+    runner.invoke(
+        app,
+        ["scan", str(scan_root), "--output", "json", "--config", str(configuration_path)],
+    )
+
+    audit_record = get_last_scan(database_path)
+    assert audit_record is not None
+    assert audit_record[_AUDIT_KEY_FINDINGS_COUNT] >= _MINIMUM_FINDINGS_FOR_PLANTED_SSN
+
+
+def test_rescan_unchanged_phi_file_produces_same_exit_code(
+    tmp_path: Path, runner: CliRunner
+) -> None:
+    """Re-scanning an unchanged PHI file produces EXIT_CODE_VIOLATION on both runs.
+
+    The second run exercises the cache path — the content hash is unchanged so
+    findings are served from the scan cache rather than re-detected. The exit
+    code must be consistent regardless of whether the result came from cache.
+    """
+    database_path = tmp_path / "audit.db"
+    configuration_path = _write_test_configuration(tmp_path, database_path)
+    scan_root, _ = _create_phi_scan_root(tmp_path)
+
+    scan_args = ["scan", str(scan_root), "--output", "json", "--config", str(configuration_path)]
+    first_invocation = runner.invoke(app, scan_args)
+    second_invocation = runner.invoke(app, scan_args)
+
+    assert first_invocation.exit_code == EXIT_CODE_VIOLATION
+    assert second_invocation.exit_code == first_invocation.exit_code
+
+
+def test_rescan_unchanged_phi_file_produces_consistent_findings_count(
+    tmp_path: Path, runner: CliRunner
+) -> None:
+    """Re-scanning an unchanged PHI file returns the same files_with_findings count.
+
+    Verifies that the cache path returns results consistent with the cold-scan path.
+    """
+    database_path = tmp_path / "audit.db"
+    configuration_path = _write_test_configuration(tmp_path, database_path)
+    scan_root, _ = _create_phi_scan_root(tmp_path)
+
+    scan_args = ["scan", str(scan_root), "--output", "json", "--config", str(configuration_path)]
+    first_output = json.loads(runner.invoke(app, scan_args).stdout)
+    second_output = json.loads(runner.invoke(app, scan_args).stdout)
+
+    first_count = first_output[_JSON_KEY_FILES_WITH_FINDINGS]
+    second_count = second_output[_JSON_KEY_FILES_WITH_FINDINGS]
+    assert second_count == first_count
