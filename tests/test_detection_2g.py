@@ -85,7 +85,6 @@ _LOW_CONFIDENCE_THRESHOLD: float = 0.3
 # Nested directory test content constants
 # ---------------------------------------------------------------------------
 
-_NESTED_DIR_DEPTH: int = 3
 _NESTED_DIR_PARTS: tuple[str, ...] = ("depth_a", "depth_b", "depth_c")
 _NESTED_DEEP_DIR_PARTS: tuple[str, ...] = ("depth_a", "depth_b", "depth_c", "depth_d")
 
@@ -116,6 +115,13 @@ _BOOSTED_DATE_LINE: str = f'patient_dob = "{_DATE_VALUE}"\n'
 _UNBOOSTED_DATE_LINE: str = f'config_value = "{_DATE_VALUE}"\n'
 
 _DATE_ENTITY_TYPE: str = "DATE"
+
+# Baseline confidence the DATE regex layer assigns before any variable-name boost.
+# Used in the cap test to confirm base + boost exceeds CONFIDENCE_SCORE_MAXIMUM.
+_DATE_REGEX_BASELINE_CONFIDENCE: float = 0.88
+
+# Prefix prepended to the fixture notes string when skipping an NLP-only fixture.
+_NLP_SKIP_MESSAGE_PREFIX: str = "NLP required — "
 
 # ---------------------------------------------------------------------------
 # Confidence → severity band boundary values
@@ -249,11 +255,9 @@ def test_scan_finds_phi_in_deeply_nested_file(tmp_path: Path) -> None:
 
     config = ScanConfig(confidence_threshold=_LOW_CONFIDENCE_THRESHOLD)
     scan_targets = collect_scan_targets(tmp_path, [], config)
-    nested_phi_scan_result = execute_scan(scan_targets, config)
+    depth_three_ssn_scan = execute_scan(scan_targets, config)
 
-    ssn_findings = [
-        f for f in nested_phi_scan_result.findings if f.hipaa_category == PhiCategory.SSN
-    ]
+    ssn_findings = [f for f in depth_three_ssn_scan.findings if f.hipaa_category == PhiCategory.SSN]
     assert len(ssn_findings) >= 1
 
 
@@ -273,9 +277,9 @@ def test_scan_finds_phi_in_multiple_nested_depths(tmp_path: Path) -> None:
 
     config = ScanConfig(confidence_threshold=_LOW_CONFIDENCE_THRESHOLD)
     scan_targets = collect_scan_targets(tmp_path, [], config)
-    multi_depth_scan_result = execute_scan(scan_targets, config)
+    multi_depth_findings_scan = execute_scan(scan_targets, config)
 
-    file_paths_with_findings = {f.file_path for f in multi_depth_scan_result.findings}
+    file_paths_with_findings = {f.file_path for f in multi_depth_findings_scan.findings}
     assert len(file_paths_with_findings) >= 2
 
 
@@ -290,7 +294,7 @@ def _is_nlp_only_fixture(fixture_entry: dict[str, Any]) -> bool:
     return _NLP_REQUIRED_NOTE in notes
 
 
-def _make_phi_fixture_id(fixture_entry: dict[str, Any]) -> str:
+def _format_phi_fixture_id(fixture_entry: dict[str, Any]) -> str:
     """Return the fixture filename stem as the parametrize ID."""
     return Path(fixture_entry[_MANIFEST_KEY_PATH]).stem
 
@@ -298,7 +302,7 @@ def _make_phi_fixture_id(fixture_entry: dict[str, Any]) -> str:
 @pytest.mark.parametrize(
     "fixture_entry",
     _PHI_FIXTURE_ENTRIES,
-    ids=[_make_phi_fixture_id(e) for e in _PHI_FIXTURE_ENTRIES],
+    ids=[_format_phi_fixture_id(e) for e in _PHI_FIXTURE_ENTRIES],
 )
 def test_phi_fixture_produces_minimum_expected_findings(
     fixture_entry: dict[str, Any],
@@ -308,7 +312,7 @@ def test_phi_fixture_produces_minimum_expected_findings(
     NLP-only fixtures are skipped when the NLP layer is unavailable.
     """
     if _is_nlp_only_fixture(fixture_entry) and not _IS_NLP_AVAILABLE:
-        pytest.skip(f"NLP required — {fixture_entry[_MANIFEST_KEY_NOTES]!r}")
+        pytest.skip(f"{_NLP_SKIP_MESSAGE_PREFIX}{fixture_entry[_MANIFEST_KEY_NOTES]!r}")
 
     fixture_path = _FIXTURE_ROOT / fixture_entry[_MANIFEST_KEY_PATH]
     expected_minimum = fixture_entry[_MANIFEST_KEY_EXPECTED_MIN_FINDINGS]
@@ -387,7 +391,7 @@ def test_fhir_allergy_resource_detects_recorded_date() -> None:
 @pytest.mark.parametrize(
     "fixture_entry",
     _CLEAN_FIXTURE_ENTRIES,
-    ids=[_make_phi_fixture_id(e) for e in _CLEAN_FIXTURE_ENTRIES],
+    ids=[_format_phi_fixture_id(e) for e in _CLEAN_FIXTURE_ENTRIES],
 )
 @pytest.mark.parametrize(
     "guarded_category",
@@ -523,10 +527,10 @@ def test_scan_1000_clean_files_within_time_budget(tmp_path: Path) -> None:
     assert len(scan_targets) == _BENCHMARK_FILE_COUNT
 
     start_time = time.monotonic()
-    completed_scan = execute_scan(scan_targets, config)
+    benchmark_scan_report = execute_scan(scan_targets, config)
     elapsed_seconds = time.monotonic() - start_time
 
-    assert completed_scan.files_scanned == _BENCHMARK_FILE_COUNT
+    assert benchmark_scan_report.files_scanned == _BENCHMARK_FILE_COUNT
     assert elapsed_seconds < _BENCHMARK_TIME_BUDGET_SECONDS, (
         f"Benchmark exceeded budget: {elapsed_seconds:.1f}s > "
         f"{_BENCHMARK_TIME_BUDGET_SECONDS}s for {_BENCHMARK_FILE_COUNT} files"
@@ -569,23 +573,21 @@ def test_phi_suggestive_variable_name_boosts_confidence() -> None:
 def test_phi_suggestive_boost_applies_cap_at_maximum() -> None:
     """The boosted confidence is capped at CONFIDENCE_SCORE_MAXIMUM.
 
-    The DATE regex baseline is 0.88. Adding VARIABLE_CONTEXT_CONFIDENCE_BOOST (0.15)
-    gives 1.03, which exceeds CONFIDENCE_SCORE_MAXIMUM (1.0). The cap is applied,
-    so the resulting confidence must equal CONFIDENCE_SCORE_MAXIMUM.
+    The DATE regex baseline (_DATE_REGEX_BASELINE_CONFIDENCE = 0.88) plus
+    VARIABLE_CONTEXT_CONFIDENCE_BOOST (0.15) gives 1.03, which exceeds
+    CONFIDENCE_SCORE_MAXIMUM (1.0). The cap is applied, so the resulting
+    confidence must equal CONFIDENCE_SCORE_MAXIMUM.
     """
     boosted_findings = detect_phi_in_text_content(_BOOSTED_DATE_LINE, Path("test.py"))
-    unboosted_findings = detect_phi_in_text_content(_UNBOOSTED_DATE_LINE, Path("test.py"))
 
     boosted_dates = _extract_date_findings(boosted_findings)
-    unboosted_dates = _extract_date_findings(unboosted_findings)
     assert len(boosted_dates) >= 1
-    assert len(unboosted_dates) >= 1
 
-    unboosted_base = max(f.confidence for f in unboosted_dates)
     boosted_capped = max(f.confidence for f in boosted_dates)
 
-    # Confirm that base + boost would exceed max (proving the cap matters).
-    assert unboosted_base + VARIABLE_CONTEXT_CONFIDENCE_BOOST > CONFIDENCE_SCORE_MAXIMUM
+    # Named baseline confirms the boost would overflow without the cap.
+    uncapped = _DATE_REGEX_BASELINE_CONFIDENCE + VARIABLE_CONTEXT_CONFIDENCE_BOOST
+    assert uncapped > CONFIDENCE_SCORE_MAXIMUM
     # Confirm the cap is applied.
     assert boosted_capped == CONFIDENCE_SCORE_MAXIMUM
 
