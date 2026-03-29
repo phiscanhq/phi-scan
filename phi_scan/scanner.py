@@ -104,6 +104,9 @@ _NOTEBOOK_CELLS_KEY: str = "cells"
 _NOTEBOOK_CELL_SOURCE_KEY: str = "source"
 _NOTEBOOK_CELL_OUTPUTS_KEY: str = "outputs"
 _NOTEBOOK_OUTPUT_TEXT_KEY: str = "text"
+# Jupyter nbformat stores each source line with its trailing newline already
+# embedded (e.g. ["line 1\n", "line 2\n", "last line"]). Joining with "" is
+# correct per the spec — joining with "\n" would insert double newlines.
 _NOTEBOOK_CELL_JOIN_SEPARATOR: str = ""
 _NOTEBOOK_SECTION_SEPARATOR: str = "\n"
 
@@ -363,6 +366,11 @@ def _execute_scan_with_cache(
     Returns:
         Post-filtered findings for the file.
     """
+    # Security note: content_hash is the SHA-256 hex digest of the raw file
+    # bytes — it is never raw file content or decoded text. FileCacheKey stores
+    # only file_path, content_hash (hex digest), and config_hash (hex digest).
+    # store_cached_result serialises ScanFinding objects, which store only
+    # value_hash (SHA-256 of the detected value), never the raw PHI value.
     cache_key = FileCacheKey(file_path=file_path, content_hash=content_hash)
     cached_raw = get_cached_result(cache_key)
     if cached_raw is not None:

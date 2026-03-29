@@ -106,8 +106,8 @@ def detect_phi_in_text_content(
     layer_findings.extend(detect_phi_with_nlp(file_content, file_path))
     layer_findings.extend(detect_phi_in_structured_content(file_content, file_path))
     boosted_findings = _apply_variable_name_confidence_boost(layer_findings, file_content)
-    boosted_findings.extend(detect_quasi_identifier_combination(boosted_findings))
-    return deduplicate_overlapping_findings(boosted_findings)
+    combination_findings = detect_quasi_identifier_combination(boosted_findings)
+    return deduplicate_overlapping_findings(boosted_findings + combination_findings)
 
 
 def deduplicate_overlapping_findings(
@@ -168,11 +168,13 @@ def detect_quasi_identifier_combination(
 def evaluate_zip_dob_sex_combination(
     findings: list[ScanFinding],
 ) -> list[ScanFinding]:
-    """Return a combination finding when ZIP + date of birth appear together.
+    """Return a combination finding when ZIP code and date of birth appear together.
 
     Sweeney (2000) demonstrated that ZIP code + date of birth + sex uniquely
-    re-identifies 87% of the US population. Fires at HIGH confidence even if
-    each individual field scored MEDIUM or LOW.
+    re-identifies 87% of the US population. This evaluator checks the ZIP + DOB
+    subset (GEOGRAPHIC + DATE categories); sex/gender fields are not explicitly
+    scanned and are not required for this rule to fire. Fires at HIGH confidence
+    even if each individual field scored MEDIUM or LOW.
 
     Args:
         findings: All layer findings for the current file.
@@ -193,7 +195,7 @@ def evaluate_zip_dob_sex_combination(
     return [
         _build_combination_finding(
             source_findings=candidate_group,
-            combination_label="ZIP + DOB + SEX",
+            combination_label="ZIP + DOB",
             note=(
                 f"ZIP code + date of birth combination re-identifies "
                 f"{SWEENEY_REIDENTIFICATION_PERCENTAGE}% of the "
