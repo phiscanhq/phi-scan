@@ -7,8 +7,6 @@ generation can import them directly rather than duplicating content.
 Rich markup is used throughout: [bold], [cyan], [yellow], [red], [green].
 """
 
-from __future__ import annotations
-
 __all__ = [
     "EXPLAIN_CONFIDENCE_TEXT",
     "EXPLAIN_CONFIG_TEXT",
