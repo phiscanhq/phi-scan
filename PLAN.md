@@ -553,37 +553,37 @@ This is the CI for the phiscan project itself, not the CI templates for users (P
 
 ### Phase 1 Verification Checklist
 
-- [ ] `uv sync` succeeds
-- [ ] `uv run phi-scan --version` → prints `0.1.0`
-- [ ] `uv run phi-scan --help` → lists all commands
-- [ ] `uv run phi-scan scan tests/` → traverses, Rich output, exit 0
-- [ ] `uv run phi-scan scan --diff HEAD~1` → scans only changed files
-- [ ] `uv run phi-scan config init` → wizard generates `.phi-scanner.yml`
-- [ ] `uv run phi-scan install-hook` → creates `.git/hooks/pre-commit`
-- [ ] `uv run phi-scan report` → reads last scan from SQLite
-- [ ] `uv run phi-scan setup` → reports dependency status
-- [ ] `make install` succeeds
-- [ ] `make lint` → zero Ruff errors
-- [ ] `make typecheck` → zero mypy errors
-- [ ] `make test` → all tests pass, >80% coverage
-- [ ] `pipx install .` → `phi-scan --version` works outside project dir
-- [ ] Nested dirs 5+ levels deep → all text files found
-- [ ] Binary files (.png, .exe, .zip) → skipped automatically
-- [ ] Unknown binary file (null bytes) → skipped via heuristic
-- [ ] Files with no extension → scanned if text, skipped if binary
-- [ ] .java, .go, .rb, .php, .ipynb files → scanned (not limited to allowlist)
-- [ ] Symlink in scan path → skipped with warning (in log, not stdout)
-- [ ] Unreadable file → scan completes without abort
-- [ ] `--log-level debug` → shows traversal detail
-- [ ] `--quiet` → no Rich output, only exit code
-- [ ] `NO_COLOR=1` → uncolored output
-- [ ] `phi-scan --version` responds in < 500ms (lazy imports verified)
-- [ ] `phi-scan --help` responds in < 500ms
-- [ ] `phi-scan init` creates config, ignore file, and installs hook in one guided wizard
-- [ ] CI pipeline passes on ubuntu, macos, windows
-- [ ] LICENSE file present and correct
-- [ ] CHANGELOG.md has `[Unreleased]` section
-- [ ] SECURITY.md has vulnerability reporting instructions
+- [x] `uv sync` succeeds
+- [x] `uv run phi-scan --version` → prints `0.1.0`
+- [x] `uv run phi-scan --help` → lists all commands
+- [x] `uv run phi-scan scan tests/` → traverses, Rich output, exit 0
+- [x] `uv run phi-scan scan --diff HEAD~1` → scans only changed files
+- [x] `uv run phi-scan config init` → wizard generates `.phi-scanner.yml`
+- [x] `uv run phi-scan install-hook` → creates `.git/hooks/pre-commit`
+- [x] `uv run phi-scan report` → reads last scan from SQLite
+- [x] `uv run phi-scan setup` → reports dependency status
+- [x] `make install` succeeds
+- [x] `make lint` → zero Ruff errors
+- [x] `make typecheck` → zero mypy errors
+- [x] `make test` → all tests pass, >80% coverage
+- [x] `pipx install .` → `phi-scan --version` works outside project dir
+- [x] Nested dirs 5+ levels deep → all text files found
+- [x] Binary files (.png, .exe, .zip) → skipped automatically
+- [x] Unknown binary file (null bytes) → skipped via heuristic
+- [x] Files with no extension → scanned if text, skipped if binary
+- [x] .java, .go, .rb, .php, .ipynb files → scanned (not limited to allowlist)
+- [x] Symlink in scan path → skipped with warning (in log, not stdout)
+- [x] Unreadable file → scan completes without abort
+- [x] `--log-level debug` → shows traversal detail
+- [x] `--quiet` → no Rich output, only exit code
+- [x] `NO_COLOR=1` → uncolored output
+- [x] `phi-scan --version` responds in < 500ms (lazy imports verified)
+- [x] `phi-scan --help` responds in < 500ms
+- [x] `phi-scan init` creates config, ignore file, and installs hook in one guided wizard
+- [x] CI pipeline passes on ubuntu, macos, windows
+- [x] LICENSE file present and correct
+- [x] CHANGELOG.md has `[Unreleased]` section
+- [x] SECURITY.md has vulnerability reporting instructions
 
 ---
 
