@@ -914,7 +914,7 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
 
 ### 2E — Detection Integration
 
-- [ ] **2E.1** Define a coordinator function `detect_phi_in_text_content(file_content: str,
+- [x] **2E.1** Define a coordinator function `detect_phi_in_text_content(file_content: str,
   file_path: Path) -> list[ScanFinding]` that orchestrates all detection layers in order
   (regex → NLP → FHIR/HL7 → quasi-identifier combination) and deduplicates overlapping
   findings before returning. `file_path` is attribution metadata only — each returned
@@ -957,25 +957,25 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   This skeleton is 7 body lines. The 30-line limit is met with significant headroom.
   If adding a future layer would exceed the limit, extract the `.extend()` accumulation
   pattern into a named helper rather than inlining more calls.
-- [ ] **2E.2** Add `.phi-scanignore` support — patterns evaluated at every traversal depth
-- [ ] **2E.3** Add content-aware scan strategy — detect file type from content/extension for optimal scanning:
+- [x] **2E.2** Add `.phi-scanignore` support — patterns evaluated at every traversal depth
+- [x] **2E.3** Add content-aware scan strategy — detect file type from content/extension for optimal scanning:
   - Structured data (.json, .xml, .yaml) → parse structure + scan values
   - Code files (.py, .js, .java, .go, .rb, .cs, etc.) → line-by-line regex + NLP
   - Config/env files (.env, .ini, .conf, .properties) → key-value pattern scan
   - SQL files (.sql) → scan string literals and comments
   - Notebooks (.ipynb) → parse JSON, scan cell outputs and source
   - All other text files → full-text line-by-line scan
-- [ ] **2E.4** Variable-name contextual boosting — boost confidence when value is assigned to a PHI-suggestive variable:
+- [x] **2E.4** Variable-name contextual boosting — boost confidence when value is assigned to a PHI-suggestive variable:
   - Pattern match variable names containing: `patient`, `ssn`, `mrn`, `dob`, `birth`, `name`, `address`, `phone`, `email`, `diagnosis`, `insurance`, `beneficiary`
   - Boost: +0.15 confidence when PHI-suggestive variable name + detected entity type align
   - Example: `patient_name = "John Smith"` → PERSON detection boosted from 0.72 → 0.87
   - Example: `x = "John Smith"` → no boost, relies on standard NLP confidence
   - Covers: Python (`=`), JS/TS (`=`, `:`), Java (`=`), JSON (key-value), YAML (key-value)
-- [ ] **2E.5** Integrate suppression system from 2A.1 — apply inline `# phi-scan:ignore` before reporting findings
-- [ ] **2E.6** Integrate scan cache from 2A.2 — skip unchanged files
-- [ ] **2E.7** Tune confidence thresholds — benchmark recall vs false positive rate
-- [ ] **2E.8** Target: >90% recall, <10% false positive rate on synthetic test dataset
-- [ ] **2E.9** Archive inspection — scan embedded plaintext resources inside Java archives:
+- [x] **2E.5** Integrate suppression system from 2A.1 — apply inline `# phi-scan:ignore` before reporting findings
+- [x] **2E.6** Integrate scan cache from 2A.2 — skip unchanged files
+- [x] **2E.7** Tune confidence thresholds — benchmark recall vs false positive rate
+- [x] **2E.8** Target: >90% recall, <10% false positive rate on synthetic test dataset
+- [x] **2E.9** Archive inspection — scan embedded plaintext resources inside Java archives:
   - File types: .jar, .war, .zip (Python `zipfile` module — no external dependencies)
   - Scan embedded text resources only: .properties, .xml, .yaml, .yml, .json, .conf
   - Skip embedded .class files (compiled bytecode — opaque within archives)
@@ -988,7 +988,7 @@ in `.hl7`, `.msg`, or containing MSH segments in test fixtures are common source
   - Graceful degradation: if zipfile extraction fails, log warning and skip the archive
   - Remove .jar and .war from KNOWN_BINARY_EXTENSIONS in constants.py when this ships
   - Update `.phi-scanignore` Format Specification in PLAN.md to note archive inspection live
-- [ ] **2E.11** Quasi-identifier combination detection — implement as
+- [x] **2E.11** Quasi-identifier combination detection — implement as
   `detect_quasi_identifier_combination(findings: list[ScanFinding]) -> list[ScanFinding]`.
   Returns a list containing a single `PhiCategory.QUASI_IDENTIFIER_COMBINATION` finding when
   a combination rule fires, or an empty list when no combination risk is present. An empty
