@@ -130,8 +130,13 @@ _CONFIDENCE_AT_MEDIUM_FLOOR: float = CONFIDENCE_MEDIUM_FLOOR
 # A score in the LOW band: at the floor but below MEDIUM.
 _CONFIDENCE_AT_LOW_FLOOR: float = CONFIDENCE_LOW_FLOOR
 
+# Step used to place boundary test scores just below a floor constant.
+# Small enough to stay within the same band, large enough to remain representable
+# as a float without rounding issues.
+_CONFIDENCE_BOUNDARY_STEP: float = 0.01
+
 # A score below all named bands → INFO.
-_CONFIDENCE_BELOW_LOW_FLOOR: float = CONFIDENCE_LOW_FLOOR - 0.01
+_CONFIDENCE_BELOW_LOW_FLOOR: float = CONFIDENCE_LOW_FLOOR - _CONFIDENCE_BOUNDARY_STEP
 
 # ---------------------------------------------------------------------------
 # Clean-fixture false-positive check: categories that must be absent
@@ -160,6 +165,15 @@ _BENCHMARK_CLEAN_FILE_CONTENT: str = "x = 1\n"
 
 # ---------------------------------------------------------------------------
 # FHIR resource type test constants (2G.3)
+#
+# Synthetic PHI fixture: All field values below are fictional and exist solely
+# to exercise the FHIR R4 pattern scanner. No real patient or provider data is
+# used. All names, dates, and identifiers are invented.
+#
+# Security note: detect_phi_in_text_content executes entirely locally — it
+# delegates only to the regex layer, local spaCy NLP, and FHIR regex patterns.
+# No content is forwarded to any external API or cloud service. This is a
+# non-negotiable design constraint enforced by the scanner architecture.
 # ---------------------------------------------------------------------------
 
 _FHIR_PATIENT_JSON: str = (
@@ -172,9 +186,11 @@ _FHIR_OBSERVATION_JSON: str = (
     '"subject": {"reference": "Patient/example"}}'
 )
 
+# Synthetic NPI value intentionally omits Luhn check digit validation —
+# it is structurally representative but will not resolve to any real provider.
 _FHIR_PRACTITIONER_JSON: str = (
     '{"resourceType": "Practitioner", "name": [{"family": "Smith", "given": ["Jane"]}], '
-    '"identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "npi": "1234567890"}]}'
+    '"identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "npi": "1234567890"}]}'
 )
 
 _FHIR_CONDITION_JSON: str = (
@@ -199,73 +215,67 @@ _FHIR_ALLERGY_JSON: str = (
 
 def test_scan_discovers_files_at_depth_three(tmp_path: Path) -> None:
     """Files nested three directory levels deep are returned by collect_scan_targets."""
-    deep_dir = tmp_path
-    for part in _NESTED_DIR_PARTS:
-        deep_dir = deep_dir / part
-    deep_dir.mkdir(parents=True)
-    deep_file = deep_dir / f"phi{_NESTED_PYTHON_EXTENSION}"
-    deep_file.write_text(_NESTED_SSN_FILE_CONTENT, encoding="utf-8")
+    nested_dir = tmp_path.joinpath(*_NESTED_DIR_PARTS)
+    nested_dir.mkdir(parents=True)
+    nested_file = nested_dir / f"phi{_NESTED_PYTHON_EXTENSION}"
+    nested_file.write_text(_NESTED_SSN_FILE_CONTENT, encoding="utf-8")
 
     config = ScanConfig()
     scan_targets = collect_scan_targets(tmp_path, [], config)
 
-    assert deep_file in scan_targets
+    assert nested_file in scan_targets
 
 
 def test_scan_discovers_files_at_depth_four(tmp_path: Path) -> None:
     """Files nested four directory levels deep are returned by collect_scan_targets."""
-    deep_dir = tmp_path
-    for part in _NESTED_DEEP_DIR_PARTS:
-        deep_dir = deep_dir / part
-    deep_dir.mkdir(parents=True)
-    deep_file = deep_dir / f"data{_NESTED_PYTHON_EXTENSION}"
-    deep_file.write_text(_NESTED_EMAIL_FILE_CONTENT, encoding="utf-8")
+    nested_dir = tmp_path.joinpath(*_NESTED_DEEP_DIR_PARTS)
+    nested_dir.mkdir(parents=True)
+    nested_file = nested_dir / f"data{_NESTED_PYTHON_EXTENSION}"
+    nested_file.write_text(_NESTED_EMAIL_FILE_CONTENT, encoding="utf-8")
 
     config = ScanConfig()
     scan_targets = collect_scan_targets(tmp_path, [], config)
 
-    assert deep_file in scan_targets
+    assert nested_file in scan_targets
 
 
 def test_scan_finds_phi_in_deeply_nested_file(tmp_path: Path) -> None:
     """execute_scan returns findings from files at depth three."""
-    deep_dir = tmp_path
-    for part in _NESTED_DIR_PARTS:
-        deep_dir = deep_dir / part
-    deep_dir.mkdir(parents=True)
-    (deep_dir / f"phi{_NESTED_PYTHON_EXTENSION}").write_text(
+    nested_dir = tmp_path.joinpath(*_NESTED_DIR_PARTS)
+    nested_dir.mkdir(parents=True)
+    (nested_dir / f"phi{_NESTED_PYTHON_EXTENSION}").write_text(
         _NESTED_SSN_FILE_CONTENT, encoding="utf-8"
     )
 
     config = ScanConfig(confidence_threshold=_LOW_CONFIDENCE_THRESHOLD)
     scan_targets = collect_scan_targets(tmp_path, [], config)
-    scan_result = execute_scan(scan_targets, config)
+    nested_phi_scan_result = execute_scan(scan_targets, config)
 
-    ssn_findings = [f for f in scan_result.findings if f.hipaa_category == PhiCategory.SSN]
+    ssn_findings = [
+        f for f in nested_phi_scan_result.findings if f.hipaa_category == PhiCategory.SSN
+    ]
     assert len(ssn_findings) >= 1
 
 
 def test_scan_finds_phi_in_multiple_nested_depths(tmp_path: Path) -> None:
     """Findings are aggregated from files at depth 3 and depth 4 simultaneously."""
-    shallow_dir = tmp_path
-    for part in _NESTED_DIR_PARTS:
-        shallow_dir = shallow_dir / part
-    shallow_dir.mkdir(parents=True)
-    (shallow_dir / f"ssn{_NESTED_PYTHON_EXTENSION}").write_text(
+    depth_three_dir = tmp_path.joinpath(*_NESTED_DIR_PARTS)
+    depth_three_dir.mkdir(parents=True)
+    (depth_three_dir / f"ssn{_NESTED_PYTHON_EXTENSION}").write_text(
         _NESTED_SSN_FILE_CONTENT, encoding="utf-8"
     )
 
-    deep_dir = shallow_dir / _NESTED_DEEP_DIR_PARTS[-1]
-    deep_dir.mkdir()
-    (deep_dir / f"email{_NESTED_PYTHON_EXTENSION}").write_text(
+    depth_four_dir = depth_three_dir / _NESTED_DEEP_DIR_PARTS[-1]
+    depth_four_dir.mkdir()
+    (depth_four_dir / f"email{_NESTED_PYTHON_EXTENSION}").write_text(
         _NESTED_EMAIL_FILE_CONTENT, encoding="utf-8"
     )
 
     config = ScanConfig(confidence_threshold=_LOW_CONFIDENCE_THRESHOLD)
     scan_targets = collect_scan_targets(tmp_path, [], config)
-    scan_result = execute_scan(scan_targets, config)
+    multi_depth_scan_result = execute_scan(scan_targets, config)
 
-    file_paths_with_findings = {f.file_path for f in scan_result.findings}
+    file_paths_with_findings = {f.file_path for f in multi_depth_scan_result.findings}
     assert len(file_paths_with_findings) >= 2
 
 
@@ -434,7 +444,7 @@ def test_confidence_at_medium_floor_produces_medium_severity() -> None:
 
 def test_confidence_just_below_high_floor_produces_medium_severity() -> None:
     """A confidence just below CONFIDENCE_HIGH_FLOOR maps to SeverityLevel.MEDIUM."""
-    just_below_high = CONFIDENCE_HIGH_FLOOR - 0.01
+    just_below_high = CONFIDENCE_HIGH_FLOOR - _CONFIDENCE_BOUNDARY_STEP
 
     result = severity_from_confidence(just_below_high)
 
@@ -450,7 +460,7 @@ def test_confidence_at_low_floor_produces_low_severity() -> None:
 
 def test_confidence_just_below_medium_floor_produces_low_severity() -> None:
     """A confidence just below CONFIDENCE_MEDIUM_FLOOR maps to SeverityLevel.LOW."""
-    just_below_medium = CONFIDENCE_MEDIUM_FLOOR - 0.01
+    just_below_medium = CONFIDENCE_MEDIUM_FLOOR - _CONFIDENCE_BOUNDARY_STEP
 
     result = severity_from_confidence(just_below_medium)
 
@@ -488,7 +498,7 @@ def test_scan_finding_severity_matches_confidence_band(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _build_benchmark_repo(root: Path) -> None:
+def _build_benchmark_repository(root: Path) -> None:
     """Create BENCHMARK_FILE_COUNT clean Python files spread across subdirectories.
 
     Files are distributed across BENCHMARK_SUBDIR_COUNT subdirectories with
@@ -505,7 +515,7 @@ def _build_benchmark_repo(root: Path) -> None:
 
 def test_scan_1000_clean_files_within_time_budget(tmp_path: Path) -> None:
     """Scanning 1000 clean files completes within BENCHMARK_TIME_BUDGET_SECONDS seconds."""
-    _build_benchmark_repo(tmp_path)
+    _build_benchmark_repository(tmp_path)
 
     config = ScanConfig()
     scan_targets = collect_scan_targets(tmp_path, [], config)
@@ -513,7 +523,7 @@ def test_scan_1000_clean_files_within_time_budget(tmp_path: Path) -> None:
     assert len(scan_targets) == _BENCHMARK_FILE_COUNT
 
     start_time = time.monotonic()
-    execute_scan(scan_targets, config)
+    _benchmark_scan_result = execute_scan(scan_targets, config)
     elapsed_seconds = time.monotonic() - start_time
 
     assert elapsed_seconds < _BENCHMARK_TIME_BUDGET_SECONDS, (
