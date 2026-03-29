@@ -51,6 +51,33 @@ phi-scan --help
 
 ---
 
+## Contributing
+
+### Branch protection rules
+
+The `main` branch is protected. All changes arrive via pull request. No one pushes directly to `main`.
+
+| Rule | Setting |
+| ---- | ------- |
+| Require CI to pass before merge | All jobs in `ci.yml` must pass (lint, typecheck, tests on all 3 platforms) |
+| Require at least one review | Enforced when collaborators join the project |
+| No direct pushes to `main` | Branch protection enforced via GitHub settings |
+
+To configure these rules: **Settings → Branches → Add branch protection rule → `main`**, then enable:
+- "Require a pull request before merging"
+- "Require status checks to pass before merging" → select the `CI` workflow jobs
+- "Do not allow bypassing the above settings"
+
+### CI workflows
+
+| Workflow | Trigger | What it does |
+| -------- | ------- | ------------ |
+| `ci.yml` | Every push and PR targeting `main` | Lint (ruff), typecheck (mypy), tests (pytest + coverage) on Python 3.12 × ubuntu/macos/windows |
+| `release.yml` | Push of a `v*` tag | Runs tests, builds sdist + wheel, publishes to PyPI, creates GitHub Release |
+| `claude-review.yml` | Every PR open/update | Posts an automated Claude code review comment |
+
+---
+
 ## License
 
 [MIT](LICENSE)
