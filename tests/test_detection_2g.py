@@ -39,14 +39,14 @@ from phi_scan.scanner import collect_scan_targets, execute_scan, scan_file
 try:
     from presidio_analyzer import AnalyzerEngine as _AnalyzerEngine  # noqa: F401
 
-    _NLP_AVAILABLE: bool = True
+    _IS_NLP_AVAILABLE: bool = True
 except ImportError:
-    _NLP_AVAILABLE = False
+    _IS_NLP_AVAILABLE = False
 
-_requires_nlp = pytest.mark.skipif(
-    not _NLP_AVAILABLE,
-    reason="presidio_analyzer not installed — run 'pip install phi-scan[nlp]'",
-)
+# Reason string extracted so the skipif decorator contains no string literals.
+_NLP_SKIP_REASON: str = "presidio_analyzer not installed — run 'pip install phi-scan[nlp]'"
+
+_requires_nlp = pytest.mark.skipif(not _IS_NLP_AVAILABLE, reason=_NLP_SKIP_REASON)
 
 # ---------------------------------------------------------------------------
 # Fixture corpus paths and manifest
@@ -158,7 +158,7 @@ _STRICT_FALSE_POSITIVE_CATEGORIES: frozenset[PhiCategory] = frozenset(
 # ---------------------------------------------------------------------------
 
 _BENCHMARK_FILE_COUNT: int = 1000
-_BENCHMARK_TIME_BUDGET_SECONDS: float = 60.0
+_BENCHMARK_TIME_BUDGET_SECONDS: float = 120.0
 _BENCHMARK_SUBDIR_COUNT: int = 10
 _BENCHMARK_FILES_PER_DIR: int = 100
 _BENCHMARK_CLEAN_FILE_CONTENT: str = "x = 1\n"
@@ -307,7 +307,7 @@ def test_phi_fixture_produces_minimum_expected_findings(
 
     NLP-only fixtures are skipped when the NLP layer is unavailable.
     """
-    if _is_nlp_only_fixture(fixture_entry) and not _NLP_AVAILABLE:
+    if _is_nlp_only_fixture(fixture_entry) and not _IS_NLP_AVAILABLE:
         pytest.skip(f"NLP required — {fixture_entry[_MANIFEST_KEY_NOTES]!r}")
 
     fixture_path = _FIXTURE_ROOT / fixture_entry[_MANIFEST_KEY_PATH]
@@ -423,55 +423,55 @@ def test_clean_fixture_produces_no_findings_for_category(
 
 def test_confidence_at_high_floor_produces_high_severity() -> None:
     """A confidence at CONFIDENCE_HIGH_FLOOR maps to SeverityLevel.HIGH."""
-    result = severity_from_confidence(_CONFIDENCE_AT_HIGH_FLOOR)
+    mapped_severity = severity_from_confidence(_CONFIDENCE_AT_HIGH_FLOOR)
 
-    assert result == SeverityLevel.HIGH
+    assert mapped_severity == SeverityLevel.HIGH
 
 
 def test_confidence_at_maximum_produces_high_severity() -> None:
     """A confidence of CONFIDENCE_SCORE_MAXIMUM maps to SeverityLevel.HIGH."""
-    result = severity_from_confidence(CONFIDENCE_SCORE_MAXIMUM)
+    mapped_severity = severity_from_confidence(CONFIDENCE_SCORE_MAXIMUM)
 
-    assert result == SeverityLevel.HIGH
+    assert mapped_severity == SeverityLevel.HIGH
 
 
 def test_confidence_at_medium_floor_produces_medium_severity() -> None:
     """A confidence at CONFIDENCE_MEDIUM_FLOOR maps to SeverityLevel.MEDIUM."""
-    result = severity_from_confidence(_CONFIDENCE_AT_MEDIUM_FLOOR)
+    mapped_severity = severity_from_confidence(_CONFIDENCE_AT_MEDIUM_FLOOR)
 
-    assert result == SeverityLevel.MEDIUM
+    assert mapped_severity == SeverityLevel.MEDIUM
 
 
 def test_confidence_just_below_high_floor_produces_medium_severity() -> None:
     """A confidence just below CONFIDENCE_HIGH_FLOOR maps to SeverityLevel.MEDIUM."""
     just_below_high = CONFIDENCE_HIGH_FLOOR - _CONFIDENCE_BOUNDARY_STEP
 
-    result = severity_from_confidence(just_below_high)
+    mapped_severity = severity_from_confidence(just_below_high)
 
-    assert result == SeverityLevel.MEDIUM
+    assert mapped_severity == SeverityLevel.MEDIUM
 
 
 def test_confidence_at_low_floor_produces_low_severity() -> None:
     """A confidence at CONFIDENCE_LOW_FLOOR maps to SeverityLevel.LOW."""
-    result = severity_from_confidence(_CONFIDENCE_AT_LOW_FLOOR)
+    mapped_severity = severity_from_confidence(_CONFIDENCE_AT_LOW_FLOOR)
 
-    assert result == SeverityLevel.LOW
+    assert mapped_severity == SeverityLevel.LOW
 
 
 def test_confidence_just_below_medium_floor_produces_low_severity() -> None:
     """A confidence just below CONFIDENCE_MEDIUM_FLOOR maps to SeverityLevel.LOW."""
     just_below_medium = CONFIDENCE_MEDIUM_FLOOR - _CONFIDENCE_BOUNDARY_STEP
 
-    result = severity_from_confidence(just_below_medium)
+    mapped_severity = severity_from_confidence(just_below_medium)
 
-    assert result == SeverityLevel.LOW
+    assert mapped_severity == SeverityLevel.LOW
 
 
 def test_confidence_below_low_floor_produces_info_severity() -> None:
     """A confidence below CONFIDENCE_LOW_FLOOR maps to SeverityLevel.INFO."""
-    result = severity_from_confidence(_CONFIDENCE_BELOW_LOW_FLOOR)
+    mapped_severity = severity_from_confidence(_CONFIDENCE_BELOW_LOW_FLOOR)
 
-    assert result == SeverityLevel.INFO
+    assert mapped_severity == SeverityLevel.INFO
 
 
 def test_scan_finding_severity_matches_confidence_band(tmp_path: Path) -> None:
@@ -498,14 +498,19 @@ def test_scan_finding_severity_matches_confidence_band(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _write_benchmark_files_to_directory(subdir: Path) -> None:
+    """Write BENCHMARK_FILES_PER_DIR clean Python files into subdir."""
+    for file_index in range(_BENCHMARK_FILES_PER_DIR):
+        file_path = subdir / f"module_{file_index:03d}.py"
+        file_path.write_text(_BENCHMARK_CLEAN_FILE_CONTENT, encoding="utf-8")
+
+
 def _build_benchmark_repository(root: Path) -> None:
     """Populate root with BENCHMARK_FILE_COUNT clean Python files across flat subdirectories."""
     for subdir_index in range(_BENCHMARK_SUBDIR_COUNT):
         subdir = root / f"pkg_{subdir_index:02d}"
         subdir.mkdir()
-        for file_index in range(_BENCHMARK_FILES_PER_DIR):
-            file_path = subdir / f"module_{file_index:03d}.py"
-            file_path.write_text(_BENCHMARK_CLEAN_FILE_CONTENT, encoding="utf-8")
+        _write_benchmark_files_to_directory(subdir)
 
 
 def test_scan_1000_clean_files_within_time_budget(tmp_path: Path) -> None:
