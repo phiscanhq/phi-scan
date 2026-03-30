@@ -1621,6 +1621,9 @@ def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
         branch = tree.add(f"{icon} {escape_markup(str(file_path))} ({count} {finding_word})")
         for finding in file_findings:
             style = _SEVERITY_STYLE[finding.severity]
+            # line_number is an int; entity_type is a hardcoded pattern constant
+            # (e.g. "SSN", "EMAIL") — neither comes from scanned file content,
+            # so escape_markup is not required here.
             branch.add(
                 f"[{style}]{_LINE_LABEL} {finding.line_number}[/{style}]"
                 f"{_EM_DASH_SEPARATOR}{finding.entity_type}"

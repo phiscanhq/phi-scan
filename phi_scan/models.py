@@ -126,11 +126,13 @@ class ScanFinding:
             it. The format is enforced (64 lowercase hex chars) but the model cannot verify the
             caller hashed the correct value; that obligation rests with the detection layer.
         severity: Severity level derived from the confidence score.
-        code_context: The raw source line containing the finding, shown in terminal
-            output to help developers locate and remediate PHI. Intentionally plain
-            text — the matched value is never separately stored, only its SHA-256
-            hash (value_hash). This field is for human display only and must never
-            be written to the audit log.
+        code_context: The raw source line containing the finding. Shown in terminal
+            output so developers can locate and remediate the PHI — this is
+            intentional: the developer running phi-scan already has read access to
+            the source file. The HIPAA audit-log constraint (audit.py) applies to
+            persisted records only; code_context is explicitly excluded from audit
+            serialisation (_serialize_findings). It must never be added to audit
+            log fields.
         remediation_hint: Actionable guidance for removing or replacing this PHI.
     """
 
