@@ -36,6 +36,12 @@ jobs:
       - name: Build sdist and wheel
         run: uv build
 
+      - name: Smoke test built wheel
+        run: |
+          pip install dist/*.whl
+          phi-scan --version
+          phi-scan --help > /dev/null
+
       - name: Publish to PyPI
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

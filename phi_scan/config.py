@@ -14,6 +14,7 @@ from phi_scan.constants import (
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_CONFIG_FILENAME,
     DEFAULT_DATABASE_PATH,
+    IMPLEMENTED_OUTPUT_FORMATS,
     MAX_FILE_SIZE_MB,
     OutputFormat,
     SeverityLevel,
@@ -61,6 +62,11 @@ _FOLLOW_SYMLINKS_ERROR: str = (
     "that can cause infinite loops in CI/CD environments"
 )
 _INVALID_OUTPUT_FORMAT_ERROR: str = "output.format {value!r} is not valid. Accepted values: {valid}"
+_UNIMPLEMENTED_OUTPUT_FORMAT_ERROR: str = (
+    "output.format {value!r} is not yet implemented. "
+    "Currently supported: {supported}. "
+    "Remove this setting or choose a supported format."
+)
 _INVALID_SEVERITY_ERROR: str = (
     "scan.severity_threshold {value!r} is not valid. Accepted values: {valid}"
 )
@@ -269,12 +275,18 @@ def _parse_output_format(output_section: dict[str, Any]) -> OutputFormat:
     """
     format_value = output_section.get(_YAML_KEY_OUTPUT_FORMAT, OutputFormat.TABLE.value)
     try:
-        return OutputFormat(format_value)
+        resolved = OutputFormat(format_value)
     except ValueError as error:
         valid = ", ".join(member.value for member in OutputFormat)
         raise ConfigurationError(
             _INVALID_OUTPUT_FORMAT_ERROR.format(value=format_value, valid=valid)
         ) from error
+    if resolved not in IMPLEMENTED_OUTPUT_FORMATS:
+        supported = ", ".join(sorted(fmt.value for fmt in IMPLEMENTED_OUTPUT_FORMATS))
+        raise ConfigurationError(
+            _UNIMPLEMENTED_OUTPUT_FORMAT_ERROR.format(value=format_value, supported=supported)
+        )
+    return resolved
 
 
 def _parse_database_path(audit_section: dict[str, Any]) -> Path:

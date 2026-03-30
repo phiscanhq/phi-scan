@@ -15,6 +15,7 @@ from phi_scan.constants import (
     CONFIDENCE_SCORE_MINIMUM,
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_DATABASE_PATH,
+    IMPLEMENTED_OUTPUT_FORMATS,
     MAX_FILE_SIZE_MB,
     OutputFormat,
     SeverityLevel,
@@ -164,14 +165,29 @@ def test_load_config_should_follow_symlinks_is_always_false(tmp_path: Path) -> N
 # ---------------------------------------------------------------------------
 
 
-def test_load_config_maps_gitlab_sast_format_to_output_format_member(tmp_path: Path) -> None:
+def test_load_config_raises_configuration_error_for_unimplemented_output_format(
+    tmp_path: Path,
+) -> None:
+    """Config rejects formats not in IMPLEMENTED_OUTPUT_FORMATS (e.g. gitlab-sast)."""
     config = _build_minimal_config()
     config["output"] = {"format": "gitlab-sast"}
 
     config_file = _write_config(tmp_path, config)
-    scan_config = load_config(config_file)
 
-    assert scan_config.output_format is OutputFormat.GITLAB_SAST
+    with pytest.raises(ConfigurationError):
+        load_config(config_file)
+
+
+def test_load_config_accepts_all_implemented_output_formats(tmp_path: Path) -> None:
+    """Every format in IMPLEMENTED_OUTPUT_FORMATS is accepted by config loading."""
+    for output_format in IMPLEMENTED_OUTPUT_FORMATS:
+        config = _build_minimal_config()
+        config["output"] = {"format": output_format.value}
+
+        config_file = _write_config(tmp_path, config)
+        scan_config = load_config(config_file)
+
+        assert scan_config.output_format is output_format
 
 
 def test_load_config_defaults_output_format_to_table(tmp_path: Path) -> None:

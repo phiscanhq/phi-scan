@@ -32,6 +32,7 @@ from phi_scan.constants import (
     DEFAULT_TEXT_ENCODING,
     EXIT_CODE_CLEAN,
     EXIT_CODE_VIOLATION,
+    IMPLEMENTED_OUTPUT_FORMATS,
     OutputFormat,
     SeverityLevel,
 )
@@ -265,10 +266,11 @@ _CONFIG_LOAD_FAILURE_WARNING: str = (
     "Config file {path!r} exists but could not be loaded — using defaults: {error}"
 )
 _AUDIT_WRITE_FAILURE_WARNING: str = "Audit log write failed — scan result not persisted: {error}"
+_IMPLEMENTED_FORMAT_NAMES: str = ", ".join(sorted(fmt.value for fmt in IMPLEMENTED_OUTPUT_FORMATS))
 _UNSUPPORTED_OUTPUT_FORMAT_ERROR: str = (
     "Output format {fmt!r} is not yet implemented. "
-    "Currently supported: table, json, csv, sarif. "
-    "Additional formats (pdf, html, junit, codequality, gitlab-sast) are coming in Phase 3."
+    "Currently supported: " + _IMPLEMENTED_FORMAT_NAMES + ". "
+    "Additional formats are not yet available."
 )
 _INVALID_SEVERITY_THRESHOLD_ERROR: str = (
     "Invalid severity threshold {value!r}. Accepted values: info, low, medium, high."
@@ -590,11 +592,10 @@ def _emit_scan_output(scan_result: ScanResult, output_format: str, is_rich_mode:
         if is_rich_mode:
             _display_rich_scan_results(scan_result)
         return
-    serializer = _FORMAT_SERIALIZERS.get(output_format)
-    if serializer is None:
+    if output_format not in {fmt.value for fmt in IMPLEMENTED_OUTPUT_FORMATS}:
         typer.echo(_UNSUPPORTED_OUTPUT_FORMAT_ERROR.format(fmt=output_format), err=True)
         raise typer.Exit(code=_EXIT_CODE_ERROR)
-    typer.echo(serializer(scan_result))
+    typer.echo(_FORMAT_SERIALIZERS[output_format](scan_result))
 
 
 # ---------------------------------------------------------------------------
