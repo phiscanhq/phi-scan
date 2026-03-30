@@ -50,7 +50,7 @@ All tools confirmed installed and version-verified in WSL on March 15, 2026:
 
 ## Current State (March 29, 2026)
 
-**Phase 1 complete. Phase 2 complete. Phase 3A complete. Phase 3B next.**
+**Phase 1 complete. Phase 2 complete. Phase 3A complete. Phase 3B complete. Phase 3C next.**
 
 ```
 phi-scan/
@@ -1214,21 +1214,21 @@ The #1 adoption blocker for security scanners in existing codebases is noise.
 Baseline lets teams adopt PhiScan incrementally — acknowledge existing findings,
 then enforce zero new PHI going forward.
 
-- [ ] **3B.1** `phi_scan/baseline.py` — baseline snapshot management
-- [ ] **3B.2** `phi-scan baseline create` — run full scan, save current findings as baseline
+- [x] **3B.1** `phi_scan/baseline.py` — baseline snapshot management
+- [x] **3B.2** `phi-scan baseline create` — run full scan, save current findings as baseline
   - Baseline file: `.phi-scanbaseline` (committed to repo, tracks accepted findings)
   - Each entry: file_path + line_content_hash + entity_type + value_hash
   - Human-readable YAML format with comments explaining each entry
-- [ ] **3B.3** `phi-scan baseline show` — display current baseline summary (count per category, age)
-- [ ] **3B.4** `phi-scan baseline clear` — remove baseline (forces full enforcement)
-- [ ] **3B.5** `phi-scan scan --baseline` — only report NEW findings not in baseline
+- [x] **3B.3** `phi-scan baseline show` — display current baseline summary (count per category, age)
+- [x] **3B.4** `phi-scan baseline clear` — remove baseline (forces full enforcement)
+- [x] **3B.5** `phi-scan scan --baseline` — only report NEW findings not in baseline
   - Baselined findings shown as dimmed/grey in terminal output (not hidden entirely)
   - New findings shown in full color with `[NEW]` badge
   - Exit code based only on new findings (baselined findings don't fail the build)
-- [ ] **3B.6** `phi-scan baseline update` — re-scan and update baseline with current findings
-- [ ] **3B.7** `phi-scan baseline diff` — show what changed since last baseline (new, resolved, moved)
-- [ ] **3B.8** Baseline drift detection: warn if baselined findings count increases significantly
-- [ ] **3B.9** Baseline entries auto-expire: configurable `baseline_max_age_days` (default: 90)
+- [x] **3B.6** `phi-scan baseline update` — re-scan and update baseline with current findings
+- [x] **3B.7** `phi-scan baseline diff` — show what changed since last baseline (new, resolved, moved)
+- [x] **3B.8** Baseline drift detection: warn if baselined findings count increases significantly
+- [x] **3B.9** Baseline entries auto-expire: configurable `baseline_max_age_days` (default: 90)
   - After expiry, baselined finding becomes a regular finding again
   - Forces teams to actually remediate, not just baseline forever
 
