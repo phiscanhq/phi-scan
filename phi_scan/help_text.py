@@ -131,6 +131,37 @@ are removed or transformed:
   Genetic IDs    dbSNP rs-IDs, VCF variants (GINA + GDPR Art. 9)
   SUD records    42 CFR Part 2 — stricter than HIPAA; explicit consent required
   Quasi-IDs      ZIP + DOB + sex combination → 87% re-identification risk
+
+[bold]Regulatory scope:[/bold]
+
+  [bold]HIPAA Safe Harbor[/bold]   45 CFR §164.514(b)(2) — primary standard implemented by
+                      PhiScan. All 18 identifier categories are covered.
+
+  [bold]HITECH Act[/bold]          45 CFR §§164.400–414 — extended HIPAA to
+                      business associates; established mandatory
+                      breach notification thresholds for covered entities.
+                      PhiScan supports HITECH breach assessment by
+                      identifying exposed PHI.
+
+  [bold]42 CFR Part 2[/bold]       Substance Use Disorder records — stricter than HIPAA.
+                      Explicit patient consent is required for any disclosure,
+                      including disclosures for treatment purposes. SUD field
+                      names are detected and mapped to a dedicated category.
+
+  [bold]GINA[/bold]                Genetic Information Nondiscrimination Act — genetic
+                      information (test results, family history, genomic data)
+                      is a protected category. Covered by the genetic identifier
+                      detection layer (dbSNP rs-IDs, VCF-format data, Ensembl
+                      gene IDs). Also subject to GDPR Art. 9 in EU contexts.
+
+  [bold]NIST SP 800-122[/bold]     PII Confidentiality Guide — the PII detection layer
+                      (name, SSN, DOB, address, phone, email, financial account
+                      numbers, biometrics) aligns with this standard.
+
+[bold]Expert Determination limitation:[/bold]
+  PhiScan implements [bold]Safe Harbor only[/bold]. Expert Determination (§164.514(b)(1))
+  requires certification by a qualified statistician — the tool alone cannot
+  satisfy that standard. See [cyan]docs/de-identification.md[/cyan] for details.
 """
 
 # ---------------------------------------------------------------------------

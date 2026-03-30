@@ -1092,14 +1092,14 @@ reflected in the Phase 4 documentation and compliance mapping.
 
 #### 2H.1 — Regulatory Coverage
 
-- [ ] **2H.1a** HIPAA Safe Harbor (§164.514(b)(2)) — primary standard; all 18 identifiers
+- [x] **2H.1a** HIPAA Safe Harbor (§164.514(b)(2)) — primary standard; all 18 identifiers
   covered by Layers 1–3. The scanner implements Safe Harbor by design. Expert Determination
   (§164.514(b)(1)) requires a qualified statistician's certification — the tool alone cannot
   satisfy Expert Determination; document this limitation explicitly in `docs/de-identification.md`.
-- [ ] **2H.1b** HITECH Act (45 CFR §§164.400–414) — the scanner directly supports HITECH
+- [x] **2H.1b** HITECH Act (45 CFR §§164.400–414) — the scanner directly supports HITECH
   breach assessment by identifying what PHI is exposed. Flag in `phi-scan explain hipaa` that
   HITECH extended HIPAA to business associates and established breach notification thresholds.
-- [ ] **2H.1c** 42 CFR Part 2 (Substance Use Disorder) — stricter than HIPAA; requires
+- [x] **2H.1c** 42 CFR Part 2 (Substance Use Disorder) — stricter than HIPAA; requires
   explicit consent for disclosure even for treatment. The scanner must flag field names and
   data patterns defined in `SUD_FIELD_NAME_PATTERNS` (a `frozenset[str]` in `constants.py`
   containing: `substance_use`, `addiction_treatment`, `sud_diagnosis`, `alcohol_abuse`,
@@ -1111,10 +1111,10 @@ reflected in the Phase 4 documentation and compliance mapping.
   regulatory category under a different statute with different consent requirements. Reusing
   UNIQUE_ID would cause a semantic collision that forces runtime disambiguation via free-text
   note fields — fragile and undetectable by the type checker.
-- [ ] **2H.1d** GINA (Genetic Information Nondiscrimination Act) — genetic information
+- [x] **2H.1d** GINA (Genetic Information Nondiscrimination Act) — genetic information
   (test results, family history, genomic data) is a protected category. Genetic identifier
   patterns from 2B.1 cover this; document GINA applicability in compliance mapping.
-- [ ] **2H.1e** NIST SP 800-122 (PII Confidentiality Guide) — the PII side of the scanner
+- [x] **2H.1e** NIST SP 800-122 (PII Confidentiality Guide) — the PII side of the scanner
   (non-health personal information) aligns with this standard. PII categories covered include
   name, SSN, date of birth, address, phone, email, financial account numbers, and biometrics.
   Document alignment in Phase 4 compliance mapping.
@@ -1124,18 +1124,18 @@ reflected in the Phase 4 documentation and compliance mapping.
 The following file types contain PHI in healthcare codebases but are skipped as binary.
 Document these gaps in `docs/de-identification.md` and `docs/known-limitations.md`:
 
-- [ ] **2H.2a** **PDF files** — `.pdf` is in `KNOWN_BINARY_EXTENSIONS` and will be skipped.
+- [x] **2H.2a** **PDF files** — `.pdf` is in `KNOWN_BINARY_EXTENSIONS` and will be skipped.
   Lab results, discharge summaries, and medical records are often committed as PDFs.
   Phase 2 does not address this. A future phase should add `pdfminer.six` text extraction.
   Document limitation: "PDF files are not scanned. Use `phi-scan[pdf]` when available."
-- [ ] **2H.2b** **DICOM files** — DICOM (`.dcm`) medical imaging files contain patient
+- [x] **2H.2b** **DICOM files** — DICOM (`.dcm`) medical imaging files contain patient
   metadata in header tags (Patient Name, DOB, MRN, Physician). Not scanned in any phase.
   Document limitation and track as a post-1.0 feature.
-- [ ] **2H.2c** **Office documents** — `.docx`, `.xlsx`, `.pptx` are in
+- [x] **2H.2c** **Office documents** — `.docx`, `.xlsx`, `.pptx` are in
   `KNOWN_BINARY_EXTENSIONS`. Clinical notes and patient rosters are often stored as Office
   files in test fixtures. Document as a known gap. Post-1.0 phase to add `python-docx` /
   `openpyxl` text extraction.
-- [ ] **2H.2d** **Compiled code** — `.class`, `.pyc`, `.pyo` bytecode files are skipped.
+- [x] **2H.2d** **Compiled code** — `.class`, `.pyc`, `.pyo` bytecode files are skipped.
   Hardcoded PHI in source code will be caught pre-compilation; post-compilation artifacts
   are out of scope by design. Document this as an intentional scope boundary.
 
@@ -1168,11 +1168,11 @@ Document these gaps in `docs/de-identification.md` and `docs/known-limitations.m
 - [ ] NPI Type 2 (org-context) not flagged; NPI Type 1 (patient-context) flagged
 - [ ] DEA number checksum validation eliminates false positives
 - [ ] Quasi-identifier combination: ZIP + DOB + sex in same file → HIGH combined confidence
-- [ ] `phi-scan explain hipaa` mentions HITECH Act and 42 CFR Part 2
-- [ ] SUD-related field names (`opioid_treatment`, `sud_diagnosis`) detected and mapped
-- [ ] Genetic identifiers (`rs1234567`, VCF-format data) detected in patient context
-- [ ] `make test` passes with all new detection tests
-- [ ] `make typecheck` passes with all new modules
+- [x] `phi-scan explain hipaa` mentions HITECH Act and 42 CFR Part 2
+- [x] SUD-related field names (`opioid_treatment`, `sud_diagnosis`) detected and mapped
+- [x] Genetic identifiers (`rs1234567`, VCF-format data) detected in patient context
+- [x] `make test` passes with all new detection tests
+- [x] `make typecheck` passes with all new modules
 
 ---
 
