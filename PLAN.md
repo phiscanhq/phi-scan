@@ -50,7 +50,7 @@ All tools confirmed installed and version-verified in WSL on March 15, 2026:
 
 ## Current State (March 29, 2026)
 
-**Phase 1 complete. Phase 2 complete. Phase 3A complete. Phase 3B complete. Phase 3C next.**
+**Phase 1 complete. Phase 2 complete. Phase 3A complete. Phase 3B complete. Phase 3C complete. Phase 3D next.**
 
 ```
 phi-scan/
@@ -1234,14 +1234,14 @@ then enforce zero new PHI going forward.
 
 ### 3C — Pre-commit Framework Integration
 
-- [ ] **3C.1** Create `.pre-commit-hooks.yaml` in repo root — defines phi-scan as a hook
+- [x] **3C.1** Create `.pre-commit-hooks.yaml` in repo root — defines phi-scan as a hook
   - Hook ID: `phi-scan`
   - Name: "PhiScan — PHI/PII Detection"
   - Entry: `phi-scan scan --diff`
   - Language: python
   - Types: [text]
   - Stages: [pre-commit, pre-push]
-- [ ] **3C.2** Document usage in `.pre-commit-config.yaml`:
+- [x] **3C.2** Document usage in `.pre-commit-config.yaml`:
   ```yaml
   repos:
     - repo: https://github.com/your-org/phi-scan
@@ -1250,8 +1250,8 @@ then enforce zero new PHI going forward.
         - id: phi-scan
           args: ['--severity-threshold', 'medium']
   ```
-- [ ] **3C.3** Test with `pre-commit run --all-files` and `pre-commit run --files <path>`
-- [ ] **3C.4** Document in `docs/ci-cd-integration.md` alongside native git hook
+- [x] **3C.3** Test with `pre-commit run --all-files` and `pre-commit run --files <path>`
+- [x] **3C.4** Document in `docs/ci-cd-integration.md` alongside native git hook
 
 ### 3D — Package & First Publish
 
