@@ -8,7 +8,6 @@ import io
 import json
 import operator
 import sys
-import xml.etree.ElementTree as ET
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
+from xml.etree import ElementTree
 
 from rich import box as rich_box
 from rich.console import Console
@@ -260,6 +260,7 @@ _JUNIT_ERROR_COUNT: str = "0"
 _JUNIT_INDENT: str = "  "
 _JUNIT_ENCODING: str = "utf-8"
 _JUNIT_DURATION_FORMAT: str = "{:.2f}"
+_JUNIT_CONFIDENCE_FORMAT: str = "{:.2f}"
 _JUNIT_TESTCASE_NAME_FORMAT: str = "{file_path}:{line_number} [{entity_type}]"
 _JUNIT_FAILURE_MESSAGE_FORMAT: str = "[{severity}] PHI detected: {entity_type}"
 _JUNIT_FAILURE_TEXT_FORMAT: str = (
@@ -1062,7 +1063,7 @@ def format_sarif(scan_result: ScanResult) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_junit_testcase(finding: ScanFinding) -> ET.Element:
+def _build_junit_testcase(finding: ScanFinding) -> ElementTree.Element:
     """Build a JUnit <testcase> element with a <failure> child for one finding.
 
     Args:
@@ -1071,7 +1072,7 @@ def _build_junit_testcase(finding: ScanFinding) -> ET.Element:
     Returns:
         A configured testcase Element with a failure child.
     """
-    testcase = ET.Element(
+    testcase = ElementTree.Element(
         _JUNIT_TESTCASE_TAG,
         {
             "name": _JUNIT_TESTCASE_NAME_FORMAT.format(
@@ -1082,7 +1083,7 @@ def _build_junit_testcase(finding: ScanFinding) -> ET.Element:
             "classname": finding.hipaa_category.value,
         },
     )
-    failure = ET.SubElement(
+    failure = ElementTree.SubElement(
         testcase,
         _JUNIT_FAILURE_TAG,
         {
@@ -1097,7 +1098,7 @@ def _build_junit_testcase(finding: ScanFinding) -> ET.Element:
         file_path=finding.file_path,
         line_number=finding.line_number,
         hipaa_category=finding.hipaa_category.value,
-        confidence=_JUNIT_DURATION_FORMAT.format(finding.confidence),
+        confidence=_JUNIT_CONFIDENCE_FORMAT.format(finding.confidence),
         remediation_hint=finding.remediation_hint,
     )
     return testcase
@@ -1123,13 +1124,32 @@ def format_junit(scan_result: ScanResult) -> str:
         "errors": _JUNIT_ERROR_COUNT,
         "time": _JUNIT_DURATION_FORMAT.format(scan_result.scan_duration),
     }
-    suite = ET.Element(_JUNIT_TESTSUITE_TAG, suite_attrs)
+    suite = ElementTree.Element(_JUNIT_TESTSUITE_TAG, suite_attrs)
     for finding in scan_result.findings:
         suite.append(_build_junit_testcase(finding))
-    ET.indent(suite, space=_JUNIT_INDENT)
+    ElementTree.indent(suite, space=_JUNIT_INDENT)
     output_buffer = io.BytesIO()
-    ET.ElementTree(suite).write(output_buffer, encoding=_JUNIT_ENCODING, xml_declaration=True)
+    ElementTree.ElementTree(suite).write(
+        output_buffer, encoding=_JUNIT_ENCODING, xml_declaration=True
+    )
     return output_buffer.getvalue().decode(_JUNIT_ENCODING)
+
+
+# ---------------------------------------------------------------------------
+# Fingerprint primitive — shared by Code Quality and GitLab SAST formatters
+# ---------------------------------------------------------------------------
+
+
+def _compute_sha256_hex(raw: str) -> str:
+    """Return the lowercase SHA-256 hex digest of raw encoded as UTF-8.
+
+    Args:
+        raw: The pre-formatted string to hash.
+
+    Returns:
+        64-character lowercase hexadecimal digest.
+    """
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -1151,7 +1171,7 @@ def _build_codequality_fingerprint(finding: ScanFinding) -> str:
         line_number=finding.line_number,
         entity_type=finding.entity_type,
     )
-    return hashlib.sha256(fingerprint_input.encode()).hexdigest()
+    return _compute_sha256_hex(fingerprint_input)
 
 
 def _build_codequality_entry(finding: ScanFinding) -> dict[str, object]:
@@ -1212,7 +1232,7 @@ def _build_gitlab_sast_fingerprint(finding: ScanFinding) -> str:
         line_number=finding.line_number,
         entity_type=finding.entity_type,
     )
-    return hashlib.sha256(fingerprint_input.encode()).hexdigest()
+    return _compute_sha256_hex(fingerprint_input)
 
 
 def _build_gitlab_sast_vulnerability(finding: ScanFinding) -> dict[str, object]:
