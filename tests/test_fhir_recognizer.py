@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
     CONFIDENCE_HIGH_FLOOR,
     CONFIDENCE_LOW_FLOOR,
     CONFIDENCE_MEDIUM_FLOOR,
@@ -19,7 +20,6 @@ from phi_scan.constants import (
 from phi_scan.fhir_recognizer import (  # type: ignore[attr-defined]
     _FHIR_FIELD_BASE_CONFIDENCE,
     _FHIR_JSON_NULL_SENTINEL,
-    _REDACTED_VALUE_PLACEHOLDER,
     _build_fhir_finding,
     _detect_phi_in_fhir_content,
     _extract_fhir_matches_from_line,
@@ -247,7 +247,7 @@ def test_build_fhir_finding_stores_field_name_and_redacted_placeholder_in_code_c
     finding = _build_fhir_finding(_FAKE_FILE_PATH, line_match)
 
     assert _FAKE_FAMILY_NAME not in finding.code_context
-    assert _REDACTED_VALUE_PLACEHOLDER in finding.code_context
+    assert CODE_CONTEXT_REDACTED_VALUE in finding.code_context
     assert "family" in finding.code_context
 
 

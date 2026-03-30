@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
     CONFIDENCE_HIGH_FLOOR,
     CONFIDENCE_STRUCTURED_MAX,
     CONFIDENCE_STRUCTURED_MIN,
@@ -56,10 +57,6 @@ assert CONFIDENCE_STRUCTURED_MIN <= _FHIR_FIELD_BASE_CONFIDENCE <= CONFIDENCE_ST
     f"Layer 3 band [{CONFIDENCE_STRUCTURED_MIN}, {CONFIDENCE_STRUCTURED_MAX}]"
 )
 _HL7_UNAVAILABLE_WARNING: str = "HL7 v2 scanning disabled — install phi-scan[hl7] to enable"
-# Placeholder written into code_context in place of the raw matched PHI value.
-# This satisfies the HIPAA audit requirement that raw PHI values must never be
-# stored in scan output — only their SHA-256 hashes.
-_REDACTED_VALUE_PLACEHOLDER: str = "[REDACTED]"
 # JSON-specific null sentinel. FHIR JSON may encode absent values as the
 # string literal "null"; XML encodes absence by omitting the element entirely,
 # so no XML equivalent sentinel is needed here.
@@ -204,7 +201,7 @@ def _build_fhir_finding(file_path: Path, line_match: _FhirLineMatch) -> ScanFind
         # would expose every other field's value regardless of how many
         # str.replace() calls are applied. The field name is sufficient for a
         # developer to locate and remediate the finding.
-        code_context=f'"{line_match.field_name}": {_REDACTED_VALUE_PLACEHOLDER}',
+        code_context=f'"{line_match.field_name}": {CODE_CONTEXT_REDACTED_VALUE}',
         remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(phi_category, ""),
     )
 

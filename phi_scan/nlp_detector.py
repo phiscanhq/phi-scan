@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
     CONFIDENCE_NLP_MAX,
     CONFIDENCE_NLP_MIN,
     HIPAA_REMEDIATION_GUIDANCE,
@@ -234,6 +235,8 @@ def _build_nlp_finding(
     )
     phi_category = _PRESIDIO_ENTITY_TO_PHI_CATEGORY[analyzer_result.entity_type]
     confidence = _clamp_to_nlp_range(analyzer_result.score)
+    matched_text = scan_context.file_content[analyzer_result.start : analyzer_result.end]
+    redacted_context = line_text.replace(matched_text, CODE_CONTEXT_REDACTED_VALUE).rstrip()
     return ScanFinding(
         file_path=scan_context.file_path,
         line_number=line_number,
@@ -241,14 +244,9 @@ def _build_nlp_finding(
         hipaa_category=phi_category,
         confidence=confidence,
         detection_layer=DetectionLayer.NLP,
-        # The matched slice is passed directly to the hash function — no named
-        # local variable is created, so the raw PHI value is never bound to a
-        # name that could be accidentally referenced elsewhere in this scope.
-        value_hash=compute_value_hash(
-            scan_context.file_content[analyzer_result.start : analyzer_result.end]
-        ),
+        value_hash=compute_value_hash(matched_text),
         severity=severity_from_confidence(confidence),
-        code_context=line_text.rstrip(),
+        code_context=redacted_context,
         remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(phi_category, ""),
     )
 

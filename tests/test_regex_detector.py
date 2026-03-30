@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
     CONFIDENCE_HIGH_FLOOR,
     CONFIDENCE_LOW_FLOOR,
     CONFIDENCE_MEDIUM_FLOOR,
@@ -133,13 +134,14 @@ class TestDetectPhiWithRegexReturnsFindings:
         assert ssn_findings
         assert ssn_findings[0].line_number == 2
 
-    def test_code_context_is_stripped_line(self) -> None:
+    def test_code_context_redacts_matched_value(self) -> None:
         line = f'ssn = "{_VALID_SSN}"   '
         findings = detect_phi_with_regex(line, _FAKE_PATH)
 
         ssn_findings = [f for f in findings if f.entity_type == "SSN"]
         assert ssn_findings
-        assert ssn_findings[0].code_context == line.rstrip()
+        assert CODE_CONTEXT_REDACTED_VALUE in ssn_findings[0].code_context
+        assert _VALID_SSN not in ssn_findings[0].code_context
 
 
 # ---------------------------------------------------------------------------

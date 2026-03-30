@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
     CONFIDENCE_HIGH_FLOOR,
     CONFIDENCE_LOW_FLOOR,
     CONFIDENCE_MEDIUM_FLOOR,
@@ -349,7 +350,7 @@ class TestBuildNlpFinding:
 
         assert finding.line_number == 1
 
-    def test_code_context_is_the_source_line_stripped_of_trailing_whitespace(self) -> None:
+    def test_code_context_redacts_matched_value(self) -> None:
         scan_context = _build_scan_context(_SINGLE_LINE_CONTENT)
         analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE
@@ -357,7 +358,8 @@ class TestBuildNlpFinding:
 
         finding = _build_nlp_finding(scan_context, analyzer_result)
 
-        assert finding.code_context == _SINGLE_LINE_CONTENT.rstrip()
+        assert CODE_CONTEXT_REDACTED_VALUE in finding.code_context
+        assert "John Smith" not in finding.code_context
 
     def test_file_path_is_preserved_in_finding(self) -> None:
         custom_path = Path("project/src/records.py")

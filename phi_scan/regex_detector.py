@@ -23,6 +23,7 @@ from pathlib import Path
 
 from phi_scan.constants import (
     BIOMETRIC_FIELD_NAMES,
+    CODE_CONTEXT_REDACTED_VALUE,
     CONFIDENCE_REGEX_MAX,
     DBSNP_RS_ID_MAX_DIGITS,
     DBSNP_RS_ID_MIN_DIGITS,
@@ -1214,18 +1215,21 @@ def _build_finding(
     """Construct a ScanFinding for one validated regex match.
 
     The raw matched_text is hashed immediately; only the hash is stored.
+    code_context is the source line with the matched value replaced by
+    CODE_CONTEXT_REDACTED_VALUE so raw PHI never flows through the model.
 
     Args:
         file_path: Path of the source file.
         line_number: 1-indexed source line number.
-        line_text: Full text of the source line (stored as code_context).
-        matched_text: The exact matched string — hashed, never stored raw.
+        line_text: Full text of the source line.
+        matched_text: The exact matched string — hashed, then redacted from context.
         phi_pattern: The pattern that produced the match.
         confidence: Pre-computed confidence float.
 
     Returns:
         Immutable ScanFinding.
     """
+    redacted_context = line_text.replace(matched_text, CODE_CONTEXT_REDACTED_VALUE).rstrip()
     return ScanFinding(
         file_path=file_path,
         line_number=line_number,
@@ -1235,7 +1239,7 @@ def _build_finding(
         detection_layer=DetectionLayer.REGEX,
         value_hash=compute_value_hash(matched_text),
         severity=severity_from_confidence(confidence),
-        code_context=line_text.rstrip(),
+        code_context=redacted_context,
         remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(phi_pattern.phi_category, ""),
     )
 

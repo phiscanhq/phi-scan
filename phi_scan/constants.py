@@ -26,6 +26,7 @@ __all__ = [
     "CONFIDENCE_REGEX_MIN",
     "CONFIDENCE_SCORE_MAXIMUM",
     "CONFIDENCE_SCORE_MINIMUM",
+    "CODE_CONTEXT_REDACTED_VALUE",
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_CONFIG_FILENAME",
     "DEFAULT_DATABASE_PATH",
@@ -89,6 +90,10 @@ BASELINE_SCHEMA_VERSION: int = 1
 # Warn when a baseline update adds more than this percent more entries than before.
 # A 20 % increase signals the team may be accumulating rather than remediating PHI.
 BASELINE_DRIFT_WARNING_PERCENT: int = 20
+# Substituted in place of the raw matched PHI value when building code_context.
+# The source line is shown to help developers locate the finding; the actual
+# matched value is replaced so raw PHI never flows through the model or display.
+CODE_CONTEXT_REDACTED_VALUE: str = "[REDACTED]"
 DEFAULT_CONFIG_FILENAME: str = ".phi-scanner.yml"
 DEFAULT_DATABASE_PATH: str = "~/.phi-scanner/audit.db"
 DEFAULT_IGNORE_FILENAME: str = ".phi-scanignore"
