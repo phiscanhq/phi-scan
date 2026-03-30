@@ -29,8 +29,8 @@ from phi_scan.help_text import EXPLAIN_HIPAA_TEXT
 # ---------------------------------------------------------------------------
 
 _DOCS_ROOT: Path = Path(__file__).parent.parent / "docs"
-_DE_ID_DOC_PATH: Path = _DOCS_ROOT / "de-identification.md"
-_KNOWN_LIMITS_DOC_PATH: Path = _DOCS_ROOT / "known-limitations.md"
+_DE_IDENTIFICATION_DOC_PATH: Path = _DOCS_ROOT / "de-identification.md"
+_KNOWN_LIMITATIONS_DOC_PATH: Path = _DOCS_ROOT / "known-limitations.md"
 
 # ---------------------------------------------------------------------------
 # Help-text keyword constants (no magic strings in logic code)
@@ -63,9 +63,8 @@ _PLAN_REQUIRED_SUD_PATTERNS: frozenset[str] = frozenset(
 )
 
 # Template for generating a Python assignment containing a SUD field name.
-# Follows the pattern: <field_name> = "<field_name>_record"
-_SUD_ASSIGNMENT_SUFFIX: str = "_record"
-_SUD_ASSIGNMENT_TEMPLATE: str = '{field_name} = "{field_name}{suffix}"\n'
+# The _record suffix is synthetic fixture text with no domain significance.
+_SUD_ASSIGNMENT_TEMPLATE: str = '{field_name} = "{field_name}_record"\n'
 
 # Assertion message templates — no inline string literals in logic code.
 _MISSING_SUD_PATTERNS_MESSAGE: str = (
@@ -171,11 +170,10 @@ def test_substance_use_disorder_category_differs_from_unique_id() -> None:
 @pytest.mark.parametrize("field_name", sorted(SUD_FIELD_NAME_PATTERNS))
 def test_sud_field_name_produces_finding(field_name: str) -> None:
     """Each SUD field name in SUD_FIELD_NAME_PATTERNS produces at least one finding."""
-    source_line = _SUD_ASSIGNMENT_TEMPLATE.format(
-        field_name=field_name,
-        suffix=_SUD_ASSIGNMENT_SUFFIX,
-    )
+    source_line = _SUD_ASSIGNMENT_TEMPLATE.format(field_name=field_name)
 
+    # Relative path is intentional — detect_phi_in_text_content uses file_path
+    # for attribution metadata only; no filesystem resolution is performed.
     findings = detect_phi_in_text_content(source_line, Path("module.py"))
 
     assert len(findings) >= 1, _NO_SUD_FINDING_MESSAGE.format(field_name=field_name)
@@ -184,10 +182,7 @@ def test_sud_field_name_produces_finding(field_name: str) -> None:
 @pytest.mark.parametrize("field_name", sorted(SUD_FIELD_NAME_PATTERNS))
 def test_sud_finding_maps_to_substance_use_disorder_category(field_name: str) -> None:
     """SUD field name findings are categorised as SUBSTANCE_USE_DISORDER."""
-    source_line = _SUD_ASSIGNMENT_TEMPLATE.format(
-        field_name=field_name,
-        suffix=_SUD_ASSIGNMENT_SUFFIX,
-    )
+    source_line = _SUD_ASSIGNMENT_TEMPLATE.format(field_name=field_name)
 
     findings = detect_phi_in_text_content(source_line, Path("module.py"))
 
@@ -206,26 +201,28 @@ def test_sud_finding_maps_to_substance_use_disorder_category(field_name: str) ->
 
 def test_de_identification_doc_exists() -> None:
     """docs/de-identification.md exists at the project root."""
-    assert _DE_ID_DOC_PATH.is_file(), _MISSING_DOC_FILE_MESSAGE.format(doc_path=_DE_ID_DOC_PATH)
+    assert _DE_IDENTIFICATION_DOC_PATH.is_file(), _MISSING_DOC_FILE_MESSAGE.format(
+        doc_path=_DE_IDENTIFICATION_DOC_PATH
+    )
 
 
 def test_de_identification_doc_mentions_safe_harbor() -> None:
     """docs/de-identification.md references HIPAA Safe Harbor."""
-    de_identification_doc_content = _DE_ID_DOC_PATH.read_text(encoding="utf-8")
+    de_identification_doc_content = _DE_IDENTIFICATION_DOC_PATH.read_text(encoding="utf-8")
 
     assert _DOC_SAFE_HARBOR_KEYWORD in de_identification_doc_content
 
 
 def test_de_identification_doc_mentions_expert_determination() -> None:
     """docs/de-identification.md documents the Expert Determination limitation."""
-    de_identification_doc_content = _DE_ID_DOC_PATH.read_text(encoding="utf-8")
+    de_identification_doc_content = _DE_IDENTIFICATION_DOC_PATH.read_text(encoding="utf-8")
 
     assert _DOC_EXPERT_DET_KEYWORD in de_identification_doc_content
 
 
 def test_de_identification_doc_mentions_hitech() -> None:
     """docs/de-identification.md documents the HITECH Act scope."""
-    de_identification_doc_content = _DE_ID_DOC_PATH.read_text(encoding="utf-8")
+    de_identification_doc_content = _DE_IDENTIFICATION_DOC_PATH.read_text(encoding="utf-8")
 
     assert _DOC_HITECH_KEYWORD in de_identification_doc_content
 
@@ -237,41 +234,41 @@ def test_de_identification_doc_mentions_hitech() -> None:
 
 def test_known_limitations_doc_exists() -> None:
     """docs/known-limitations.md exists at the project root."""
-    assert _KNOWN_LIMITS_DOC_PATH.is_file(), _MISSING_DOC_FILE_MESSAGE.format(
-        doc_path=_KNOWN_LIMITS_DOC_PATH
+    assert _KNOWN_LIMITATIONS_DOC_PATH.is_file(), _MISSING_DOC_FILE_MESSAGE.format(
+        doc_path=_KNOWN_LIMITATIONS_DOC_PATH
     )
 
 
 def test_known_limitations_doc_mentions_pdf() -> None:
     """docs/known-limitations.md documents the PDF scanning gap (2H.2a)."""
-    known_limitations_doc_content = _KNOWN_LIMITS_DOC_PATH.read_text(encoding="utf-8")
+    known_limitations_doc_content = _KNOWN_LIMITATIONS_DOC_PATH.read_text(encoding="utf-8")
 
     assert _DOC_PDF_KEYWORD in known_limitations_doc_content
 
 
 def test_known_limitations_doc_mentions_dicom() -> None:
     """docs/known-limitations.md documents the DICOM scanning gap (2H.2b)."""
-    known_limitations_doc_content = _KNOWN_LIMITS_DOC_PATH.read_text(encoding="utf-8")
+    known_limitations_doc_content = _KNOWN_LIMITATIONS_DOC_PATH.read_text(encoding="utf-8")
 
     assert _DOC_DICOM_KEYWORD in known_limitations_doc_content
 
 
 def test_known_limitations_doc_mentions_office_documents() -> None:
     """docs/known-limitations.md documents the Office document scanning gap (2H.2c)."""
-    known_limitations_doc_content = _KNOWN_LIMITS_DOC_PATH.read_text(encoding="utf-8")
+    known_limitations_doc_content = _KNOWN_LIMITATIONS_DOC_PATH.read_text(encoding="utf-8")
 
     assert _DOC_OFFICE_KEYWORD in known_limitations_doc_content
 
 
 def test_known_limitations_doc_mentions_compiled_code() -> None:
     """docs/known-limitations.md documents the compiled code scope boundary (2H.2d)."""
-    known_limitations_doc_content = _KNOWN_LIMITS_DOC_PATH.read_text(encoding="utf-8")
+    known_limitations_doc_content = _KNOWN_LIMITATIONS_DOC_PATH.read_text(encoding="utf-8")
 
     assert _DOC_COMPILED_KEYWORD in known_limitations_doc_content
 
 
 def test_known_limitations_doc_mentions_expert_determination() -> None:
     """docs/known-limitations.md documents the Expert Determination limitation."""
-    known_limitations_doc_content = _KNOWN_LIMITS_DOC_PATH.read_text(encoding="utf-8")
+    known_limitations_doc_content = _KNOWN_LIMITATIONS_DOC_PATH.read_text(encoding="utf-8")
 
     assert _DOC_EXPERT_DET_KEYWORD in known_limitations_doc_content
