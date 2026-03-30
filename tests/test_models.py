@@ -144,7 +144,9 @@ def test_scan_finding_is_immutable() -> None:
 # ScanFinding — file_path validation
 # ---------------------------------------------------------------------------
 
-_ABSOLUTE_FILE_PATH: Path = Path("/project/src/patient_handler.py")
+# Path.home() is guaranteed absolute on every platform (POSIX and Windows).
+# Path("/project/src/...") is NOT absolute on Windows — it lacks a drive letter.
+_ABSOLUTE_FILE_PATH: Path = Path.home() / "project" / "src" / "patient_handler.py"
 
 
 def test_scan_finding_raises_phi_detection_error_for_absolute_file_path() -> None:
@@ -901,7 +903,7 @@ def test_scan_config_raises_configuration_error_for_non_path_database_path() -> 
 # ---------------------------------------------------------------------------
 
 _HL7_CONTEXT_RELATIVE_FILE_PATH: Path = Path("hl7/test_patient.hl7")
-_HL7_CONTEXT_ABSOLUTE_FILE_PATH: Path = Path("/data/patients/john_doe/test.hl7")
+_HL7_CONTEXT_ABSOLUTE_FILE_PATH: Path = Path.home() / "data" / "patients" / "john_doe" / "test.hl7"
 _HL7_CONTEXT_SEGMENT_INDEX: int = 0
 _HL7_CONTEXT_SEGMENT_TYPE: str = "PID"
 
