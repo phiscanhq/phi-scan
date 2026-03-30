@@ -205,6 +205,42 @@ def _offset_to_line_number(character_offset: int, line_start_offsets: list[int])
     return line_index + _LINE_NUMBER_START
 
 
+def _hash_and_redact_span(
+    file_content: str,
+    content_start: int,
+    content_end: int,
+    line_text: str,
+    line_content_start: int,
+) -> tuple[str, str]:
+    """Return (value_hash, redacted_line) without exposing raw PHI as a named variable.
+
+    The raw PHI slice exists only within this function and is never bound to a
+    name visible outside — satisfying the HIPAA constraint that matched values
+    must not be stored or propagated.  Replacement uses the known span offsets
+    rather than str.replace so only the exact match position is redacted.
+
+    Args:
+        file_content: Full text of the source file.
+        content_start: Start offset of the match in file_content.
+        content_end: End offset of the match in file_content.
+        line_text: The source line that contains the match.
+        line_content_start: Offset of line_text's first character in file_content.
+
+    Returns:
+        Tuple of (SHA-256 hex digest of matched value, line with match replaced
+        by CODE_CONTEXT_REDACTED_VALUE).
+    """
+    intra_line_start = content_start - line_content_start
+    intra_line_end = content_end - line_content_start
+    redacted_line = (
+        line_text[:intra_line_start] + CODE_CONTEXT_REDACTED_VALUE + line_text[intra_line_end:]
+    ).rstrip()
+    return (
+        compute_value_hash(file_content[content_start:content_end]),
+        redacted_line,
+    )
+
+
 def _build_nlp_finding(
     scan_context: _NlpScanContext,
     analyzer_result: Any,
@@ -235,8 +271,13 @@ def _build_nlp_finding(
     )
     phi_category = _PRESIDIO_ENTITY_TO_PHI_CATEGORY[analyzer_result.entity_type]
     confidence = _clamp_to_nlp_range(analyzer_result.score)
-    matched_text = scan_context.file_content[analyzer_result.start : analyzer_result.end]
-    redacted_context = line_text.replace(matched_text, CODE_CONTEXT_REDACTED_VALUE).rstrip()
+    value_hash, redacted_context = _hash_and_redact_span(
+        scan_context.file_content,
+        analyzer_result.start,
+        analyzer_result.end,
+        line_text,
+        scan_context.line_start_offsets[line_index],
+    )
     return ScanFinding(
         file_path=scan_context.file_path,
         line_number=line_number,
@@ -244,7 +285,7 @@ def _build_nlp_finding(
         hipaa_category=phi_category,
         confidence=confidence,
         detection_layer=DetectionLayer.NLP,
-        value_hash=compute_value_hash(matched_text),
+        value_hash=value_hash,
         severity=severity_from_confidence(confidence),
         code_context=redacted_context,
         remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(phi_category, ""),
