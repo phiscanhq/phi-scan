@@ -40,7 +40,7 @@ __all__ = [
     "BaselineEntry",
     "BaselineSnapshot",
     "BaselineSummary",
-    "check_baseline_drift",
+    "detect_baseline_drift",
     "compute_baseline_diff",
     "create_baseline",
     "filter_baselined_findings",
@@ -91,6 +91,10 @@ _KEY_SCANNER_VERSION: str = "scanner_version"
 _KEY_BASELINE_MAX_AGE_DAYS: str = "baseline_max_age_days"
 _KEY_ENTRIES: str = "entries"
 
+# Sentinel used when the schema_version key is absent or unrecognisable.
+# Guaranteed to never match BASELINE_SCHEMA_VERSION (which starts at 1).
+_UNKNOWN_SCHEMA_VERSION: int = 0
+
 _SCHEMA_MISMATCH_ERROR: str = (
     "Baseline file schema version {actual} is not supported (expected {expected}). "
     "Run 'phi-scan baseline clear' then 'phi-scan baseline create' to reset."
@@ -98,6 +102,7 @@ _SCHEMA_MISMATCH_ERROR: str = (
 _READ_ERROR: str = "Failed to read baseline file {path!r}: {error}"
 _WRITE_ERROR: str = "Failed to write baseline file {path!r}: {error}"
 _PARSE_ENTRY_ERROR: str = "Malformed baseline entry at index {index}: {error}"
+_CREATED_AT_PARSE_ERROR: str = "Invalid baseline created_at value {value!r}: {error}"
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -189,19 +194,23 @@ def _entry_matches_finding(entry: BaselineEntry, finding: ScanFinding) -> bool:
     )
 
 
+def _hash_code_context(finding: ScanFinding) -> str:
+    """Return SHA-256 hex digest of finding.code_context as a source-line proxy.
+
+    ScanFinding does not expose the raw matched line separately; code_context
+    (surrounding lines) is the closest available representation for informational
+    display in ``baseline diff``. Not used as part of the match key.
+    """
+    return hashlib.sha256(finding.code_context.encode(DEFAULT_TEXT_ENCODING)).hexdigest()
+
+
 def _make_baseline_entry(finding: ScanFinding, max_age_days: int) -> BaselineEntry:
     """Construct a BaselineEntry from a ScanFinding with computed expiry."""
     now = datetime.now(UTC)
-    # SHA-256 of code_context approximates the source-line hash. ScanFinding
-    # does not expose the raw matched line separately; code_context (surrounding
-    # lines) is the closest available representation for informational purposes.
-    line_content_hash = hashlib.sha256(
-        finding.code_context.encode(DEFAULT_TEXT_ENCODING)
-    ).hexdigest()
     return BaselineEntry(
         file_path=finding.file_path,
         line_number=finding.line_number,
-        line_content_hash=line_content_hash,
+        line_content_hash=_hash_code_context(finding),
         entity_type=finding.entity_type,
         hipaa_category=finding.hipaa_category,
         value_hash=finding.value_hash,
@@ -231,7 +240,11 @@ def _find_new_findings(
     active_entries: tuple[BaselineEntry, ...],
 ) -> list[ScanFinding]:
     """Return findings with no matching active baseline entry."""
-    return [f for f in findings if not any(_entry_matches_finding(e, f) for e in active_entries)]
+    return [
+        finding
+        for finding in findings
+        if not any(_entry_matches_finding(entry, finding) for entry in active_entries)
+    ]
 
 
 def _find_resolved_entries(
@@ -239,7 +252,11 @@ def _find_resolved_entries(
     findings: tuple[ScanFinding, ...],
 ) -> list[BaselineEntry]:
     """Return active entries with no matching current finding (remediated)."""
-    return [e for e in active_entries if not any(_entry_matches_finding(e, f) for f in findings)]
+    return [
+        entry
+        for entry in active_entries
+        if not any(_entry_matches_finding(entry, finding) for finding in findings)
+    ]
 
 
 def _find_persisting_findings(
@@ -247,7 +264,11 @@ def _find_persisting_findings(
     active_entries: tuple[BaselineEntry, ...],
 ) -> list[ScanFinding]:
     """Return findings that have a matching active baseline entry (still present)."""
-    return [f for f in findings if any(_entry_matches_finding(e, f) for e in active_entries)]
+    return [
+        finding
+        for finding in findings
+        if any(_entry_matches_finding(entry, finding) for entry in active_entries)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +305,15 @@ def _compute_oldest_entry_age_days(entries: list[BaselineEntry], now: datetime) 
 # ---------------------------------------------------------------------------
 # Private helpers — YAML serialization / deserialization
 # ---------------------------------------------------------------------------
+
+
+def _coerce_to_int(value: object, default: int) -> int:
+    """Return int(value) when value is an int or str; otherwise return default.
+
+    Used when deserialising YAML fields that should be integers but whose type
+    cannot be guaranteed because yaml.safe_load returns ``object``.
+    """
+    return int(value) if isinstance(value, (int, str)) else default
 
 
 def _parse_iso_datetime(raw: object) -> datetime:
@@ -370,29 +400,65 @@ def _load_baseline_raw(baseline_path: Path) -> dict[str, object]:
         raise BaselineError(_READ_ERROR.format(path=baseline_path, error=error)) from error
 
 
-def _parse_baseline_snapshot(raw: dict[str, object]) -> BaselineSnapshot:
-    """Validate schema version and parse a raw YAML dict into a BaselineSnapshot.
+def _validate_schema_version(yaml_dict: dict[str, object]) -> int:
+    """Return the schema version after confirming it matches BASELINE_SCHEMA_VERSION.
 
     Raises:
-        BaselineError: If the schema version is unsupported or any entry is malformed.
+        BaselineError: If the version is absent, non-numeric, or unsupported.
     """
-    schema_raw = raw.get(_KEY_SCHEMA_VERSION, 0)
-    schema_version = int(schema_raw) if isinstance(schema_raw, (int, str)) else 0
+    schema_version = _coerce_to_int(
+        yaml_dict.get(_KEY_SCHEMA_VERSION, _UNKNOWN_SCHEMA_VERSION),
+        _UNKNOWN_SCHEMA_VERSION,
+    )
     if schema_version != BASELINE_SCHEMA_VERSION:
         raise BaselineError(
             _SCHEMA_MISMATCH_ERROR.format(actual=schema_version, expected=BASELINE_SCHEMA_VERSION)
         )
-    raw_entries: list[dict[str, object]] = raw.get(_KEY_ENTRIES) or []  # type: ignore[assignment]
-    entries = tuple(_parse_baseline_entry(entry, index) for index, entry in enumerate(raw_entries))
-    age_raw = raw.get(_KEY_BASELINE_MAX_AGE_DAYS, DEFAULT_BASELINE_MAX_AGE_DAYS)
-    max_age = int(age_raw) if isinstance(age_raw, (int, str)) else DEFAULT_BASELINE_MAX_AGE_DAYS
+    return schema_version
+
+
+def _assemble_baseline_snapshot(
+    yaml_dict: dict[str, object], schema_version: int, entries: tuple[BaselineEntry, ...]
+) -> BaselineSnapshot:
+    """Construct a BaselineSnapshot from validated YAML fields.
+
+    Raises:
+        BaselineError: If created_at cannot be parsed as a datetime.
+    """
+    max_age_days_parsed = _coerce_to_int(
+        yaml_dict.get(_KEY_BASELINE_MAX_AGE_DAYS, DEFAULT_BASELINE_MAX_AGE_DAYS),
+        DEFAULT_BASELINE_MAX_AGE_DAYS,
+    )
+    created_at_raw = yaml_dict.get(_KEY_CREATED_AT, "")
+    try:
+        created_at = _parse_iso_datetime(created_at_raw)
+    except ValueError as error:
+        raise BaselineError(
+            _CREATED_AT_PARSE_ERROR.format(value=created_at_raw, error=error)
+        ) from error
     return BaselineSnapshot(
         entries=entries,
         schema_version=schema_version,
-        created_at=_parse_iso_datetime(raw.get(_KEY_CREATED_AT, "")),
-        scanner_version=str(raw.get(_KEY_SCANNER_VERSION, "")),
-        baseline_max_age_days=max_age,
+        created_at=created_at,
+        scanner_version=str(yaml_dict.get(_KEY_SCANNER_VERSION, "")),
+        baseline_max_age_days=max_age_days_parsed,
     )
+
+
+def _parse_baseline_snapshot(yaml_dict: dict[str, object]) -> BaselineSnapshot:
+    """Validate and parse a YAML dict into a BaselineSnapshot.
+
+    Raises:
+        BaselineError: If the schema version is unsupported, any entry is
+            malformed, or the created_at timestamp cannot be parsed.
+    """
+    schema_version = _validate_schema_version(yaml_dict)
+    unparsed_entries: list[dict[str, object]] = yaml_dict.get(_KEY_ENTRIES) or []  # type: ignore[assignment]
+    entries = tuple(
+        _parse_baseline_entry(entry_dict, index)
+        for index, entry_dict in enumerate(unparsed_entries)
+    )
+    return _assemble_baseline_snapshot(yaml_dict, schema_version, entries)
 
 
 # ---------------------------------------------------------------------------
@@ -415,8 +481,8 @@ def load_baseline(*, baseline_path: Path = _DEFAULT_BASELINE_PATH) -> BaselineSn
     """
     if not baseline_path.exists():
         return None
-    raw = _load_baseline_raw(baseline_path)
-    return _parse_baseline_snapshot(raw)
+    yaml_dict = _load_baseline_raw(baseline_path)
+    return _parse_baseline_snapshot(yaml_dict)
 
 
 def save_baseline(
@@ -528,11 +594,11 @@ def compute_baseline_diff(snapshot: BaselineSnapshot, scan_result: ScanResult) -
     active_entries = tuple(entry for entry in snapshot.entries if not _is_entry_expired(entry, now))
     new_findings = _find_new_findings(scan_result.findings, active_entries)
     resolved_entries = _find_resolved_entries(active_entries, scan_result.findings)
-    persisting = _find_persisting_findings(scan_result.findings, active_entries)
+    persisting_findings = _find_persisting_findings(scan_result.findings, active_entries)
     return BaselineDiff(
         new_findings=tuple(new_findings),
         resolved_entries=tuple(resolved_entries),
-        persisting_findings=tuple(persisting),
+        persisting_findings=tuple(persisting_findings),
     )
 
 
@@ -547,8 +613,8 @@ def get_baseline_summary(snapshot: BaselineSnapshot, baseline_path: Path) -> Bas
         BaselineSummary with counts, age, and metadata.
     """
     now = datetime.now(UTC)
-    active = [e for e in snapshot.entries if not _is_entry_expired(e, now)]
-    expired = [e for e in snapshot.entries if _is_entry_expired(e, now)]
+    active = [entry for entry in snapshot.entries if not _is_entry_expired(entry, now)]
+    expired = [entry for entry in snapshot.entries if _is_entry_expired(entry, now)]
     return BaselineSummary(
         total_entries=len(snapshot.entries),
         active_entries=len(active),
@@ -562,7 +628,7 @@ def get_baseline_summary(snapshot: BaselineSnapshot, baseline_path: Path) -> Bas
     )
 
 
-def check_baseline_drift(old_snapshot: BaselineSnapshot, new_snapshot: BaselineSnapshot) -> int:
+def detect_baseline_drift(old_snapshot: BaselineSnapshot, new_snapshot: BaselineSnapshot) -> int:
     """Return the percent change in entry count between two snapshots.
 
     A positive value means the new baseline has more entries than the old one,

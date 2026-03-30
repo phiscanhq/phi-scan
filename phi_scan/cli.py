@@ -26,9 +26,9 @@ from phi_scan.audit import (
 )
 from phi_scan.baseline import (
     BaselineSnapshot,
-    check_baseline_drift,
     compute_baseline_diff,
     create_baseline,
+    detect_baseline_drift,
     filter_baselined_findings,
     get_baseline_summary,
     load_baseline,
@@ -1660,7 +1660,7 @@ def baseline_update(
         typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
         raise typer.Exit(code=EXIT_CODE_ERROR)
     if old_snapshot is not None:
-        drift = check_baseline_drift(old_snapshot, new_snapshot)
+        drift = detect_baseline_drift(old_snapshot, new_snapshot)
         if drift > BASELINE_DRIFT_WARNING_PERCENT:
             display_baseline_drift_warning(
                 len(old_snapshot.entries), len(new_snapshot.entries), drift

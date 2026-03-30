@@ -12,9 +12,9 @@ from phi_scan.baseline import (
     BaselineEntry,
     BaselineSnapshot,
     BaselineSummary,
-    check_baseline_drift,
     compute_baseline_diff,
     create_baseline,
+    detect_baseline_drift,
     filter_baselined_findings,
     get_baseline_summary,
     is_finding_baselined,
@@ -495,7 +495,7 @@ class TestGetBaselineSummary:
 
 
 # ---------------------------------------------------------------------------
-# check_baseline_drift
+# detect_baseline_drift
 # ---------------------------------------------------------------------------
 
 
@@ -505,7 +505,7 @@ class TestCheckBaselineDrift:
         old_snapshot = _make_snapshot((entry,))
         new_snapshot = _make_snapshot((entry,))
 
-        assert check_baseline_drift(old_snapshot, new_snapshot) == 0
+        assert detect_baseline_drift(old_snapshot, new_snapshot) == 0
 
     def test_positive_drift_when_entries_increase(self) -> None:
         old_entry = _make_entry()
@@ -513,7 +513,7 @@ class TestCheckBaselineDrift:
         old_snapshot = _make_snapshot((old_entry,))
         new_snapshot = _make_snapshot((old_entry, new_entry))
 
-        drift = check_baseline_drift(old_snapshot, new_snapshot)
+        drift = detect_baseline_drift(old_snapshot, new_snapshot)
 
         assert drift == 100
 
@@ -523,7 +523,7 @@ class TestCheckBaselineDrift:
         old_snapshot = _make_snapshot((entry_a, entry_b))
         new_snapshot = _make_snapshot((entry_a,))
 
-        drift = check_baseline_drift(old_snapshot, new_snapshot)
+        drift = detect_baseline_drift(old_snapshot, new_snapshot)
 
         assert drift == -50
 
@@ -531,7 +531,7 @@ class TestCheckBaselineDrift:
         old_snapshot = _make_snapshot(())
         new_snapshot = _make_snapshot((_make_entry(),))
 
-        assert check_baseline_drift(old_snapshot, new_snapshot) == 0
+        assert detect_baseline_drift(old_snapshot, new_snapshot) == 0
 
     def test_drift_above_warning_threshold_is_detectable(self) -> None:
         # Construct a scenario where drift exceeds BASELINE_DRIFT_WARNING_PERCENT.
@@ -541,6 +541,6 @@ class TestCheckBaselineDrift:
         old_snapshot = _make_snapshot((old_entry,))
         new_snapshot = _make_snapshot((old_entry, new_entry))
 
-        drift = check_baseline_drift(old_snapshot, new_snapshot)
+        drift = detect_baseline_drift(old_snapshot, new_snapshot)
 
         assert drift > BASELINE_DRIFT_WARNING_PERCENT

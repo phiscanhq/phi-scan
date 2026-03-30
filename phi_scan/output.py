@@ -2282,7 +2282,7 @@ def display_baseline_drift_warning(old_count: int, new_count: int, drift_percent
     Args:
         old_count: Entry count in the previous baseline.
         new_count: Entry count in the updated baseline.
-        drift_percent: Percent increase, as returned by check_baseline_drift.
+        drift_percent: Percent increase, as returned by detect_baseline_drift.
     """
     _console.print(
         Panel(
