@@ -20,13 +20,13 @@ from phi_scan.constants import (
     SeverityLevel,
 )
 from phi_scan.exceptions import ConfigurationError, PhiDetectionError
-from phi_scan.models import ScanConfig, ScanFinding, ScanResult
+from phi_scan.models import Hl7ScanContext, ScanConfig, ScanFinding, ScanResult
 
 # ---------------------------------------------------------------------------
 # ScanFinding fixture data — all fields required, no defaults
 # ---------------------------------------------------------------------------
 
-_FINDING_FILE_PATH: Path = Path("/project/src/patient_handler.py")
+_FINDING_FILE_PATH: Path = Path("project/src/patient_handler.py")
 _FINDING_LINE_NUMBER: int = 42
 _FINDING_ENTITY_TYPE: str = "us_ssn"
 _FINDING_HIPAA_CATEGORY: PhiCategory = PhiCategory.SSN
@@ -141,6 +141,28 @@ def test_scan_finding_is_immutable() -> None:
 
 
 # ---------------------------------------------------------------------------
+# ScanFinding — file_path validation
+# ---------------------------------------------------------------------------
+
+_ABSOLUTE_FILE_PATH: Path = Path("/project/src/patient_handler.py")
+
+
+def test_scan_finding_raises_phi_detection_error_for_absolute_file_path() -> None:
+    with pytest.raises(PhiDetectionError):
+        ScanFinding(
+            file_path=_ABSOLUTE_FILE_PATH,
+            line_number=_FINDING_LINE_NUMBER,
+            entity_type=_FINDING_ENTITY_TYPE,
+            hipaa_category=_FINDING_HIPAA_CATEGORY,
+            confidence=_FINDING_CONFIDENCE,
+            detection_layer=_FINDING_DETECTION_LAYER,
+            value_hash=_FINDING_VALUE_HASH,
+            severity=_FINDING_SEVERITY,
+            code_context=_FINDING_CODE_CONTEXT,
+            remediation_hint=_FINDING_REMEDIATION_HINT,
+        )
+
+
 # ScanFinding — line_number validation
 # ---------------------------------------------------------------------------
 
@@ -872,3 +894,32 @@ def test_scan_config_accepts_explicit_database_path(tmp_path: Path) -> None:
 def test_scan_config_raises_configuration_error_for_non_path_database_path() -> None:
     with pytest.raises(ConfigurationError):
         ScanConfig(database_path=_INVALID_DATABASE_PATH)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Hl7ScanContext — file_path validation
+# ---------------------------------------------------------------------------
+
+_HL7_CONTEXT_RELATIVE_FILE_PATH: Path = Path("hl7/test_patient.hl7")
+_HL7_CONTEXT_ABSOLUTE_FILE_PATH: Path = Path("/data/patients/john_doe/test.hl7")
+_HL7_CONTEXT_SEGMENT_INDEX: int = 0
+_HL7_CONTEXT_SEGMENT_TYPE: str = "PID"
+
+
+def test_hl7_scan_context_accepts_relative_file_path() -> None:
+    context = Hl7ScanContext(
+        file_path=_HL7_CONTEXT_RELATIVE_FILE_PATH,
+        segment_index=_HL7_CONTEXT_SEGMENT_INDEX,
+        segment_type=_HL7_CONTEXT_SEGMENT_TYPE,
+    )
+
+    assert context.file_path == _HL7_CONTEXT_RELATIVE_FILE_PATH
+
+
+def test_hl7_scan_context_raises_phi_detection_error_for_absolute_file_path() -> None:
+    with pytest.raises(PhiDetectionError):
+        Hl7ScanContext(
+            file_path=_HL7_CONTEXT_ABSOLUTE_FILE_PATH,
+            segment_index=_HL7_CONTEXT_SEGMENT_INDEX,
+            segment_type=_HL7_CONTEXT_SEGMENT_TYPE,
+        )

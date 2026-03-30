@@ -75,6 +75,9 @@ _ARCHIVE_MEMBER_UNSAFE_PATH_DEBUG: str = (
 )
 _CACHE_HIT_DEBUG: str = "Cache hit for {path!r} — returning {count} cached findings"
 _FILE_READ_OS_ERROR_MESSAGE: str = "Skipping {path!r} — cannot read file: {error}"
+_DISPLAY_PATH_OUTSIDE_CWD_DEBUG: str = (
+    "Path {path!r} is outside the current working directory — using filename only for display"
+)
 
 # ---------------------------------------------------------------------------
 # Implementation constants — traversal and binary detection
@@ -254,6 +257,31 @@ def collect_scan_targets(
     return scan_targets
 
 
+def _compute_display_path(file_path: Path) -> Path:
+    """Return a CWD-relative path suitable for use in ScanFinding.file_path.
+
+    ScanFinding requires a relative path to prevent PHI leakage via directory
+    names (e.g. /patients/john_doe/ would embed patient context into every
+    output format). This function converts absolute paths to relative before
+    any ScanFinding is constructed.
+
+    Args:
+        file_path: The path as received from the filesystem (may be absolute).
+
+    Returns:
+        A relative path: unchanged if already relative; relative to CWD if the
+        path is under CWD; or filename-only (Path(file_path.name)) as a safe
+        fallback when the path is outside the current working directory.
+    """
+    if not file_path.is_absolute():
+        return file_path
+    try:
+        return file_path.relative_to(Path.cwd())
+    except ValueError:
+        _logger.debug(_DISPLAY_PATH_OUTSIDE_CWD_DEBUG.format(path=file_path))
+        return Path(file_path.name)
+
+
 def scan_file(file_path: Path, config: ScanConfig) -> list[ScanFinding]:
     """Scan a single file for PHI/PII findings.
 
@@ -277,7 +305,8 @@ def scan_file(file_path: Path, config: ScanConfig) -> list[ScanFinding]:
     except FileReadError as read_error:
         _logger.warning(str(read_error))
         return []
-    return _execute_scan_with_cache(file_content, content_hash, file_path, config)
+    display_path = _compute_display_path(file_path)
+    return _execute_scan_with_cache(file_content, content_hash, display_path, config)
 
 
 def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
@@ -587,7 +616,7 @@ def _scan_archive_members(
                 )
             )
             continue
-        virtual_path = archive_path / member_name
+        virtual_path = _compute_display_path(archive_path) / member_name
         raw_findings = detect_phi_in_text_content(member_content, virtual_path)
         member_findings = _apply_post_scan_filters(raw_findings, member_content, config)
         findings.extend(member_findings)

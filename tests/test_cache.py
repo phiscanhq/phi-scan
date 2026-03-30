@@ -39,6 +39,9 @@ _MODIFIED_CONTENT: str = "greeting = 'goodbye world'\n"
 
 _DEFAULT_CONFIG_HASH: str = "0" * SHA256_HEX_DIGEST_LENGTH
 _ALTERNATE_CONFIG_HASH: str = "a" * SHA256_HEX_DIGEST_LENGTH
+# ScanFinding requires a relative path — the absolute source_file used for I/O
+# must not be passed directly to _make_finding.
+_FAKE_FINDING_FILE_PATH: Path = Path("app.py")
 
 
 def _make_finding(file_path: Path, line_number: int = 1) -> ScanFinding:
@@ -144,7 +147,7 @@ class TestCacheHitOnUnchangedFile:
         source_file = tmp_path / "app.py"
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
-        stored_findings = [_make_finding(source_file)]
+        stored_findings = [_make_finding(_FAKE_FINDING_FILE_PATH)]
         cache_key = FileCacheKey(source_file, content_hash)
 
         store_cached_result(cache_key, stored_findings, cache_path=cache_db)
@@ -158,7 +161,7 @@ class TestCacheHitOnUnchangedFile:
         source_file = tmp_path / "app.py"
         source_file.write_text(_CLEAN_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
         content_hash = compute_file_hash(source_file)
-        stored_finding = _make_finding(source_file)
+        stored_finding = _make_finding(_FAKE_FINDING_FILE_PATH)
         cache_key = FileCacheKey(source_file, content_hash)
 
         store_cached_result(cache_key, [stored_finding], cache_path=cache_db)

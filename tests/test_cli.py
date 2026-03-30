@@ -63,6 +63,7 @@ _SHORT_FILE_PATH: str = "src/phi_scan/cli.py"
 _LONG_FILE_PATH: str = "a/very/deep/nested/path/that/exceeds/the/column/width/limit/some_module.py"
 _LONG_FILE_ELLIPSIS_PREFIX: str = "…"
 _PROGRESS_FILENAME_MAX_CHARS: int = 38
+_WATCH_FINDING_FILE_PATH: Path = Path("f.py")
 _WATCH_FINDING_ENTITY_TYPE: str = "ssn"
 _WATCH_FINDING_CONFIDENCE: float = 0.9
 _WATCH_FINDING_CODE_CONTEXT: str = ""
@@ -598,7 +599,9 @@ def test_build_watch_result_returns_violation_text_for_findings(
 ) -> None:
     from phi_scan.cli import _build_watch_result
 
-    finding = _make_watch_scan_finding(tmp_path / "f.py", line_number=1, value_hash_seed=b"x")
+    finding = _make_watch_scan_finding(
+        _WATCH_FINDING_FILE_PATH, line_number=1, value_hash_seed=b"x"
+    )
 
     scan_outcome = _build_watch_result([finding])
 
@@ -611,8 +614,12 @@ def test_build_watch_result_violation_count_matches_findings_length(
 ) -> None:
     from phi_scan.cli import _build_watch_result
 
-    finding_one = _make_watch_scan_finding(tmp_path / "f.py", line_number=1, value_hash_seed=b"x")
-    finding_two = _make_watch_scan_finding(tmp_path / "f.py", line_number=2, value_hash_seed=b"y")
+    finding_one = _make_watch_scan_finding(
+        _WATCH_FINDING_FILE_PATH, line_number=1, value_hash_seed=b"x"
+    )
+    finding_two = _make_watch_scan_finding(
+        _WATCH_FINDING_FILE_PATH, line_number=2, value_hash_seed=b"y"
+    )
 
     scan_outcome = _build_watch_result([finding_one, finding_two])
 

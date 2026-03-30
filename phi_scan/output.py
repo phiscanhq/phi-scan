@@ -1061,16 +1061,41 @@ def format_sarif(scan_result: ScanResult) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _build_junit_failure_element(finding: ScanFinding) -> ElementTree.Element:
+    """Build a JUnit <failure> element for one PHI finding.
+
+    PHI-safety: embeds file_path, line_number, entity_type, and
+    remediation_hint — all non-PHI metadata fields. The raw PHI value is never
+    included; entity_type (e.g. "us_ssn") is a detection-rule identifier.
+
+    Args:
+        finding: The PHI finding to represent as a failure.
+
+    Returns:
+        A configured failure Element with message, type, and text body.
+    """
+    failure = ElementTree.Element(
+        _JUNIT_FAILURE_TAG,
+        {
+            "message": _JUNIT_FAILURE_MESSAGE_FORMAT.format(
+                severity=finding.severity.value.upper(),
+                entity_type=finding.entity_type,
+            ),
+            "type": _JUNIT_FAILURE_TYPE,
+        },
+    )
+    failure.text = _JUNIT_FAILURE_TEXT_FORMAT.format(
+        file_path=finding.file_path,
+        line_number=finding.line_number,
+        hipaa_category=finding.hipaa_category.value,
+        confidence=_JUNIT_CONFIDENCE_FORMAT.format(finding.confidence),
+        remediation_hint=finding.remediation_hint,
+    )
+    return failure
+
+
 def _build_junit_testcase(finding: ScanFinding) -> ElementTree.Element:
     """Build a JUnit <testcase> element with a <failure> child for one finding.
-
-    PHI-safety: this function embeds file_path, line_number, entity_type, and
-    remediation_hint into the XML output. These are non-PHI metadata fields —
-    they tell a developer WHERE to look, not WHAT the PHI value is. The raw
-    PHI value (e.g. the actual SSN digits) is never included; only
-    finding.value_hash (a SHA-256 digest) would carry that role, and it is not
-    written here. Entity type (e.g. "us_ssn") is a detection-rule identifier.
-    CI output formats must include location metadata to be actionable.
 
     Args:
         finding: The PHI finding to represent as a test failure.
@@ -1089,24 +1114,7 @@ def _build_junit_testcase(finding: ScanFinding) -> ElementTree.Element:
             "classname": finding.hipaa_category.value,
         },
     )
-    failure = ElementTree.SubElement(
-        testcase,
-        _JUNIT_FAILURE_TAG,
-        {
-            "message": _JUNIT_FAILURE_MESSAGE_FORMAT.format(
-                severity=finding.severity.value.upper(),
-                entity_type=finding.entity_type,
-            ),
-            "type": _JUNIT_FAILURE_TYPE,
-        },
-    )
-    failure.text = _JUNIT_FAILURE_TEXT_FORMAT.format(
-        file_path=finding.file_path,
-        line_number=finding.line_number,
-        hipaa_category=finding.hipaa_category.value,
-        confidence=_JUNIT_CONFIDENCE_FORMAT.format(finding.confidence),
-        remediation_hint=finding.remediation_hint,
-    )
+    testcase.append(_build_junit_failure_element(finding))
     return testcase
 
 
@@ -1134,11 +1142,11 @@ def format_junit(scan_result: ScanResult) -> str:
     for finding in scan_result.findings:
         suite.append(_build_junit_testcase(finding))
     ElementTree.indent(suite, space=_JUNIT_INDENT)
-    output_buffer = io.BytesIO()
+    serialized_xml_buffer = io.BytesIO()
     ElementTree.ElementTree(suite).write(
-        output_buffer, encoding=_JUNIT_ENCODING, xml_declaration=True
+        serialized_xml_buffer, encoding=_JUNIT_ENCODING, xml_declaration=True
     )
-    return output_buffer.getvalue().decode(_JUNIT_ENCODING)
+    return serialized_xml_buffer.getvalue().decode(_JUNIT_ENCODING)
 
 
 # ---------------------------------------------------------------------------
@@ -1151,7 +1159,7 @@ def format_junit(scan_result: ScanResult) -> str:
 _FINDING_FINGERPRINT_INPUT_FORMAT: str = "{file_path}:{line_number}:{entity_type}"
 
 
-def _compute_sha256_hex(raw: str) -> str:
+def _compute_sha256_hexadecimal(raw: str) -> str:
     """Return the lowercase SHA-256 hex digest of raw encoded as UTF-8.
 
     Args:
@@ -1188,7 +1196,7 @@ def _compute_finding_fingerprint(finding: ScanFinding) -> str:
         line_number=finding.line_number,
         entity_type=finding.entity_type,
     )
-    return _compute_sha256_hex(fingerprint_input)
+    return _compute_sha256_hexadecimal(fingerprint_input)
 
 
 def _build_codequality_entry(finding: ScanFinding) -> dict[str, object]:
@@ -1240,6 +1248,25 @@ def format_codequality(scan_result: ScanResult) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _build_gitlab_sast_location(finding: ScanFinding) -> dict[str, object]:
+    """Build the location dict for a GitLab SAST vulnerability entry.
+
+    PHI-safety: file_path is always relative — ScanFinding.__post_init__ rejects
+    absolute paths, so str(finding.file_path) is safe to serialize directly.
+
+    Args:
+        finding: The finding to extract location metadata from.
+
+    Returns:
+        A location dict with file path and start/end line numbers.
+    """
+    return {
+        "file": str(finding.file_path),
+        "start_line": finding.line_number,
+        "end_line": finding.line_number,
+    }
+
+
 def _build_gitlab_sast_vulnerability(finding: ScanFinding) -> dict[str, object]:
     """Serialize one ScanFinding to a GitLab SAST vulnerability dict.
 
@@ -1265,11 +1292,7 @@ def _build_gitlab_sast_vulnerability(finding: ScanFinding) -> dict[str, object]:
         "severity": _SEVERITY_TO_GITLAB_SAST[finding.severity],
         "confidence": _SEVERITY_TO_GITLAB_SAST_CONFIDENCE[finding.severity],
         "scanner": {"id": _GITLAB_SAST_SCANNER_ID, "name": _GITLAB_SAST_SCANNER_NAME},
-        "location": {
-            "file": str(finding.file_path),
-            "start_line": finding.line_number,
-            "end_line": finding.line_number,
-        },
+        "location": _build_gitlab_sast_location(finding),
         "identifiers": [
             {
                 "type": _GITLAB_SAST_IDENTIFIER_TYPE,
@@ -1291,8 +1314,14 @@ def _build_gitlab_sast_scan_section(scan_result: ScanResult) -> dict[str, object
     """
     end_time = datetime.now(tz=UTC)
     start_time = end_time - timedelta(seconds=scan_result.scan_duration)
-    start_time_str = start_time.strftime(_GITLAB_SAST_TIMESTAMP_FORMAT)
-    end_time_str = end_time.strftime(_GITLAB_SAST_TIMESTAMP_FORMAT)
+    start_time_iso = start_time.strftime(_GITLAB_SAST_TIMESTAMP_FORMAT)
+    end_time_iso = end_time.strftime(_GITLAB_SAST_TIMESTAMP_FORMAT)
+    analyzer_block = {
+        "id": _GITLAB_SAST_SCANNER_ID,
+        "name": _GITLAB_SAST_SCANNER_NAME,
+        "vendor": {"name": _GITLAB_SAST_VENDOR_NAME},
+        "version": __version__,
+    }
     scanner_block = {
         "id": _GITLAB_SAST_SCANNER_ID,
         "name": _GITLAB_SAST_SCANNER_NAME,
@@ -1300,11 +1329,11 @@ def _build_gitlab_sast_scan_section(scan_result: ScanResult) -> dict[str, object
         "version": __version__,
     }
     return {
-        "analyzer": scanner_block,
+        "analyzer": analyzer_block,
         "scanner": scanner_block,
         "type": _GITLAB_SAST_SCAN_TYPE,
-        "start_time": start_time_str,
-        "end_time": end_time_str,
+        "start_time": start_time_iso,
+        "end_time": end_time_iso,
         "status": _GITLAB_SAST_SCAN_STATUS,
     }
 

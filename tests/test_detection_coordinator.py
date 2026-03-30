@@ -37,7 +37,7 @@ from phi_scan.models import ScanFinding
 # Shared test fixtures and factories
 # ---------------------------------------------------------------------------
 
-_FAKE_FILE_PATH: Path = Path("/fake/repo/patient_data.py")
+_FAKE_FILE_PATH: Path = Path("fake/repo/patient_data.py")
 _FAKE_HASH: str = compute_value_hash("test-value")
 _LINE_ONE: int = 1
 _LINE_TWO: int = 2
@@ -108,8 +108,8 @@ def test_deduplicate_overlapping_findings_keeps_different_line_numbers():
 
 
 def test_deduplicate_overlapping_findings_sorts_by_file_path_and_line_number():
-    path_b = Path("/b/file.py")
-    path_a = Path("/a/file.py")
+    path_b = Path("b/file.py")
+    path_a = Path("a/file.py")
     finding_b_line_2 = _make_finding(file_path=path_b, line_number=_LINE_TWO)
     finding_a_line_1 = _make_finding(file_path=path_a, line_number=_LINE_ONE)
 

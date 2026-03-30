@@ -33,6 +33,21 @@ __all__ = [
 ]
 
 _MINIMUM_LINE_NUMBER: int = 1
+# HIPAA risk: if directory names encode patient identifiers (e.g. /patients/john_doe/),
+# an absolute file_path would leak PHI into every output format and audit log.
+# Enforce relative paths at the model boundary so detection layers cannot accidentally
+# store an absolute path regardless of how the scanner was invoked. Both ScanFinding
+# and Hl7ScanContext carry file_path and must enforce this invariant independently —
+# Hl7ScanContext is constructed before ScanFinding so catching it there gives a
+# clearer error at the correct layer.
+_ABSOLUTE_FILE_PATH_ERROR: str = (
+    "file_path {path!r} is an absolute path — ScanFinding requires relative paths "
+    "to prevent PHI leakage via directory names"
+)
+_ABSOLUTE_HL7_CONTEXT_FILE_PATH_ERROR: str = (
+    "file_path {path!r} is an absolute path — Hl7ScanContext requires relative paths "
+    "to prevent PHI leakage via directory names"
+)
 _MAXIMUM_ENTITY_TYPE_LENGTH: int = 255
 _MAXIMUM_CODE_CONTEXT_LENGTH: int = 4096
 _MAXIMUM_REMEDIATION_HINT_LENGTH: int = 1024
@@ -127,6 +142,7 @@ class ScanFinding:
     remediation_hint: str
 
     def __post_init__(self) -> None:
+        _reject_absolute_file_path(self)
         _reject_invalid_line_number(self)
         _reject_invalid_value_hash(self)
         _reject_out_of_range_confidence(self)
@@ -138,6 +154,18 @@ class ScanFinding:
         )
         _reject_field_exceeds_maximum_length(
             self.remediation_hint, "remediation_hint", _MAXIMUM_REMEDIATION_HINT_LENGTH
+        )
+
+
+def _reject_absolute_file_path(finding: ScanFinding) -> None:
+    if finding.file_path.is_absolute():
+        raise PhiDetectionError(_ABSOLUTE_FILE_PATH_ERROR.format(path=finding.file_path))
+
+
+def _reject_absolute_hl7_context_file_path(context: Hl7ScanContext) -> None:
+    if context.file_path.is_absolute():
+        raise PhiDetectionError(
+            _ABSOLUTE_HL7_CONTEXT_FILE_PATH_ERROR.format(path=context.file_path)
         )
 
 
@@ -488,3 +516,6 @@ class Hl7ScanContext:
     # of the raw segment text so that code_context never contains raw PHI values —
     # the segment text holds live patient data that must not be persisted verbatim.
     segment_type: str
+
+    def __post_init__(self) -> None:
+        _reject_absolute_hl7_context_file_path(self)

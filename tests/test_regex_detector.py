@@ -21,7 +21,7 @@ from phi_scan.regex_detector import detect_phi_with_regex
 # Constants
 # ---------------------------------------------------------------------------
 
-_FAKE_PATH: Path = Path("/tmp/app.py")
+_FAKE_PATH: Path = Path("tmp/app.py")
 
 # A valid NPI that passes the CMS Luhn check.
 # CMS prefix 80840 + 1234567893 → Luhn total = 60 (divisible by 10).

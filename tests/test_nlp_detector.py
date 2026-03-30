@@ -360,7 +360,7 @@ class TestBuildNlpFinding:
         assert finding.code_context == _SINGLE_LINE_CONTENT.rstrip()
 
     def test_file_path_is_preserved_in_finding(self) -> None:
-        custom_path = Path("/project/src/records.py")
+        custom_path = Path("project/src/records.py")
         scan_context = _build_scan_context(_SINGLE_LINE_CONTENT, file_path=custom_path)
         analyzer_result = _build_mock_analyzer_result(
             _ENTITY_TYPE_PERSON, _JOHN_SMITH_START, _JOHN_SMITH_END, _SCORE_WITHIN_RANGE

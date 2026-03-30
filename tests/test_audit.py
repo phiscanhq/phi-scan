@@ -80,6 +80,9 @@ _FINDINGS_COUNT_COLUMN: str = "findings_count"
 _SCAN_DURATION_COLUMN: str = "scan_duration"
 _TEST_DB_FILENAME: str = "audit.db"
 _EXPECTED_TWO_AUDIT_ROWS: int = 2
+_SAMPLE_FILE_PATH: Path = Path("src/main.py")
+_SAMPLE_FILE_PATH_A: Path = Path("a.py")
+_SAMPLE_FILE_PATH_B: Path = Path("b.py")
 _SCAN_EVENTS_COUNT_QUERY: str = f"SELECT COUNT(*) FROM {_SCAN_EVENTS_TABLE}"
 _SCHEMA_META_COUNT_QUERY: str = f"SELECT COUNT(*) FROM {_SCHEMA_META_TABLE}"
 _SCHEMA_VERSION_QUERY: str = (
@@ -391,7 +394,7 @@ def test_insert_scan_event_sets_is_clean_false_for_dirty_result(
 ) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
-    scan_result = _build_dirty_scan_result(tmp_path / "src" / "main.py")
+    scan_result = _build_dirty_scan_result(_SAMPLE_FILE_PATH)
 
     insert_scan_event(database_path, scan_result)
 
@@ -405,7 +408,7 @@ def test_insert_scan_event_sets_is_clean_false_for_dirty_result(
 def test_insert_scan_event_stores_findings_count(tmp_path: Path, patched_git_info: None) -> None:
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
-    scan_result = _build_dirty_scan_result(tmp_path / "src" / "main.py")
+    scan_result = _build_dirty_scan_result(_SAMPLE_FILE_PATH)
 
     insert_scan_event(database_path, scan_result)
 
@@ -572,7 +575,7 @@ def test_get_last_scan_returns_most_recent_scan(tmp_path: Path, patched_git_info
     database_path = tmp_path / "audit.db"
     create_audit_schema(database_path)
     clean_result = _build_clean_scan_result()
-    dirty_result = _build_dirty_scan_result(tmp_path / "src" / "main.py")
+    dirty_result = _build_dirty_scan_result(_SAMPLE_FILE_PATH)
 
     insert_scan_event(database_path, clean_result)
     insert_scan_event(database_path, dirty_result)
@@ -748,7 +751,7 @@ def test_current_timestamp_contains_date_time_separator() -> None:
 
 
 def test_serialize_findings_returns_valid_json_string(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
@@ -763,7 +766,7 @@ def test_serialize_findings_returns_empty_json_array_for_no_findings() -> None:
 
 
 def test_serialize_findings_includes_value_hash(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
@@ -772,7 +775,7 @@ def test_serialize_findings_includes_value_hash(tmp_path: Path) -> None:
 
 
 def test_serialize_findings_includes_entity_type(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
@@ -781,7 +784,7 @@ def test_serialize_findings_includes_entity_type(tmp_path: Path) -> None:
 
 
 def test_serialize_findings_includes_hipaa_category(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
@@ -790,7 +793,7 @@ def test_serialize_findings_includes_hipaa_category(tmp_path: Path) -> None:
 
 
 def test_serialize_findings_includes_severity(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
@@ -799,7 +802,7 @@ def test_serialize_findings_includes_severity(tmp_path: Path) -> None:
 
 
 def test_serialize_findings_excludes_code_context(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
@@ -808,7 +811,7 @@ def test_serialize_findings_excludes_code_context(tmp_path: Path) -> None:
 
 
 def test_serialize_findings_includes_line_number(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
@@ -817,7 +820,7 @@ def test_serialize_findings_includes_line_number(tmp_path: Path) -> None:
 
 
 def test_serialize_findings_includes_confidence(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
@@ -826,8 +829,8 @@ def test_serialize_findings_includes_confidence(tmp_path: Path) -> None:
 
 
 def test_serialize_findings_serializes_multiple_findings(tmp_path: Path) -> None:
-    finding_a = _build_scan_finding(tmp_path / "a.py")
-    finding_b = _build_scan_finding(tmp_path / "b.py")
+    finding_a = _build_scan_finding(_SAMPLE_FILE_PATH_A)
+    finding_b = _build_scan_finding(_SAMPLE_FILE_PATH_B)
 
     serialized = _serialize_findings((finding_a, finding_b))
 
@@ -836,7 +839,7 @@ def test_serialize_findings_serializes_multiple_findings(tmp_path: Path) -> None
 
 
 def test_serialize_findings_includes_file_path_hash(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
@@ -846,7 +849,7 @@ def test_serialize_findings_includes_file_path_hash(tmp_path: Path) -> None:
 
 
 def test_serialize_findings_excludes_plaintext_file_path(tmp_path: Path) -> None:
-    finding = _build_scan_finding(tmp_path / "src" / "main.py")
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
     serialized = _serialize_findings((finding,))
 
