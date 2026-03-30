@@ -1,7 +1,7 @@
 # PLAN.md — PhiScan Master Project Plan
 
 **PHI/PII Scanner for CI/CD Pipelines**
-Created: March 15, 2026 | Updated: March 27, 2026 | Python 3.12.3 | uv 0.10.9
+Created: March 15, 2026 | Updated: March 29, 2026 | Python 3.12.3 | uv 0.10.9
 
 ---
 
@@ -48,9 +48,9 @@ All tools confirmed installed and version-verified in WSL on March 15, 2026:
 
 ---
 
-## Current State (March 27, 2026)
+## Current State (March 29, 2026)
 
-**Phase 1A complete. Phase 1B complete. Phase 1C in progress.**
+**Phase 1 complete. Phase 2 complete. Phase 3A complete. Phase 3B next.**
 
 ```
 phi-scan/
@@ -75,18 +75,26 @@ phi-scan/
 │   ├── py.typed
 │   ├── constants.py        ← all named constants and enums (complete)
 │   ├── exceptions.py       ← PhiScanError hierarchy (complete)
-│   ├── models.py           ← ScanFinding, ScanResult, ScanConfig (complete)
+│   ├── models.py           ← ScanFinding, ScanResult, ScanConfig, Hl7ScanContext (complete)
 │   ├── logging_config.py   ← structured logging, Rich console handler (complete)
 │   ├── config.py           ← YAML config loading and validation (complete)
-│   ├── scanner.py          ← recursive traversal, Phase 2 detection stub (complete)
+│   ├── scanner.py          ← recursive traversal + detection coordinator (complete)
 │   ├── diff.py             ← git diff file extraction (complete)
 │   ├── audit.py            ← SQLite HIPAA-compliant audit logging (complete)
-│   ├── output.py           ← formatters + Rich UI components (complete)
-│   └── cli.py              ← Typer app with all Phase 1 commands (complete)
+│   ├── output.py           ← all 7 output formats + Rich UI components (complete)
+│   ├── cli.py              ← Typer app with all Phase 1–3A commands (complete)
+│   ├── suppression.py      ← inline phi-scan:ignore comment parser (complete)
+│   ├── cache.py            ← content-hash scan cache (complete)
+│   ├── help_text.py        ← explain command content constants (complete)
+│   ├── fhir_recognizer.py  ← custom FHIR R4 patterns (complete)
+│   ├── fixer.py            ← auto-fix synthetic data replacement (complete)
+│   └── hl7_scanner.py      ← HL7 v2 segment scanner (complete)
 └── tests/
     ├── conftest.py
-    ├── test_models.py      ← 71 tests, 100% models.py coverage
-    └── ...                 ← additional test files per module
+    ├── fixtures/           ← phi/ and clean/ corpus + manifest.json
+    ├── test_models.py
+    ├── test_output_contracts.py  ← output schema + exit-code contract tests
+    └── ...                 ← full test suite per module
 ```
 
 ---
@@ -1141,33 +1149,33 @@ Document these gaps in `docs/de-identification.md` and `docs/known-limitations.m
 
 ### Phase 2 Verification Checklist
 
-- [ ] `phi-scan scan tests/fixtures/` detects all planted PHI
-- [ ] Each of 18 HIPAA identifier types has at least one test
-- [ ] FHIR resources with PHI-bearing fields flagged correctly
-- [ ] Clean code files produce zero false positives
-- [ ] SHA-256 hash stored in findings, never raw PHI value
-- [ ] Scan completes in <30 seconds on 1000-file repo
-- [ ] Variable name `patient_ssn = "123-45-6789"` scores higher than `x = "123-45-6789"`
-- [ ] `phi-scan fix --dry-run` shows unified diff with synthetic replacements
-- [ ] `phi-scan fix --apply` replaces PHI with synthetic data in-place
-- [ ] Deterministic: re-running fix produces identical synthetic values
-- [ ] `# phi-scan:ignore` suppresses finding on that line
-- [ ] `# phi-scan:ignore[SSN]` suppresses only SSN finding
-- [ ] `# phi-scan:ignore-file` suppresses entire file when in first 5 lines
-- [ ] Suppressed findings logged to audit with `suppressed=True`
-- [ ] Second scan of unchanged files uses cache (faster completion)
-- [ ] `--no-cache` forces full re-scan
-- [ ] `phi-scan explain hipaa` renders all 18 identifiers in terminal
-- [ ] NLP layer degrades gracefully without spaCy model
-- [ ] HL7 v2 MSH-identified file → PID.5 name and PID.19 SSN detected
-- [ ] HL7 v2 layer degrades gracefully when `hl7` library not installed
-- [ ] MBI pattern matches valid MBI, rejects SSN-length strings
-- [ ] SSN regex does not flag reserved ranges (000-XX-XXXX, 666-XX-XXXX, 900-XXX-XXXX)
-- [ ] Age >90 detected adjacent to `patient_age`-style variable name
-- [ ] ZIP+4 flagged; bare 3-digit prefix only flagged in patient-geographic context
-- [ ] NPI Type 2 (org-context) not flagged; NPI Type 1 (patient-context) flagged
-- [ ] DEA number checksum validation eliminates false positives
-- [ ] Quasi-identifier combination: ZIP + DOB + sex in same file → HIGH combined confidence
+- [x] `phi-scan scan tests/fixtures/` detects all planted PHI
+- [x] Each of 18 HIPAA identifier types has at least one test
+- [x] FHIR resources with PHI-bearing fields flagged correctly
+- [x] Clean code files produce zero false positives
+- [x] SHA-256 hash stored in findings, never raw PHI value
+- [x] Scan completes in <30 seconds on 1000-file repo
+- [x] Variable name `patient_ssn = "123-45-6789"` scores higher than `x = "123-45-6789"`
+- [x] `phi-scan fix --dry-run` shows unified diff with synthetic replacements
+- [x] `phi-scan fix --apply` replaces PHI with synthetic data in-place
+- [x] Deterministic: re-running fix produces identical synthetic values
+- [x] `# phi-scan:ignore` suppresses finding on that line
+- [x] `# phi-scan:ignore[SSN]` suppresses only SSN finding
+- [x] `# phi-scan:ignore-file` suppresses entire file when in first 5 lines
+- [x] Suppressed findings logged to audit with `suppressed=True`
+- [x] Second scan of unchanged files uses cache (faster completion)
+- [x] `--no-cache` forces full re-scan
+- [x] `phi-scan explain hipaa` renders all 18 identifiers in terminal
+- [x] NLP layer degrades gracefully without spaCy model
+- [x] HL7 v2 MSH-identified file → PID.5 name and PID.19 SSN detected
+- [x] HL7 v2 layer degrades gracefully when `hl7` library not installed
+- [x] MBI pattern matches valid MBI, rejects SSN-length strings
+- [x] SSN regex does not flag reserved ranges (000-XX-XXXX, 666-XX-XXXX, 900-XXX-XXXX)
+- [x] Age >90 detected adjacent to `patient_age`-style variable name
+- [x] ZIP+4 flagged; bare 3-digit prefix only flagged in patient-geographic context
+- [x] NPI Type 2 (org-context) not flagged; NPI Type 1 (patient-context) flagged
+- [x] DEA number checksum validation eliminates false positives
+- [x] Quasi-identifier combination: ZIP + DOB + sex in same file → HIGH combined confidence
 - [x] `phi-scan explain hipaa` mentions HITECH Act and 42 CFR Part 2
 - [x] SUD-related field names (`opioid_treatment`, `sud_diagnosis`) detected and mapped
 - [x] Genetic identifiers (`rs1234567`, VCF-format data) detected in patient context
@@ -1188,17 +1196,17 @@ first public release — users can install and use PhiScan from PyPI.
 
 ### 3A — Output Formats & Flags
 
-- [ ] **3A.1** `--output json` — structured JSON findings report
-- [ ] **3A.2** `--output sarif` — SARIF 2.1 for GitHub Advanced Security integration
-- [ ] **3A.3** `--output csv` — CSV export with headers (all findings, one row per finding)
-- [ ] **3A.4** `--output table` — default Rich table (already built in Phase 1)
-- [ ] **3A.9** `--output junit` — JUnit XML format (each finding as a test failure, consumed by CircleCI Test Summary, Jenkins, Azure DevOps, and GitHub Actions test reporting)
-- [ ] **3A.10** `--output codequality` — GitLab Code Quality JSON format (`gl-code-quality-report.json` schema, findings appear as inline MR annotations)
-- [ ] **3A.11** `--output gitlab-sast` — GitLab SAST JSON format (`gl-sast-report.json` schema v15.0.0+, findings appear in GitLab Security Dashboard)
-- [ ] **3A.5** `--verbose` flag — timestamped debug output showing each scan phase
-- [ ] **3A.6** `--severity-threshold` flag — filter output by LOW, MEDIUM, HIGH
-- [ ] **3A.7** `--quiet` flag — suppress Rich UI, output only exit code
-- [ ] **3A.8** `--report-path` flag — write report file to specified path (default: `./phi-report.*`)
+- [x] **3A.1** `--output json` — structured JSON findings report
+- [x] **3A.2** `--output sarif` — SARIF 2.1 for GitHub Advanced Security integration
+- [x] **3A.3** `--output csv` — CSV export with headers (all findings, one row per finding)
+- [x] **3A.4** `--output table` — default Rich table (already built in Phase 1)
+- [x] **3A.9** `--output junit` — JUnit XML format (each finding as a test failure, consumed by CircleCI Test Summary, Jenkins, Azure DevOps, and GitHub Actions test reporting)
+- [x] **3A.10** `--output codequality` — GitLab Code Quality JSON format (`gl-code-quality-report.json` schema, findings appear as inline MR annotations)
+- [x] **3A.11** `--output gitlab-sast` — GitLab SAST JSON format (`gl-sast-report.json` schema v15.0.0+, findings appear in GitLab Security Dashboard)
+- [x] **3A.5** `--verbose` flag — timestamped debug output showing each scan phase
+- [x] **3A.6** `--severity-threshold` flag — filter output by LOW, MEDIUM, HIGH
+- [x] **3A.7** `--quiet` flag — suppress Rich UI, output only exit code
+- [x] **3A.8** `--report-path` flag — write report file to specified path (default: `./phi-report.*`)
 
 ### 3B — Baseline Management (`phi-scan baseline`)
 

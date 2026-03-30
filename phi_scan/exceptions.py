@@ -10,6 +10,7 @@ from __future__ import annotations
 
 __all__ = [
     "AuditLogError",
+    "BaselineError",
     "ConfigurationError",
     "FileReadError",
     "MissingOptionalDependencyError",
@@ -65,6 +66,17 @@ class TraversalError(PhiScanError):
     Args:
         message: Description of the traversal failure including the path
             or git ref that caused it.
+    """
+
+
+class BaselineError(PhiScanError):
+    """Raised when a baseline file operation fails.
+
+    Covers missing, malformed, or schema-mismatched baseline files, as well as
+    I/O errors when reading or writing the .phi-scanbaseline file.
+
+    Args:
+        message: Description of the failure including the file path and cause.
     """
 
 
