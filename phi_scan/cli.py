@@ -86,8 +86,11 @@ from phi_scan.output import (
     display_status_spinner,
     display_violation_alert,
     display_violation_summary_panel,
+    format_codequality,
     format_csv,
+    format_gitlab_sast,
     format_json,
+    format_junit,
     format_sarif,
     get_console,
 )
@@ -136,13 +139,34 @@ _VERSION_FLAG_HELP: str = "Show version and exit."
 _SCAN_PATH_HELP: str = "Directory or file to scan. Defaults to the current directory."
 _SCAN_DIFF_HELP: str = "Scan only files changed since the given git ref (e.g. HEAD~1)."
 _SCAN_FILE_HELP: str = "Scan a single file with detailed output."
-_SCAN_OUTPUT_HELP: str = "Output format: table, json, sarif, csv (pdf/html/junit in Phase 3)."
+_SCAN_OUTPUT_HELP: str = (
+    "Output format: table (default), json, sarif, csv, junit, codequality, gitlab-sast."
+)
 _SCAN_CONFIG_HELP: str = "Path to .phi-scanner.yml. Defaults to .phi-scanner.yml in CWD."
 _SCAN_SEVERITY_HELP: str = "Minimum severity threshold: info, low, medium, high."
 _SCAN_LOG_LEVEL_HELP: str = "Logging verbosity: debug, info, warning, error."
 _SCAN_LOG_FILE_HELP: str = "Write structured logs to this file in addition to stderr."
 _SCAN_QUIET_HELP: str = "Suppress all terminal output. Exit code still reflects findings."
+_SCAN_VERBOSE_HELP: str = (
+    "Emit timestamped phase markers to stderr as the scan progresses. Implies --log-level debug."
+)
+_SCAN_REPORT_PATH_HELP: str = (
+    "Write the serialized report to this file path instead of stdout. "
+    "Requires a non-table output format."
+)
 _SCAN_NO_CACHE_HELP: str = "Bypass the content-hash scan cache. Forces a full re-scan of all files."
+_REPORT_PATH_TABLE_FORMAT_ERROR: str = (
+    "--report-path requires a serialized output format. "
+    "Use --output json, sarif, csv, junit, codequality, or gitlab-sast."
+)
+_REPORT_PATH_WRITE_ERROR: str = "Failed to write report to {path!r}: {error}"
+_REPORT_PATH_WRITTEN_MESSAGE: str = "Report written to {path}"
+_VERBOSE_TIMESTAMP_FORMAT: str = "%Y-%m-%d %H:%M:%S"
+_VERBOSE_PHASE_PREFIX: str = "[{timestamp}] Phase: {message}"
+_VERBOSE_PHASE_COLLECTING: str = "collecting scan targets"
+_VERBOSE_PHASE_SCANNING: str = "scanning {count} file(s)"
+_VERBOSE_PHASE_AUDIT: str = "writing audit record"
+_VERBOSE_PHASE_REPORT: str = "rendering report"
 
 # ---------------------------------------------------------------------------
 # Watch command
@@ -305,6 +329,9 @@ _FORMAT_SERIALIZERS: dict[str, Callable[[ScanResult], str]] = {
     OutputFormat.JSON.value: format_json,
     OutputFormat.CSV.value: format_csv,
     OutputFormat.SARIF.value: format_sarif,
+    OutputFormat.JUNIT.value: format_junit,
+    OutputFormat.CODEQUALITY.value: format_codequality,
+    OutputFormat.GITLAB_SAST.value: format_gitlab_sast,
 }
 
 _RGLOB_ALL_FILES_PATTERN: str = "*"
@@ -407,6 +434,19 @@ class _ScanTargetOptions:
     diff_ref: str | None
     single_file: Path | None
     config: ScanConfig
+
+
+@dataclass(frozen=True)
+class _ScanOutputOptions:
+    """Options controlling how scan results are rendered or serialized.
+
+    Groups output-related flags so _emit_scan_output stays within the
+    three-argument limit required by CLAUDE.md.
+    """
+
+    output_format: str
+    is_rich_mode: bool
+    report_path: Path | None
 
 
 def _configure_logging(log_level: str, log_file: Path | None, is_quiet: bool) -> None:
@@ -572,31 +612,66 @@ def _display_rich_scan_results(scan_result: ScanResult) -> None:
         display_exit_code_message(is_clean=True)
 
 
-def _emit_scan_output(scan_result: ScanResult, output_format: str, is_rich_mode: bool) -> None:
+def _emit_verbose_phase(message: str, is_verbose: bool) -> None:
+    """Write a timestamped phase marker to stderr when verbose mode is active.
+
+    Args:
+        message: Short description of the current scan phase.
+        is_verbose: When False this function is a no-op.
+    """
+    if not is_verbose:
+        return
+    timestamp = datetime.now().strftime(_VERBOSE_TIMESTAMP_FORMAT)
+    typer.echo(_VERBOSE_PHASE_PREFIX.format(timestamp=timestamp, message=message), err=True)
+
+
+def _write_report_to_file(content: str, report_path: Path) -> None:
+    """Write serialized report content to a file and confirm on stderr.
+
+    Args:
+        content: The serialized report string (JSON, XML, CSV, etc.).
+        report_path: Destination file path.
+
+    Raises:
+        typer.Exit: If the file cannot be written (e.g. permission error).
+    """
+    try:
+        report_path.write_text(content, encoding=DEFAULT_TEXT_ENCODING)
+    except OSError as write_error:
+        typer.echo(_REPORT_PATH_WRITE_ERROR.format(path=report_path, error=write_error), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR) from write_error
+    typer.echo(_REPORT_PATH_WRITTEN_MESSAGE.format(path=report_path), err=True)
+
+
+def _emit_scan_output(scan_result: ScanResult, options: _ScanOutputOptions) -> None:
     """Render or serialize scan results in the requested output format.
 
     For table format in Rich mode, delegates to _display_rich_scan_results.
-    For serialized formats (json/csv/sarif), writes to stdout via typer.echo
-    regardless of is_rich_mode — the caller suppresses the call entirely for
-    --quiet mode.
+    For serialized formats, writes to options.report_path when set, or stdout.
 
     Args:
         scan_result: The completed scan result.
-        output_format: One of table, json, csv, sarif. Additional formats ship in Phase 3.
-        is_rich_mode: True when table format and not quiet — activates the Rich UI path.
+        options: Output format, Rich mode flag, and optional report file path.
 
     Raises:
-        typer.Exit: If output_format is not yet implemented.
+        typer.Exit: If the format is not implemented or report file cannot be written.
     """
-    if output_format == OutputFormat.TABLE.value:
-        if is_rich_mode:
+    if options.output_format == OutputFormat.TABLE.value:
+        if options.report_path is not None:
+            typer.echo(_REPORT_PATH_TABLE_FORMAT_ERROR, err=True)
+            raise typer.Exit(code=EXIT_CODE_ERROR)
+        if options.is_rich_mode:
             _display_rich_scan_results(scan_result)
         return
-    serializer = _FORMAT_SERIALIZERS.get(output_format)
+    serializer = _FORMAT_SERIALIZERS.get(options.output_format)
     if serializer is None:
-        typer.echo(_UNSUPPORTED_OUTPUT_FORMAT_ERROR.format(fmt=output_format), err=True)
+        typer.echo(_UNSUPPORTED_OUTPUT_FORMAT_ERROR.format(fmt=options.output_format), err=True)
         raise typer.Exit(code=EXIT_CODE_ERROR)
-    typer.echo(serializer(scan_result))
+    serialized = serializer(scan_result)
+    if options.report_path is not None:
+        _write_report_to_file(serialized, options.report_path)
+    else:
+        typer.echo(serialized)
 
 
 # ---------------------------------------------------------------------------
@@ -877,6 +952,10 @@ def scan(
     ] = _LOG_LEVEL_WARNING,
     log_file: Annotated[Path | None, typer.Option("--log-file", help=_SCAN_LOG_FILE_HELP)] = None,
     is_quiet: Annotated[bool, typer.Option("--quiet", "-q", help=_SCAN_QUIET_HELP)] = False,
+    is_verbose: Annotated[bool, typer.Option("--verbose", "-v", help=_SCAN_VERBOSE_HELP)] = False,
+    report_path: Annotated[
+        Path | None, typer.Option("--report-path", help=_SCAN_REPORT_PATH_HELP)
+    ] = None,
     should_bypass_cache: Annotated[
         bool, typer.Option("--no-cache", help=_SCAN_NO_CACHE_HELP)
     ] = False,
@@ -890,6 +969,8 @@ def scan(
     results table) is suppressed for serialised formats (json/csv/sarif) to keep
     stdout clean for pipe and file consumption.
     """
+    if is_verbose:
+        log_level = _LOG_LEVEL_DEBUG
     _configure_logging(log_level, log_file, is_quiet)
     is_rich_mode = not is_quiet and output_format == OutputFormat.TABLE.value
     with display_status_spinner(_SPINNER_CONFIG_LOAD_MESSAGE, is_active=is_rich_mode):
@@ -904,18 +985,27 @@ def scan(
         display_banner()
         display_scan_header(path, scan_config)
         display_phase_collecting()
+    _emit_verbose_phase(_VERBOSE_PHASE_COLLECTING, is_verbose)
     scan_targets = _resolve_scan_targets(target_options)
     if is_rich_mode:
         display_file_type_summary(scan_targets)
         display_phase_scanning()
+    _emit_verbose_phase(_VERBOSE_PHASE_SCANNING.format(count=len(scan_targets)), is_verbose)
     scan_result = _execute_scan_with_progress(scan_targets, scan_config, is_rich_mode)
     if is_rich_mode:
         display_phase_audit()
+    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, is_verbose)
     with display_status_spinner(_SPINNER_AUDIT_WRITE_MESSAGE, is_active=is_rich_mode):
         _write_audit_record(scan_result, scan_config.database_path)
     if is_rich_mode:
         display_phase_report()
-    _emit_scan_output(scan_result, output_format, is_rich_mode)
+    _emit_verbose_phase(_VERBOSE_PHASE_REPORT, is_verbose)
+    output_options = _ScanOutputOptions(
+        output_format=output_format,
+        is_rich_mode=is_rich_mode,
+        report_path=report_path,
+    )
+    _emit_scan_output(scan_result, output_options)
     raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
 
 

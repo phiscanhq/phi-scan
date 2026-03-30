@@ -495,6 +495,9 @@ IMPLEMENTED_OUTPUT_FORMATS: frozenset[OutputFormat] = frozenset(
         OutputFormat.JSON,
         OutputFormat.CSV,
         OutputFormat.SARIF,
+        OutputFormat.JUNIT,
+        OutputFormat.CODEQUALITY,
+        OutputFormat.GITLAB_SAST,
     }
 )
 

@@ -28,7 +28,7 @@ from phi_scan.models import ScanFinding
 _EXPECTED_VERSION_FRAGMENT: str = __version__
 _EXIT_CODE_SUCCESS: int = 0
 _EXIT_CODE_ERROR: int = 2
-_UNSUPPORTED_FORMAT_NAME: str = "gitlab-sast"
+_UNSUPPORTED_FORMAT_NAME: str = "pdf"
 _INVALID_SEVERITY_VALUE: str = "extreme"
 _VALID_PERIOD_30_DAYS: str = "30d"
 _INVALID_PERIOD_NO_SUFFIX: str = "30"

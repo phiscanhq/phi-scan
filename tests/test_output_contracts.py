@@ -47,7 +47,7 @@ from phi_scan.output import format_csv, format_json, format_sarif
 # Expected count of formats in IMPLEMENTED_OUTPUT_FORMATS.
 # Paired with individual membership tests below so that both adding and
 # removing a format without updating the tests is caught.
-_IMPLEMENTED_FORMAT_COUNT: int = 4
+_IMPLEMENTED_FORMAT_COUNT: int = 7
 
 # JSON schema: exact top-level keys emitted by format_json
 _JSON_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
@@ -117,7 +117,7 @@ _TEST_FILES_WITH_FINDINGS_DIRTY: int = 1
 _TEST_SCAN_DURATION: float = 0.1
 
 # A format that is a valid OutputFormat enum member but not yet implemented
-_UNIMPLEMENTED_FORMAT_VALUE: str = OutputFormat.GITLAB_SAST.value
+_UNIMPLEMENTED_FORMAT_VALUE: str = OutputFormat.PDF.value
 
 # SYNTHETIC TEST FIXTURE — NOT A REAL SSN.
 # Area 900 is in SSN_EXCLUDED_AREA_NUMBERS — never assigned by the SSA.
@@ -210,6 +210,21 @@ def test_implemented_output_formats_contains_sarif() -> None:
     assert OutputFormat.SARIF in IMPLEMENTED_OUTPUT_FORMATS
 
 
+def test_implemented_output_formats_contains_junit() -> None:
+    """JUnit must be implemented — it is the CI test-summary format for CircleCI/Jenkins."""
+    assert OutputFormat.JUNIT in IMPLEMENTED_OUTPUT_FORMATS
+
+
+def test_implemented_output_formats_contains_codequality() -> None:
+    """Code Quality must be implemented — it is the GitLab MR annotation format."""
+    assert OutputFormat.CODEQUALITY in IMPLEMENTED_OUTPUT_FORMATS
+
+
+def test_implemented_output_formats_contains_gitlab_sast() -> None:
+    """GitLab SAST must be implemented — it is the GitLab Security Dashboard format."""
+    assert OutputFormat.GITLAB_SAST in IMPLEMENTED_OUTPUT_FORMATS
+
+
 def test_implemented_output_formats_has_expected_member_count() -> None:
     """IMPLEMENTED_OUTPUT_FORMATS contains exactly _IMPLEMENTED_FORMAT_COUNT members.
 
@@ -220,15 +235,12 @@ def test_implemented_output_formats_has_expected_member_count() -> None:
     assert len(IMPLEMENTED_OUTPUT_FORMATS) == _IMPLEMENTED_FORMAT_COUNT
 
 
-def test_implemented_output_formats_does_not_include_phase_3_formats() -> None:
-    """Phase 3 formats are not in IMPLEMENTED_OUTPUT_FORMATS until their formatters ship."""
-    phase_3_formats = set(OutputFormat) - IMPLEMENTED_OUTPUT_FORMATS
+def test_implemented_output_formats_does_not_include_future_formats() -> None:
+    """PDF and HTML are not in IMPLEMENTED_OUTPUT_FORMATS until their formatters ship."""
+    unimplemented_formats = set(OutputFormat) - IMPLEMENTED_OUTPUT_FORMATS
 
-    assert OutputFormat.PDF in phase_3_formats
-    assert OutputFormat.HTML in phase_3_formats
-    assert OutputFormat.JUNIT in phase_3_formats
-    assert OutputFormat.CODEQUALITY in phase_3_formats
-    assert OutputFormat.GITLAB_SAST in phase_3_formats
+    assert OutputFormat.PDF in unimplemented_formats
+    assert OutputFormat.HTML in unimplemented_formats
 
 
 # ---------------------------------------------------------------------------

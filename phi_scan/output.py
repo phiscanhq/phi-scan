@@ -1,12 +1,14 @@
-"""Output formatters (table, json, csv, sarif) and Rich UI components."""
+"""Output formatters (table, json, csv, sarif, junit, codequality, gitlab-sast) and Rich UI."""
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import operator
 import sys
+import xml.etree.ElementTree as ET
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -63,8 +65,11 @@ __all__ = [
     "display_severity_inline",
     "display_violation_alert",
     "display_violation_summary_panel",
+    "format_codequality",
     "format_csv",
+    "format_gitlab_sast",
     "format_json",
+    "format_junit",
     "format_sarif",
     "format_table",
 ]
@@ -240,6 +245,79 @@ _SEVERITY_TO_SARIF_LEVEL: dict[SeverityLevel, str] = {
     SeverityLevel.MEDIUM: _SARIF_LEVEL_WARNING,
     SeverityLevel.LOW: _SARIF_LEVEL_NOTE,
     SeverityLevel.INFO: _SARIF_LEVEL_NONE,
+}
+
+# ---------------------------------------------------------------------------
+# JUnit XML protocol constants
+# ---------------------------------------------------------------------------
+
+_JUNIT_TESTSUITE_NAME: str = "phi-scan"
+_JUNIT_TESTSUITE_TAG: str = "testsuite"
+_JUNIT_TESTCASE_TAG: str = "testcase"
+_JUNIT_FAILURE_TAG: str = "failure"
+_JUNIT_FAILURE_TYPE: str = "PHIViolation"
+_JUNIT_ERROR_COUNT: str = "0"
+_JUNIT_INDENT: str = "  "
+_JUNIT_ENCODING: str = "utf-8"
+_JUNIT_DURATION_FORMAT: str = "{:.2f}"
+_JUNIT_TESTCASE_NAME_FORMAT: str = "{file_path}:{line_number} [{entity_type}]"
+_JUNIT_FAILURE_MESSAGE_FORMAT: str = "[{severity}] PHI detected: {entity_type}"
+_JUNIT_FAILURE_TEXT_FORMAT: str = (
+    "file: {file_path}\nline: {line_number}\ncategory: {hipaa_category}\n"
+    "confidence: {confidence}\nremediation: {remediation_hint}"
+)
+
+# ---------------------------------------------------------------------------
+# GitLab Code Quality protocol constants
+# ---------------------------------------------------------------------------
+
+_CODEQUALITY_SEVERITY_CRITICAL: str = "critical"
+_CODEQUALITY_SEVERITY_MAJOR: str = "major"
+_CODEQUALITY_SEVERITY_MINOR: str = "minor"
+_CODEQUALITY_SEVERITY_INFO: str = "info"
+_SEVERITY_TO_CODEQUALITY: dict[SeverityLevel, str] = {
+    SeverityLevel.HIGH: _CODEQUALITY_SEVERITY_CRITICAL,
+    SeverityLevel.MEDIUM: _CODEQUALITY_SEVERITY_MAJOR,
+    SeverityLevel.LOW: _CODEQUALITY_SEVERITY_MINOR,
+    SeverityLevel.INFO: _CODEQUALITY_SEVERITY_INFO,
+}
+_CODEQUALITY_DESCRIPTION_FORMAT: str = "PHI detected: {entity_type} ({category})"
+_CODEQUALITY_FINGERPRINT_INPUT_FORMAT: str = "{file_path}:{line_number}:{entity_type}"
+
+# ---------------------------------------------------------------------------
+# GitLab SAST protocol constants
+# ---------------------------------------------------------------------------
+
+_GITLAB_SAST_VERSION: str = "15.0.4"
+_GITLAB_SAST_CATEGORY: str = "sast"
+_GITLAB_SAST_SCANNER_ID: str = "phi-scan"
+_GITLAB_SAST_SCANNER_NAME: str = "PhiScan"
+_GITLAB_SAST_VENDOR_NAME: str = "PhiScan"
+_GITLAB_SAST_SCAN_TYPE: str = "sast"
+_GITLAB_SAST_SCAN_STATUS: str = "success"
+_GITLAB_SAST_IDENTIFIER_TYPE: str = "phi_scan_rule"
+_GITLAB_SAST_VULNERABILITY_NAME_FORMAT: str = "PHI detected: {entity_type}"
+_GITLAB_SAST_DESCRIPTION_FORMAT: str = "{category} identifier found by the {layer} detection layer"
+_GITLAB_SAST_TIMESTAMP_FORMAT: str = "%Y-%m-%dT%H:%M:%S"
+_GITLAB_SAST_FINGERPRINT_INPUT_FORMAT: str = "{file_path}:{line_number}:{entity_type}"
+_GITLAB_SAST_SEVERITY_CRITICAL: str = "Critical"
+_GITLAB_SAST_SEVERITY_HIGH: str = "High"
+_GITLAB_SAST_SEVERITY_MEDIUM: str = "Medium"
+_GITLAB_SAST_SEVERITY_LOW: str = "Low"
+_SEVERITY_TO_GITLAB_SAST: dict[SeverityLevel, str] = {
+    SeverityLevel.HIGH: _GITLAB_SAST_SEVERITY_CRITICAL,
+    SeverityLevel.MEDIUM: _GITLAB_SAST_SEVERITY_HIGH,
+    SeverityLevel.LOW: _GITLAB_SAST_SEVERITY_MEDIUM,
+    SeverityLevel.INFO: _GITLAB_SAST_SEVERITY_LOW,
+}
+_GITLAB_SAST_CONFIDENCE_HIGH: str = "High"
+_GITLAB_SAST_CONFIDENCE_MEDIUM: str = "Medium"
+_GITLAB_SAST_CONFIDENCE_LOW: str = "Low"
+_SEVERITY_TO_GITLAB_SAST_CONFIDENCE: dict[SeverityLevel, str] = {
+    SeverityLevel.HIGH: _GITLAB_SAST_CONFIDENCE_HIGH,
+    SeverityLevel.MEDIUM: _GITLAB_SAST_CONFIDENCE_HIGH,
+    SeverityLevel.LOW: _GITLAB_SAST_CONFIDENCE_MEDIUM,
+    SeverityLevel.INFO: _GITLAB_SAST_CONFIDENCE_LOW,
 }
 
 # ---------------------------------------------------------------------------
@@ -977,6 +1055,247 @@ def format_sarif(scan_result: ScanResult) -> str:
         "runs": [_build_sarif_run(scan_result)],
     }
     return json.dumps(sarif_doc, indent=_JSON_INDENT)
+
+
+# ---------------------------------------------------------------------------
+# JUnit XML formatter helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_junit_testcase(finding: ScanFinding) -> ET.Element:
+    """Build a JUnit <testcase> element with a <failure> child for one finding.
+
+    Args:
+        finding: The PHI finding to represent as a test failure.
+
+    Returns:
+        A configured testcase Element with a failure child.
+    """
+    testcase = ET.Element(
+        _JUNIT_TESTCASE_TAG,
+        {
+            "name": _JUNIT_TESTCASE_NAME_FORMAT.format(
+                file_path=finding.file_path,
+                line_number=finding.line_number,
+                entity_type=finding.entity_type,
+            ),
+            "classname": finding.hipaa_category.value,
+        },
+    )
+    failure = ET.SubElement(
+        testcase,
+        _JUNIT_FAILURE_TAG,
+        {
+            "message": _JUNIT_FAILURE_MESSAGE_FORMAT.format(
+                severity=finding.severity.value.upper(),
+                entity_type=finding.entity_type,
+            ),
+            "type": _JUNIT_FAILURE_TYPE,
+        },
+    )
+    failure.text = _JUNIT_FAILURE_TEXT_FORMAT.format(
+        file_path=finding.file_path,
+        line_number=finding.line_number,
+        hipaa_category=finding.hipaa_category.value,
+        confidence=_JUNIT_DURATION_FORMAT.format(finding.confidence),
+        remediation_hint=finding.remediation_hint,
+    )
+    return testcase
+
+
+def format_junit(scan_result: ScanResult) -> str:
+    """Serialize a ScanResult to JUnit XML.
+
+    Each PHI finding becomes a <testcase> with a <failure> child. Consumed
+    by CircleCI Test Summary, Jenkins, Azure DevOps, and GitHub Actions test
+    reporting panels.
+
+    Args:
+        scan_result: The completed scan result.
+
+    Returns:
+        JUnit XML string with an XML declaration, UTF-8 encoded.
+    """
+    suite_attrs = {
+        "name": _JUNIT_TESTSUITE_NAME,
+        "tests": str(len(scan_result.findings)),
+        "failures": str(len(scan_result.findings)),
+        "errors": _JUNIT_ERROR_COUNT,
+        "time": _JUNIT_DURATION_FORMAT.format(scan_result.scan_duration),
+    }
+    suite = ET.Element(_JUNIT_TESTSUITE_TAG, suite_attrs)
+    for finding in scan_result.findings:
+        suite.append(_build_junit_testcase(finding))
+    ET.indent(suite, space=_JUNIT_INDENT)
+    output_buffer = io.BytesIO()
+    ET.ElementTree(suite).write(output_buffer, encoding=_JUNIT_ENCODING, xml_declaration=True)
+    return output_buffer.getvalue().decode(_JUNIT_ENCODING)
+
+
+# ---------------------------------------------------------------------------
+# GitLab Code Quality formatter helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_codequality_fingerprint(finding: ScanFinding) -> str:
+    """Compute a stable SHA-256 fingerprint for a GitLab Code Quality entry.
+
+    Args:
+        finding: The finding to fingerprint.
+
+    Returns:
+        Lowercase hex digest — stable across runs for the same file/line/type.
+    """
+    fingerprint_input = _CODEQUALITY_FINGERPRINT_INPUT_FORMAT.format(
+        file_path=finding.file_path,
+        line_number=finding.line_number,
+        entity_type=finding.entity_type,
+    )
+    return hashlib.sha256(fingerprint_input.encode()).hexdigest()
+
+
+def _build_codequality_entry(finding: ScanFinding) -> dict[str, object]:
+    """Serialize one ScanFinding to a GitLab Code Quality issue dict.
+
+    Args:
+        finding: The finding to serialize.
+
+    Returns:
+        A dict conforming to the gl-code-quality-report.json schema.
+    """
+    return {
+        "description": _CODEQUALITY_DESCRIPTION_FORMAT.format(
+            entity_type=finding.entity_type,
+            category=finding.hipaa_category.value,
+        ),
+        "fingerprint": _build_codequality_fingerprint(finding),
+        "severity": _SEVERITY_TO_CODEQUALITY[finding.severity],
+        "location": {
+            "path": str(finding.file_path),
+            "lines": {"begin": finding.line_number},
+        },
+    }
+
+
+def format_codequality(scan_result: ScanResult) -> str:
+    """Serialize a ScanResult to the GitLab Code Quality JSON format.
+
+    Produces the gl-code-quality-report.json schema. Findings appear as
+    inline MR annotations in GitLab's merge request view.
+
+    Args:
+        scan_result: The completed scan result.
+
+    Returns:
+        Indented JSON array — one entry per finding; empty array when clean.
+    """
+    entries = [_build_codequality_entry(finding) for finding in scan_result.findings]
+    return json.dumps(entries, indent=_JSON_INDENT)
+
+
+# ---------------------------------------------------------------------------
+# GitLab SAST formatter helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_gitlab_sast_fingerprint(finding: ScanFinding) -> str:
+    """Compute a stable SHA-256 fingerprint for a GitLab SAST vulnerability ID.
+
+    Args:
+        finding: The finding to fingerprint.
+
+    Returns:
+        Lowercase hex digest used as the vulnerability id field.
+    """
+    fingerprint_input = _GITLAB_SAST_FINGERPRINT_INPUT_FORMAT.format(
+        file_path=finding.file_path,
+        line_number=finding.line_number,
+        entity_type=finding.entity_type,
+    )
+    return hashlib.sha256(fingerprint_input.encode()).hexdigest()
+
+
+def _build_gitlab_sast_vulnerability(finding: ScanFinding) -> dict[str, object]:
+    """Serialize one ScanFinding to a GitLab SAST vulnerability dict.
+
+    Args:
+        finding: The finding to serialize.
+
+    Returns:
+        A dict conforming to the gl-sast-report.json v15.0.4 schema.
+    """
+    return {
+        "id": _build_gitlab_sast_fingerprint(finding),
+        "category": _GITLAB_SAST_CATEGORY,
+        "name": _GITLAB_SAST_VULNERABILITY_NAME_FORMAT.format(entity_type=finding.entity_type),
+        "description": _GITLAB_SAST_DESCRIPTION_FORMAT.format(
+            category=finding.hipaa_category.value,
+            layer=finding.detection_layer.value,
+        ),
+        "severity": _SEVERITY_TO_GITLAB_SAST[finding.severity],
+        "confidence": _SEVERITY_TO_GITLAB_SAST_CONFIDENCE[finding.severity],
+        "scanner": {"id": _GITLAB_SAST_SCANNER_ID, "name": _GITLAB_SAST_SCANNER_NAME},
+        "location": {
+            "file": str(finding.file_path),
+            "start_line": finding.line_number,
+            "end_line": finding.line_number,
+        },
+        "identifiers": [
+            {
+                "type": _GITLAB_SAST_IDENTIFIER_TYPE,
+                "name": finding.entity_type,
+                "value": finding.entity_type,
+            }
+        ],
+    }
+
+
+def _build_gitlab_sast_scan_section(scan_result: ScanResult) -> dict[str, object]:
+    """Build the scan metadata section of a GitLab SAST report.
+
+    Args:
+        scan_result: The completed scan result (used for timing).
+
+    Returns:
+        A scan dict with analyzer, scanner, type, timestamps, and status.
+    """
+    end_time = datetime.now()
+    start_time_str = end_time.strftime(_GITLAB_SAST_TIMESTAMP_FORMAT)
+    end_time_str = end_time.strftime(_GITLAB_SAST_TIMESTAMP_FORMAT)
+    scanner_block = {
+        "id": _GITLAB_SAST_SCANNER_ID,
+        "name": _GITLAB_SAST_SCANNER_NAME,
+        "vendor": {"name": _GITLAB_SAST_VENDOR_NAME},
+        "version": __version__,
+    }
+    return {
+        "analyzer": scanner_block,
+        "scanner": scanner_block,
+        "type": _GITLAB_SAST_SCAN_TYPE,
+        "start_time": start_time_str,
+        "end_time": end_time_str,
+        "status": _GITLAB_SAST_SCAN_STATUS,
+    }
+
+
+def format_gitlab_sast(scan_result: ScanResult) -> str:
+    """Serialize a ScanResult to the GitLab SAST JSON format (v15.0.4).
+
+    Produces the gl-sast-report.json schema. Findings appear in GitLab's
+    Security Dashboard and as MR security annotations.
+
+    Args:
+        scan_result: The completed scan result.
+
+    Returns:
+        Indented SAST JSON string — empty vulnerabilities array when clean.
+    """
+    sast_doc: dict[str, object] = {
+        "version": _GITLAB_SAST_VERSION,
+        "vulnerabilities": [_build_gitlab_sast_vulnerability(f) for f in scan_result.findings],
+        "scan": _build_gitlab_sast_scan_section(scan_result),
+    }
+    return json.dumps(sast_doc, indent=_JSON_INDENT)
 
 
 # ---------------------------------------------------------------------------
