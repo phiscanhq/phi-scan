@@ -24,8 +24,20 @@ from phi_scan.audit import (
     insert_scan_event,
     query_recent_scans,
 )
+from phi_scan.baseline import (
+    BaselineSnapshot,
+    check_baseline_drift,
+    compute_baseline_diff,
+    create_baseline,
+    filter_baselined_findings,
+    get_baseline_summary,
+    load_baseline,
+)
 from phi_scan.config import create_default_config, load_config
 from phi_scan.constants import (
+    BASELINE_DRIFT_WARNING_PERCENT,
+    DEFAULT_BASELINE_FILENAME,
+    DEFAULT_BASELINE_MAX_AGE_DAYS,
     DEFAULT_CONFIG_FILENAME,
     DEFAULT_DATABASE_PATH,
     DEFAULT_IGNORE_FILENAME,
@@ -38,7 +50,12 @@ from phi_scan.constants import (
     SeverityLevel,
 )
 from phi_scan.diff import get_changed_files_from_diff
-from phi_scan.exceptions import AuditLogError, ConfigurationError, MissingOptionalDependencyError
+from phi_scan.exceptions import (
+    AuditLogError,
+    BaselineError,
+    ConfigurationError,
+    MissingOptionalDependencyError,
+)
 from phi_scan.fixer import (
     FixMode,
     FixReplacement,
@@ -68,6 +85,10 @@ from phi_scan.output import (
     build_watch_layout,
     create_scan_progress,
     display_banner,
+    display_baseline_diff,
+    display_baseline_drift_warning,
+    display_baseline_scan_notice,
+    display_baseline_summary,
     display_category_breakdown,
     display_clean_result,
     display_clean_summary_panel,
@@ -124,6 +145,12 @@ app.add_typer(config_app)
 
 explain_app = typer.Typer(name="explain", help="Explain PhiScan concepts and configuration.")
 app.add_typer(explain_app)
+
+baseline_app = typer.Typer(
+    name="baseline",
+    help="Manage the scan baseline — accept existing findings and enforce zero new PHI.",
+)
+app.add_typer(baseline_app)
 
 # ---------------------------------------------------------------------------
 # Version flag
@@ -277,6 +304,40 @@ _DASHBOARD_EMPTY_FINDINGS_JSON: str = "[]"
 
 _SPINNER_CONFIG_LOAD_MESSAGE: str = "Loading configuration…"
 _SPINNER_AUDIT_WRITE_MESSAGE: str = "Writing audit log…"
+
+# ---------------------------------------------------------------------------
+# Baseline command constants
+# ---------------------------------------------------------------------------
+
+_BASELINE_PATH_HELP: str = (
+    "Path to the .phi-scanbaseline file. Defaults to .phi-scanbaseline in CWD."
+)
+_BASELINE_MAX_AGE_HELP: str = (
+    "Days until baseline entries expire and revert to active findings (default: 90)."
+)
+_BASELINE_SCAN_PATH_HELP: str = "Directory to scan when creating or updating the baseline."
+_SCAN_BASELINE_HELP: str = (
+    "Only report NEW findings not in the .phi-scanbaseline file. "
+    "Exit code is based on new findings only."
+)
+
+_BASELINE_NO_FILE_WARNING: str = (
+    "No baseline file found at {path!r}. Run 'phi-scan baseline create' to create one."
+)
+_BASELINE_CREATED_MESSAGE: str = (
+    "Baseline created: {path}  ({count} {label} accepted, expires in {days} days)"
+)
+_BASELINE_UPDATED_MESSAGE: str = (
+    "Baseline updated: {path}  ({count} {label} accepted, expires in {days} days)"
+)
+_BASELINE_CLEARED_MESSAGE: str = "Baseline cleared: {path}"
+_BASELINE_NOT_FOUND_MESSAGE: str = "No baseline file found at {path!r} — nothing to clear."
+_BASELINE_CLEAR_CONFIRM_PROMPT: str = "This will remove the baseline at {path!r}. Continue? [y/N]"
+_BASELINE_CLEAR_ABORTED_MESSAGE: str = "Baseline clear aborted."
+_BASELINE_ERROR_MESSAGE: str = "Baseline error: {error}"
+_BASELINE_LOAD_ERROR_MESSAGE: str = "Could not load baseline: {error}"
+
+_BASELINE_CONFIRM_YES: str = "y"
 
 # Maximum characters of a file path shown in the progress bar description column.
 # Longer paths are truncated with a leading ellipsis so the bar layout stays stable.
@@ -675,6 +736,77 @@ def _emit_scan_output(scan_result: ScanResult, options: _ScanOutputOptions) -> N
 
 
 # ---------------------------------------------------------------------------
+# Internal helpers — baseline-aware scan output
+# ---------------------------------------------------------------------------
+
+
+def _emit_scan_output_with_baseline(
+    scan_result: ScanResult, output_options: _ScanOutputOptions
+) -> None:
+    """Apply baseline filtering and emit output; exit code reflects new findings only.
+
+    Loads the default baseline file. If no baseline exists, warns and falls back
+    to standard scan output. When a baseline is found, splits findings into new
+    vs. baselined, displays new findings with the standard rich UI, and shows a
+    baseline notice panel summarising suppressed counts.
+
+    Args:
+        scan_result: The completed scan result from the full detection pass.
+        output_options: Output format, rich-mode flag, and report path.
+    """
+    baseline_path = Path(DEFAULT_BASELINE_FILENAME)
+    snapshot = _load_baseline_or_warn(baseline_path)
+    if snapshot is None:
+        _emit_scan_output(scan_result, output_options)
+        raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
+    new_findings, baselined_findings = filter_baselined_findings(scan_result.findings, snapshot)
+    if output_options.is_rich_mode:
+        _display_rich_baseline_results(scan_result, new_findings, len(baselined_findings))
+    else:
+        _emit_scan_output(scan_result, output_options)
+    raise typer.Exit(code=EXIT_CODE_CLEAN if not new_findings else EXIT_CODE_VIOLATION)
+
+
+def _load_baseline_or_warn(baseline_path: Path) -> BaselineSnapshot | None:
+    """Load a baseline snapshot, printing a warning and returning None on failure.
+
+    Args:
+        baseline_path: Path to the .phi-scanbaseline file.
+
+    Returns:
+        Loaded snapshot, or None when the file is missing or unreadable.
+    """
+    try:
+        return load_baseline(baseline_path=baseline_path)
+    except BaselineError as error:
+        typer.echo(_BASELINE_LOAD_ERROR_MESSAGE.format(error=error), err=True)
+        return None
+
+
+def _display_rich_baseline_results(
+    scan_result: ScanResult,
+    new_findings: list[ScanFinding],
+    baselined_count: int,
+) -> None:
+    """Render rich output for a baseline-filtered scan.
+
+    New findings are displayed with the standard violation UI. A baseline notice
+    panel is always shown to communicate how many findings were suppressed.
+
+    Args:
+        scan_result: Full scan result (used for the summary panel metadata).
+        new_findings: Findings not covered by any active baseline entry.
+        baselined_count: Count of findings suppressed by the baseline.
+    """
+    if new_findings:
+        display_violation_alert(scan_result)
+        display_findings_table(tuple(new_findings))
+    else:
+        display_clean_result()
+    display_baseline_scan_notice(len(new_findings), baselined_count)
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers — history and report commands
 # ---------------------------------------------------------------------------
 
@@ -959,6 +1091,9 @@ def scan(
     should_bypass_cache: Annotated[
         bool, typer.Option("--no-cache", help=_SCAN_NO_CACHE_HELP)
     ] = False,
+    should_use_baseline: Annotated[
+        bool, typer.Option("--baseline", help=_SCAN_BASELINE_HELP)
+    ] = False,
 ) -> None:
     """Scan a directory or file for PHI/PII.
 
@@ -1005,8 +1140,11 @@ def scan(
         is_rich_mode=is_rich_mode,
         report_path=report_path,
     )
-    _emit_scan_output(scan_result, output_options)
-    raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
+    if should_use_baseline:
+        _emit_scan_output_with_baseline(scan_result, output_options)
+    else:
+        _emit_scan_output(scan_result, output_options)
+        raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
 
 
 @app.command()
@@ -1385,3 +1523,179 @@ def explain_reports() -> None:
 def explain_remediation() -> None:
     """Show the full remediation playbook for all 18 HIPAA categories."""
     _render_explain_topic(EXPLAIN_REMEDIATION_TEXT)
+
+
+# ---------------------------------------------------------------------------
+# Baseline command group (Phase 3B)
+# ---------------------------------------------------------------------------
+
+# Internal helpers for the baseline command group
+# ------------------------------------------------
+
+
+def _run_scan_for_baseline(scan_root: Path) -> ScanResult:
+    """Run a full scan of scan_root using default config, returning the ScanResult.
+
+    Args:
+        scan_root: Directory to scan.
+
+    Returns:
+        Aggregated ScanResult from execute_scan.
+    """
+    scan_config = _load_scan_config(None, None)
+    ignore_patterns = load_ignore_patterns(Path(DEFAULT_IGNORE_FILENAME))
+    if scan_config.exclude_paths:
+        ignore_patterns.extend(scan_config.exclude_paths)
+    scan_targets = collect_scan_targets(scan_root, ignore_patterns, scan_config)
+    return execute_scan(scan_targets, scan_config)
+
+
+def _entry_count_label(count: int) -> str:
+    """Return 'entry' for 1 item, 'entries' otherwise."""
+    _single_label: str = "entry"
+    _plural_label: str = "entries"
+    return _single_label if count == 1 else _plural_label
+
+
+# Baseline commands
+# -----------------
+
+
+@baseline_app.command("create")
+def baseline_create(
+    path: Annotated[Path, typer.Argument(help=_BASELINE_SCAN_PATH_HELP)] = Path("."),
+    max_age_days: Annotated[
+        int, typer.Option("--max-age-days", help=_BASELINE_MAX_AGE_HELP)
+    ] = DEFAULT_BASELINE_MAX_AGE_DAYS,
+    baseline_path: Annotated[
+        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
+    ] = Path(DEFAULT_BASELINE_FILENAME),
+) -> None:
+    """Run a full scan and save all findings as the accepted baseline.
+
+    The baseline file is written to .phi-scanbaseline in the current directory.
+    Commit it to your repository so all developers share the same baseline.
+    """
+    console = get_console()
+    scan_result = _run_scan_for_baseline(path)
+    try:
+        snapshot = create_baseline(scan_result, max_age_days, baseline_path=baseline_path)
+    except BaselineError as error:
+        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR)
+    count = len(snapshot.entries)
+    console.print(
+        _BASELINE_CREATED_MESSAGE.format(
+            path=baseline_path,
+            count=count,
+            label=_entry_count_label(count),
+            days=max_age_days,
+        )
+    )
+
+
+@baseline_app.command("show")
+def baseline_show(
+    baseline_path: Annotated[
+        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
+    ] = Path(DEFAULT_BASELINE_FILENAME),
+) -> None:
+    """Display summary statistics for the current baseline."""
+    try:
+        snapshot = load_baseline(baseline_path=baseline_path)
+    except BaselineError as error:
+        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR)
+    if snapshot is None:
+        typer.echo(_BASELINE_NO_FILE_WARNING.format(path=baseline_path), err=True)
+        raise typer.Exit(code=EXIT_CODE_CLEAN)
+    summary = get_baseline_summary(snapshot, baseline_path)
+    display_baseline_summary(summary)
+
+
+@baseline_app.command("clear")
+def baseline_clear(
+    baseline_path: Annotated[
+        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
+    ] = Path(DEFAULT_BASELINE_FILENAME),
+) -> None:
+    """Remove the baseline file, reverting all findings to active."""
+    if not baseline_path.exists():
+        typer.echo(_BASELINE_NOT_FOUND_MESSAGE.format(path=baseline_path))
+        raise typer.Exit(code=EXIT_CODE_CLEAN)
+    raw_answer = (
+        typer.prompt(_BASELINE_CLEAR_CONFIRM_PROMPT.format(path=baseline_path), default="")
+        .strip()
+        .lower()
+    )
+    if raw_answer != _BASELINE_CONFIRM_YES:
+        typer.echo(_BASELINE_CLEAR_ABORTED_MESSAGE)
+        raise typer.Exit(code=EXIT_CODE_CLEAN)
+    baseline_path.unlink()
+    typer.echo(_BASELINE_CLEARED_MESSAGE.format(path=baseline_path))
+
+
+@baseline_app.command("update")
+def baseline_update(
+    path: Annotated[Path, typer.Argument(help=_BASELINE_SCAN_PATH_HELP)] = Path("."),
+    max_age_days: Annotated[
+        int, typer.Option("--max-age-days", help=_BASELINE_MAX_AGE_HELP)
+    ] = DEFAULT_BASELINE_MAX_AGE_DAYS,
+    baseline_path: Annotated[
+        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
+    ] = Path(DEFAULT_BASELINE_FILENAME),
+) -> None:
+    """Re-scan and overwrite the baseline with the current findings.
+
+    Warn when the new entry count is significantly higher than the previous count
+    (drift detection). A large increase suggests PHI accumulation rather than
+    remediation.
+    """
+    console = get_console()
+    old_snapshot = _load_baseline_or_warn(baseline_path)
+    scan_result = _run_scan_for_baseline(path)
+    try:
+        new_snapshot = create_baseline(scan_result, max_age_days, baseline_path=baseline_path)
+    except BaselineError as error:
+        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR)
+    if old_snapshot is not None:
+        drift = check_baseline_drift(old_snapshot, new_snapshot)
+        if drift > BASELINE_DRIFT_WARNING_PERCENT:
+            display_baseline_drift_warning(
+                len(old_snapshot.entries), len(new_snapshot.entries), drift
+            )
+    count = len(new_snapshot.entries)
+    console.print(
+        _BASELINE_UPDATED_MESSAGE.format(
+            path=baseline_path,
+            count=count,
+            label=_entry_count_label(count),
+            days=max_age_days,
+        )
+    )
+
+
+@baseline_app.command("diff")
+def baseline_diff(
+    path: Annotated[Path, typer.Argument(help=_BASELINE_SCAN_PATH_HELP)] = Path("."),
+    baseline_path: Annotated[
+        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
+    ] = Path(DEFAULT_BASELINE_FILENAME),
+) -> None:
+    """Compare the current scan against the baseline.
+
+    Shows new findings (not in baseline), resolved findings (in baseline but no
+    longer detected), and persisting findings (still present and still baselined).
+    """
+    try:
+        snapshot = load_baseline(baseline_path=baseline_path)
+    except BaselineError as error:
+        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR)
+    if snapshot is None:
+        typer.echo(_BASELINE_NO_FILE_WARNING.format(path=baseline_path), err=True)
+        raise typer.Exit(code=EXIT_CODE_CLEAN)
+    scan_result = _run_scan_for_baseline(path)
+    diff = compute_baseline_diff(snapshot, scan_result)
+    display_baseline_diff(diff)

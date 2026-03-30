@@ -7,8 +7,12 @@ from enum import StrEnum
 __all__ = [
     "AUDIT_RETENTION_DAYS",
     "AUDIT_SCHEMA_VERSION",
+    "BASELINE_DRIFT_WARNING_PERCENT",
+    "BASELINE_SCHEMA_VERSION",
     "BINARY_CHECK_BYTE_COUNT",
     "CACHE_SCHEMA_VERSION",
+    "DEFAULT_BASELINE_FILENAME",
+    "DEFAULT_BASELINE_MAX_AGE_DAYS",
     "SHA256_HEX_DIGEST_LENGTH",
     "AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX",
     "CONFIDENCE_STRUCTURED_MAX",
@@ -77,6 +81,14 @@ __all__ = [
 # File names
 # ---------------------------------------------------------------------------
 
+DEFAULT_BASELINE_FILENAME: str = ".phi-scanbaseline"
+# Baseline entries expire after this many days; finding reverts to active when expired.
+# 90 days forces quarterly remediation reviews without blocking emergency baselines.
+DEFAULT_BASELINE_MAX_AGE_DAYS: int = 90
+BASELINE_SCHEMA_VERSION: int = 1
+# Warn when a baseline update adds more than this percent more entries than before.
+# A 20 % increase signals the team may be accumulating rather than remediating PHI.
+BASELINE_DRIFT_WARNING_PERCENT: int = 20
 DEFAULT_CONFIG_FILENAME: str = ".phi-scanner.yml"
 DEFAULT_DATABASE_PATH: str = "~/.phi-scanner/audit.db"
 DEFAULT_IGNORE_FILENAME: str = ".phi-scanignore"
