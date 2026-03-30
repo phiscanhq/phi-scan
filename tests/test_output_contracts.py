@@ -28,6 +28,7 @@ from typer.testing import CliRunner
 from phi_scan.cli import app
 from phi_scan.constants import (
     EXIT_CODE_CLEAN,
+    EXIT_CODE_ERROR,
     EXIT_CODE_VIOLATION,
     IMPLEMENTED_OUTPUT_FORMATS,
     DetectionLayer,
@@ -43,14 +44,10 @@ from phi_scan.output import format_csv, format_json, format_sarif
 # Test constants — no magic values
 # ---------------------------------------------------------------------------
 
-_EXPECTED_IMPLEMENTED_FORMATS: frozenset[OutputFormat] = frozenset(
-    {
-        OutputFormat.TABLE,
-        OutputFormat.JSON,
-        OutputFormat.CSV,
-        OutputFormat.SARIF,
-    }
-)
+# Expected count of formats in IMPLEMENTED_OUTPUT_FORMATS.
+# Paired with individual membership tests below so that both adding and
+# removing a format without updating the tests is caught.
+_IMPLEMENTED_FORMAT_COUNT: int = 4
 
 # JSON schema: exact top-level keys emitted by format_json
 _JSON_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
@@ -102,9 +99,6 @@ _SARIF_RUNS_FIELD: str = "runs"
 _SARIF_TOOL_FIELD: str = "tool"
 _SARIF_RESULTS_FIELD: str = "results"
 
-# Exit codes
-_EXIT_CODE_CLI_ERROR: int = 2
-
 # CSV row count constants
 _CSV_HEADER_ROW_COUNT: int = 1
 _CSV_EXPECTED_ROW_COUNT_ONE_FINDING: int = _CSV_HEADER_ROW_COUNT + 1
@@ -124,6 +118,11 @@ _TEST_SCAN_DURATION: float = 0.1
 
 # A format that is a valid OutputFormat enum member but not yet implemented
 _UNIMPLEMENTED_FORMAT_VALUE: str = OutputFormat.GITLAB_SAST.value
+
+# SYNTHETIC TEST FIXTURE — NOT A REAL SSN.
+# Area 900 is in SSN_EXCLUDED_AREA_NUMBERS — never assigned by the SSA.
+# 900-00-0001 cannot identify any real individual.
+_PHI_VIOLATION_FIXTURE_CONTENT: str = 'ssn = "900-00-0001"\n'
 
 
 # ---------------------------------------------------------------------------
@@ -191,9 +190,34 @@ def _build_dirty_result() -> ScanResult:
 # ---------------------------------------------------------------------------
 
 
-def test_implemented_output_formats_contains_exactly_the_four_current_formats() -> None:
-    """IMPLEMENTED_OUTPUT_FORMATS matches the documented supported set exactly."""
-    assert IMPLEMENTED_OUTPUT_FORMATS == _EXPECTED_IMPLEMENTED_FORMATS
+def test_implemented_output_formats_contains_table() -> None:
+    """TABLE must always be implemented — it is the default output format."""
+    assert OutputFormat.TABLE in IMPLEMENTED_OUTPUT_FORMATS
+
+
+def test_implemented_output_formats_contains_json() -> None:
+    """JSON must be implemented — it is the primary machine-readable format."""
+    assert OutputFormat.JSON in IMPLEMENTED_OUTPUT_FORMATS
+
+
+def test_implemented_output_formats_contains_csv() -> None:
+    """CSV must be implemented — it is required for spreadsheet and audit export."""
+    assert OutputFormat.CSV in IMPLEMENTED_OUTPUT_FORMATS
+
+
+def test_implemented_output_formats_contains_sarif() -> None:
+    """SARIF must be implemented — it is the native format for all CI/CD platforms."""
+    assert OutputFormat.SARIF in IMPLEMENTED_OUTPUT_FORMATS
+
+
+def test_implemented_output_formats_has_expected_member_count() -> None:
+    """IMPLEMENTED_OUTPUT_FORMATS contains exactly _IMPLEMENTED_FORMAT_COUNT members.
+
+    Paired with the four membership tests above: adding a format without a
+    membership test raises the count; removing a format without updating a
+    membership test breaks that test.
+    """
+    assert len(IMPLEMENTED_OUTPUT_FORMATS) == _IMPLEMENTED_FORMAT_COUNT
 
 
 def test_implemented_output_formats_does_not_include_phase_3_formats() -> None:
@@ -335,10 +359,7 @@ def test_exit_code_is_violation_when_scan_produces_findings(
 ) -> None:
     """Exit 1 (VIOLATION) when the scanned directory contains PHI."""
     phi_file = tmp_path / "patient.py"
-    # SYNTHETIC TEST FIXTURE — NOT A REAL SSN.
-    # Area 900 is in SSN_EXCLUDED_AREA_NUMBERS — never assigned by the SSA.
-    # 900-00-0001 cannot identify any real individual.
-    phi_file.write_text('ssn = "900-00-0001"\n', encoding="utf-8")
+    phi_file.write_text(_PHI_VIOLATION_FIXTURE_CONTENT, encoding="utf-8")
 
     result = runner.invoke(app, ["scan", str(tmp_path), "--quiet"])
 
@@ -351,7 +372,7 @@ def test_exit_code_is_error_for_unimplemented_output_format(
     """Exit 2 (error) when an unimplemented output format is requested via --output."""
     result = runner.invoke(app, ["scan", str(tmp_path), "--output", _UNIMPLEMENTED_FORMAT_VALUE])
 
-    assert result.exit_code == _EXIT_CODE_CLI_ERROR
+    assert result.exit_code == EXIT_CODE_ERROR
 
 
 # ---------------------------------------------------------------------------

@@ -34,6 +34,7 @@ __all__ = [
     "DetectionLayer",
     "ENSEMBL_GENE_ID_DIGIT_COUNT",
     "EXIT_CODE_CLEAN",
+    "EXIT_CODE_ERROR",
     "EXIT_CODE_VIOLATION",
     "FICTIONAL_PHONE_EXCHANGE",
     "FICTIONAL_PHONE_SUBSCRIBER_DISPLAY_PREFIX",
@@ -240,6 +241,8 @@ AUDIT_RETENTION_DAYS: int = (
 
 EXIT_CODE_CLEAN: int = 0
 EXIT_CODE_VIOLATION: int = 1
+# Exit 2 signals a CLI or configuration error (bad argument, unsupported format).
+EXIT_CODE_ERROR: int = 2
 
 # ---------------------------------------------------------------------------
 # Detection parameters
