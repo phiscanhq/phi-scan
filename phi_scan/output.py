@@ -1861,6 +1861,11 @@ def display_violation_summary_panel(scan_result: ScanResult) -> None:
 def display_code_context_panel(finding: ScanFinding) -> None:
     """Render a bordered panel showing the code context and remediation hint for a finding.
 
+    finding.code_context is the raw source line from the scanned file. It is
+    intentionally shown in plain text here to help developers locate and remediate
+    the finding. escape_markup is applied because source code may contain bracket
+    sequences that Rich's markup parser would misinterpret as style tags.
+
     Args:
         finding: A single scan finding with code_context and remediation_hint populated.
     """
@@ -1873,8 +1878,6 @@ def display_code_context_panel(finding: ScanFinding) -> None:
     )
     content = "\n".join(
         [
-            # code_context is raw source code and may contain bracket sequences
-            # that Rich would misinterpret as markup tags (e.g. "[/{style}]").
             f"{_CODE_CONTEXT_ARROW} {escape_markup(finding.code_context)}",
             "",
             f"[{severity_style}]{_CODE_CONTEXT_REMEDIATION_PREFIX}"

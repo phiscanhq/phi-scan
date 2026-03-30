@@ -126,7 +126,11 @@ class ScanFinding:
             it. The format is enforced (64 lowercase hex chars) but the model cannot verify the
             caller hashed the correct value; that obligation rests with the detection layer.
         severity: Severity level derived from the confidence score.
-        code_context: Surrounding source lines shown in reports for human review.
+        code_context: The raw source line containing the finding, shown in terminal
+            output to help developers locate and remediate PHI. Intentionally plain
+            text — the matched value is never separately stored, only its SHA-256
+            hash (value_hash). This field is for human display only and must never
+            be written to the audit log.
         remediation_hint: Actionable guidance for removing or replacing this PHI.
     """
 
