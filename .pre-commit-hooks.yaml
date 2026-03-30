@@ -1,0 +1,24 @@
+# PhiScan pre-commit hook definition.
+#
+# This file registers phi-scan with the pre-commit framework (https://pre-commit.com).
+# Add the hook to your project by creating or editing .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/joeyessak/phi-scan
+#       rev: v0.1.0
+#       hooks:
+#         - id: phi-scan
+#
+# See docs/ci-cd-integration.md for full configuration options.
+- id: phi-scan
+  name: "PhiScan \u2014 PHI/PII Detection"
+  description: >
+    Scan staged changes for HIPAA-covered Protected Health Information (PHI) and PII.
+    Blocks the commit when new findings are detected. All scanning runs locally —
+    no data is transmitted to any external service.
+  entry: phi-scan scan --diff HEAD
+  language: python
+  types: [text]
+  pass_filenames: false
+  stages: [pre-commit, pre-push]
+  minimum_pre_commit_version: "2.0.0"
