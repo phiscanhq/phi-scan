@@ -47,6 +47,19 @@ jobs:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: uv publish
 
+      - name: Extract changelog for this release
+        id: changelog
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG_NAME#v}"
+          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,5 +67,5 @@ jobs:
         run: |
           gh release create "$TAG_NAME" \
             --title "phi-scan $TAG_NAME" \
-            --generate-notes \
+            --notes "${{ steps.changelog.outputs.notes }}" \
             dist/*.whl dist/*.tar.gz

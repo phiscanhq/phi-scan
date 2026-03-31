@@ -89,3 +89,34 @@ target/
 # Synthetic PHI fixture corpus — contains intentional PHI-like patterns for
 # detection testing. Excluding prevents false positives when scanning this repo.
 tests/fixtures/phi/
+
+# PhiScan project-level documentation and CI configuration.
+# These files are excluded to suppress false positives when phi-scan scans its
+# own repository. Regex patterns match documentation prose and YAML keys
+# (e.g. "id-token: write", "contents: write") that contain no real PHI.
+# Projects that store PHI in documentation or CI scripts should remove these
+# exclusions and triage findings manually.
+CHANGELOG.md
+*.md
+.github/
+.claude/
+
+# Package management and lock files — dependency version strings and package
+# names produce false positives against HEALTH_PLAN_NUMBER and similar patterns.
+uv.lock
+poetry.lock
+package-lock.json
+yarn.lock
+Pipfile.lock
+pyproject.toml
+
+# Scanner implementation source — the phi_scan/ package contains clinical
+# category names, context keywords, and PHI pattern strings as Python literals.
+# These produce unavoidable false positives when the scanner scans its own source.
+# PHI risk in scanner implementation code is low and is covered by PR review.
+phi_scan/
+
+# Scanner configuration files — .phi-scanner.yml and .phi-scanignore reference
+# pattern names and detection concepts that match the scanner's own rules.
+.phi-scanner.yml
+.phi-scanignore
