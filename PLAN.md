@@ -1281,15 +1281,15 @@ then enforce zero new PHI going forward.
 
 ### 3F — Phase 3 Testing
 
-- [ ] **3F.1** `tests/test_output_json.py` — JSON output validates against expected schema, all finding fields present
-- [ ] **3F.2** `tests/test_output_sarif.py` — SARIF 2.1 output validates against official SARIF JSON schema
-- [ ] **3F.3** `tests/test_output_csv.py` — CSV output parseable by Python `csv` module, headers match spec, special characters escaped
-- [ ] **3F.4** `tests/test_baseline.py` — baseline create, baseline scan (new vs baselined), baseline expiry, baseline merge on conflict
-- [ ] **3F.5** `tests/test_precommit.py` — `.pre-commit-hooks.yaml` integration: hook runs, blocks on finding, passes when clean
-- [ ] **3F.6** `tests/test_cli_flags.py` — `--verbose`, `--severity-threshold`, `--report-path`, `--output` all behave correctly
-- [ ] **3F.7** `tests/test_explain.py` — all 9 explain topics render without error, output contains expected content
-- [ ] **3F.8** `tests/test_first_run.py` — first-run experience: no config file triggers setup prompt, error messages suggest next steps
-- [ ] **3F.9** `tests/test_publish_package.py` — `uv build` produces valid wheel and sdist, package metadata correct
+- [x] **3F.1** `tests/test_output_json.py` — JSON output validates against expected schema, all finding fields present
+- [x] **3F.2** `tests/test_output_sarif.py` — SARIF 2.1 output validates against official SARIF JSON schema
+- [x] **3F.3** `tests/test_output_csv.py` — CSV output parseable by Python `csv` module, headers match spec, special characters escaped
+- [x] **3F.4** `tests/test_baseline.py` — baseline create, baseline scan (new vs baselined), baseline expiry, baseline merge on conflict
+- [x] **3F.5** `tests/test_precommit.py` — `.pre-commit-hooks.yaml` integration: hook runs, blocks on finding, passes when clean
+- [x] **3F.6** `tests/test_cli_flags.py` — `--verbose`, `--severity-threshold`, `--report-path`, `--output` all behave correctly
+- [x] **3F.7** `tests/test_explain.py` — all 9 explain topics render without error, output contains expected content
+- [x] **3F.8** `tests/test_first_run.py` — first-run experience: no config file triggers setup prompt, error messages suggest next steps
+- [x] **3F.9** `tests/test_publish_package.py` — `uv build` produces valid wheel and sdist, package metadata correct
 
 ### Phase 3 Verification Checklist
 
