@@ -1266,18 +1266,18 @@ then enforce zero new PHI going forward.
 
 ### 3E — Documentation (Core Set)
 
-- [ ] **3E.1** `README.md` — hero section, badges (PyPI version, Python version, license, CI status), quick start (3 steps), feature overview, command reference table, link to docs, license notice
-- [ ] **3E.2** `docs/getting-started.md` — install, first scan, understanding output (5-minute quick start)
-- [ ] **3E.3** `docs/configuration.md` — complete `.phi-scanner.yml` reference with every option annotated
-- [ ] **3E.4** `docs/ignore-patterns.md` — `.phi-scanignore` syntax, examples, common patterns
-- [ ] **3E.5** `docs/ci-cd-integration.md` — pre-commit hook setup, GitHub Actions, GitLab CI, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines, and AWS CodeBuild pipeline examples with copy-paste templates
-- [ ] **3E.6** `docs/troubleshooting.md` — common issues, FAQ, debug tips
-- [ ] **3E.7** `docs/security.md` — how PHI is protected (hashing, no raw values, local-only scanning)
-- [ ] **3E.8** `CODE_OF_CONDUCT.md` — Contributor Covenant v2.1 (industry standard)
-- [ ] **3E.9** `.github/ISSUE_TEMPLATE/bug_report.md` — structured bug report template (OS, Python version, phi-scan version, steps to reproduce)
-- [ ] **3E.10** `.github/ISSUE_TEMPLATE/feature_request.md` — structured feature request template (use case, proposed solution, alternatives)
-- [ ] **3E.11** `.github/PULL_REQUEST_TEMPLATE.md` — PR checklist (tests added, lint passes, docs updated, no PHI in test fixtures)
-- [ ] **3E.12** Enable GitHub Discussions — categories: Q&A, Show & Tell, Ideas, Plugins
+- [x] **3E.1** `README.md` — hero section, badges (PyPI version, Python version, license, CI status), quick start (3 steps), feature overview, command reference table, link to docs, license notice
+- [x] **3E.2** `docs/getting-started.md` — install, first scan, understanding output (5-minute quick start)
+- [x] **3E.3** `docs/configuration.md` — complete `.phi-scanner.yml` reference with every option annotated
+- [x] **3E.4** `docs/ignore-patterns.md` — `.phi-scanignore` syntax, examples, common patterns
+- [x] **3E.5** `docs/ci-cd-integration.md` — pre-commit hook setup, GitHub Actions, GitLab CI, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines, and AWS CodeBuild pipeline examples with copy-paste templates
+- [x] **3E.6** `docs/troubleshooting.md` — common issues, FAQ, debug tips
+- [x] **3E.7** `docs/security.md` — how PHI is protected (hashing, no raw values, local-only scanning)
+- [x] **3E.8** `CODE_OF_CONDUCT.md` — Contributor Covenant v2.1 (industry standard)
+- [x] **3E.9** `.github/ISSUE_TEMPLATE/bug_report.md` — structured bug report template (OS, Python version, phi-scan version, steps to reproduce)
+- [x] **3E.10** `.github/ISSUE_TEMPLATE/feature_request.md` — structured feature request template (use case, proposed solution, alternatives)
+- [x] **3E.11** `.github/PULL_REQUEST_TEMPLATE.md` — PR checklist (tests added, lint passes, docs updated, no PHI in test fixtures)
+- [ ] **3E.12** Enable GitHub Discussions — categories: Q&A, Show & Tell, Ideas, Plugins (manual GitHub UI action)
 
 ### 3F — Phase 3 Testing
 

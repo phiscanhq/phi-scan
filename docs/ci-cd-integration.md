@@ -1,207 +1,511 @@
 # CI/CD Integration
 
-PhiScan supports two git hook integration methods: the **pre-commit framework**
-(recommended for teams) and a **native git hook** (recommended for individuals
-or environments where pre-commit is not available).
+PhiScan integrates with all major CI/CD platforms. Templates for all 7 platforms are
+below — copy, paste, and adapt.
 
-Both methods run phi-scan locally inside the pipeline runner or developer
-machine. No PHI or PII is transmitted to any external service.
-
----
-
-## Method 1 — Pre-commit Framework (Recommended)
-
-The [pre-commit framework](https://pre-commit.com) manages git hooks as
-versioned, reproducible configuration. It is the standard approach for team
-repositories.
-
-### Prerequisites
-
-```bash
-pip install pre-commit
-# or
-brew install pre-commit
-```
-
-### Installation
-
-Create or edit `.pre-commit-config.yaml` in your repository root:
-
-```yaml
-repos:
-  - repo: https://github.com/joeyessak/phi-scan
-    rev: v0.1.0
-    hooks:
-      - id: phi-scan
-```
-
-Then install the hooks:
-
-```bash
-pre-commit install
-pre-commit install --hook-type pre-push
-```
-
-### Running Manually
-
-```bash
-# Scan all files tracked by git
-pre-commit run phi-scan --all-files
-
-# Scan specific files
-pre-commit run phi-scan --files src/api/patient.py tests/fixtures/records.json
-```
-
-### Configuration Options
-
-All `phi-scan scan` flags can be passed via `args` in your
-`.pre-commit-config.yaml`. These are appended to the hook's built-in
-`phi-scan scan --diff HEAD` entry.
-
-#### Set a minimum severity threshold
-
-Only report findings at `medium` severity or above:
-
-```yaml
-repos:
-  - repo: https://github.com/joeyessak/phi-scan
-    rev: v0.1.0
-    hooks:
-      - id: phi-scan
-        args: ['--severity-threshold', 'medium']
-```
-
-Accepted values: `info`, `low`, `medium`, `high`.
-
-#### Use baseline mode
-
-Only report NEW findings not covered by your committed `.phi-scanbaseline`:
-
-```yaml
-hooks:
-  - id: phi-scan
-    args: ['--baseline']
-```
-
-Run `phi-scan baseline create` once to snapshot your current accepted findings
-before enabling this flag.
-
-#### Write a machine-readable report
-
-Emit a SARIF report alongside the terminal output:
-
-```yaml
-hooks:
-  - id: phi-scan
-    args: ['--output', 'sarif', '--report-path', 'phi-scan-results.sarif']
-```
-
-#### Combine options
-
-```yaml
-hooks:
-  - id: phi-scan
-    args:
-      - '--severity-threshold'
-      - 'medium'
-      - '--baseline'
-      - '--output'
-      - 'sarif'
-      - '--report-path'
-      - 'phi-scan-results.sarif'
-```
-
-### Skipping the Hook
-
-To skip phi-scan on a single commit:
-
-```bash
-SKIP=phi-scan git commit -m "your message"
-```
-
-To skip all hooks on a single commit:
-
-```bash
-git commit --no-verify -m "your message"
-```
-
-> **Note:** `--no-verify` bypasses all hooks, including phi-scan. Reserve this
-> for genuine emergencies and document the reason in the commit message.
-
-### Updating phi-scan
-
-```bash
-pre-commit autoupdate
-```
-
-This updates the `rev` pin in `.pre-commit-config.yaml` to the latest release.
+**Core principle:** All scanning runs inside your pipeline runner. No PHI or PII is
+transmitted to any external service.
 
 ---
 
-## Method 2 — Native Git Hook
+## Quick Reference
 
-The native git hook writes a shell script directly to `.git/hooks/pre-commit`.
-It requires no external tooling and works in any git repository.
+| Platform | Native format | Inline annotations |
+|---|---|---|
+| GitHub Actions | SARIF | GitHub Code Scanning |
+| GitLab CI | `codequality` + `gitlab-sast` | MR inline annotations |
+| Jenkins | SARIF (Warnings NG) | Warnings NG plugin |
+| Azure DevOps | SARIF | Advanced Security |
+| CircleCI | JUnit XML | Test Summary |
+| Bitbucket Pipelines | SARIF | Code Insights |
+| AWS CodeBuild | SARIF | Security Hub (ASFF) |
 
-### Installation
+---
+
+## Git Hook Integration
+
+Before CI/CD, block PHI at commit time on developer machines.
+
+### Method 1 — Native Git Hook (individuals)
 
 ```bash
 phi-scan install-hook
 ```
 
-This writes the following script to `.git/hooks/pre-commit`:
-
-```sh
-#!/bin/sh
-# phi-scan pre-commit hook — installed by phi-scan install-hook
-phi-scan scan --diff HEAD --quiet
-if [ $? -ne 0 ]; then
-  echo 'phi-scan: PHI/PII detected — commit blocked'
-  exit 1
-fi
-```
-
-### Uninstallation
+Writes a pre-commit hook to `.git/hooks/pre-commit`. Runs `phi-scan scan --diff HEAD`
+on every commit — only changed files are scanned.
 
 ```bash
-phi-scan uninstall-hook
+phi-scan uninstall-hook    # remove when no longer needed
 ```
 
-PhiScan will only remove hooks it installed. If a hook at `.git/hooks/pre-commit`
-was not written by `phi-scan install-hook`, it will not be touched.
+### Method 2 — Pre-commit Framework (teams)
 
-### Limitations
+The [pre-commit framework](https://pre-commit.com) manages hooks as versioned,
+committed configuration shared across the whole team.
 
-| Limitation | Detail |
-|---|---|
-| Per-repository, not shared | `.git/hooks/` is not committed. Every developer must run `install-hook` separately. |
-| No version pinning | The hook runs whatever version of phi-scan is installed on the local machine. |
-| Single hook slot | If another tool already occupies `.git/hooks/pre-commit`, `install-hook` will refuse to overwrite it. |
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/joeyessak/phi-scan
+    rev: v0.3.0
+    hooks:
+      - id: phi-scan
+```
 
-For shared, versioned hook configuration across a team, use the pre-commit
-framework (Method 1).
+Install:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Run manually:
+
+```bash
+pre-commit run phi-scan --all-files
+```
+
+With options:
+
+```yaml
+repos:
+  - repo: https://github.com/joeyessak/phi-scan
+    rev: v0.3.0
+    hooks:
+      - id: phi-scan
+        args:
+          - '--severity-threshold'
+          - 'medium'
+          - '--baseline'
+          - '--output'
+          - 'sarif'
+          - '--report-path'
+          - 'phi-scan-results.sarif'
+```
+
+Update to the latest release:
+
+```bash
+pre-commit autoupdate
+```
 
 ---
 
-## Comparison
+## 1. GitHub Actions
 
-| Feature | Pre-commit Framework | Native Git Hook |
-|---|---|---|
-| Shared via `.pre-commit-config.yaml` | Yes — committed to repo | No — per developer |
-| Version-pinned | Yes — `rev:` field | No |
-| Works without pre-commit installed | No | Yes |
-| Configurable args | Yes — `args:` in config | Edit hook script manually |
-| Baseline mode | Yes | Requires manual script edit |
-| Skippable per-commit | `SKIP=phi-scan` | `git commit --no-verify` |
+### Basic — scan changed files, fail PR on findings
+
+```yaml
+# .github/workflows/phi-scan.yml
+name: PHI Scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  phi-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # needed for --diff HEAD~1
+
+      - name: Install PhiScan
+        run: pipx install phi-scan
+
+      - name: Scan for PHI
+        run: phi-scan scan --diff HEAD~1
+```
+
+### With SARIF upload to GitHub Code Scanning
+
+```yaml
+name: PHI Scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  phi-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # required for SARIF upload
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Install PhiScan
+        run: pipx install phi-scan
+
+      - name: Scan for PHI
+        run: |
+          phi-scan scan --diff HEAD~1 \
+            --output sarif \
+            --report-path phi-scan.sarif
+        # continue-on-error: true   # uncomment to upload SARIF even when findings exist
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: phi-scan.sarif
+          category: phi-scan
+```
+
+### Full repository scan with baseline
+
+```yaml
+name: PHI Scan (full)
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'   # weekly on Monday at 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  phi-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PhiScan
+        run: pipx install phi-scan
+
+      - name: Scan entire repository
+        run: |
+          phi-scan scan . \
+            --baseline \
+            --output sarif \
+            --report-path phi-scan.sarif
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: phi-scan.sarif
+```
+
+**Exit codes:**
+- `0` → no findings → job passes
+- `1` → PHI detected → job fails (blocks merge)
+- `2` → configuration error → job fails
+
+---
+
+## 2. GitLab CI
+
+### Code Quality report (MR inline annotations)
+
+```yaml
+# .gitlab-ci.yml
+phi-scan:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install phi-scan
+  script:
+    - phi-scan scan --diff HEAD~1
+        --output codequality
+        --report-path phi-scan-codequality.json
+  artifacts:
+    reports:
+      codequality: phi-scan-codequality.json
+    when: always
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+```
+
+### GitLab SAST report (Security dashboard)
+
+```yaml
+phi-scan-sast:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install phi-scan
+  script:
+    - phi-scan scan .
+        --output gitlab-sast
+        --report-path phi-scan-sast.json
+  artifacts:
+    reports:
+      sast: phi-scan-sast.json
+    when: always
+    expire_in: 1 week
+```
+
+### Combined (Code Quality + SAST in one job)
+
+```yaml
+phi-scan:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install phi-scan
+  script:
+    - |
+      phi-scan scan --diff HEAD~1 \
+        --output codequality \
+        --report-path phi-scan-codequality.json
+    - |
+      phi-scan scan . \
+        --output gitlab-sast \
+        --report-path phi-scan-sast.json
+  artifacts:
+    reports:
+      codequality: phi-scan-codequality.json
+      sast: phi-scan-sast.json
+    when: always
+    expire_in: 1 week
+```
+
+---
+
+## 3. Jenkins
+
+Requires the [Warnings Next Generation plugin](https://plugins.jenkins.io/warnings-ng/).
+
+### Declarative pipeline
+
+```groovy
+// Jenkinsfile
+pipeline {
+    agent any
+
+    stages {
+        stage('PHI Scan') {
+            steps {
+                sh 'pip install phi-scan'
+                sh '''
+                    phi-scan scan --diff HEAD~1 \
+                        --output sarif \
+                        --report-path phi-scan.sarif \
+                        || true
+                '''
+            }
+            post {
+                always {
+                    recordIssues(
+                        tool: sarif(pattern: 'phi-scan.sarif', id: 'phi-scan', name: 'PHI Scan'),
+                        qualityGates: [[threshold: 1, type: 'TOTAL', unstable: true]]
+                    )
+                }
+            }
+        }
+    }
+}
+```
+
+### Scripted pipeline
+
+```groovy
+node {
+    stage('PHI Scan') {
+        sh 'pip install phi-scan'
+        def exitCode = sh(
+            script: 'phi-scan scan --diff HEAD~1 --output sarif --report-path phi-scan.sarif',
+            returnStatus: true
+        )
+        recordIssues(tool: sarif(pattern: 'phi-scan.sarif', id: 'phi-scan', name: 'PHI Scan'))
+        if (exitCode == 1) {
+            error('PHI/PII detected — build failed')
+        } else if (exitCode == 2) {
+            error('phi-scan configuration error')
+        }
+    }
+}
+```
+
+---
+
+## 4. Azure DevOps
+
+### Azure Pipelines (YAML)
+
+```yaml
+# azure-pipelines.yml
+trigger:
+  branches:
+    include:
+      - main
+      - 'feature/*'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.12'
+
+  - script: pip install phi-scan
+    displayName: 'Install PhiScan'
+
+  - script: |
+      phi-scan scan --diff HEAD~1 \
+        --output sarif \
+        --report-path $(Build.ArtifactStagingDirectory)/phi-scan.sarif
+    displayName: 'Scan for PHI'
+    continueOnError: true
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish SARIF report'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)/phi-scan.sarif'
+      ArtifactName: 'phi-scan-results'
+    condition: always()
+```
+
+> **Azure DevOps Advanced Security:** Upload the SARIF artifact to Advanced Security
+> using the `AdvancedSecurity-Publish` task if your organisation has it enabled.
+
+---
+
+## 5. CircleCI
+
+JUnit XML format integrates with CircleCI's Test Summary view.
+
+```yaml
+# .circleci/config.yml
+version: 2.1
+
+jobs:
+  phi-scan:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - run:
+          name: Install PhiScan
+          command: pip install phi-scan
+      - run:
+          name: Scan for PHI
+          command: |
+            mkdir -p test-results/phi-scan
+            phi-scan scan --diff HEAD~1 \
+              --output junit \
+              --report-path test-results/phi-scan/results.xml
+      - store_test_results:
+          path: test-results
+      - store_artifacts:
+          path: test-results/phi-scan/results.xml
+
+workflows:
+  main:
+    jobs:
+      - phi-scan
+```
+
+---
+
+## 6. Bitbucket Pipelines
+
+```yaml
+# bitbucket-pipelines.yml
+image: python:3.12-slim
+
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: PHI Scan
+          script:
+            - pip install phi-scan
+            - phi-scan scan --diff HEAD~1
+                --output sarif
+                --report-path phi-scan.sarif
+          after-script:
+            - pipe: atlassian/bitbucket-upload-file:0.3.2
+              variables:
+                BITBUCKET_USERNAME: $BITBUCKET_USERNAME
+                BITBUCKET_APP_PASSWORD: $BITBUCKET_APP_PASSWORD
+                FILENAME: 'phi-scan.sarif'
+```
+
+> **Bitbucket Code Insights:** Use the Bitbucket REST API to post SARIF findings as
+> Code Insights annotations on pull requests. The `phi-scan.sarif` artifact produced
+> above can be parsed and submitted to the
+> `reports/{reportKey}/annotations` endpoint.
+
+---
+
+## 7. AWS CodeBuild
+
+```yaml
+# buildspec.yml
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - pip install phi-scan
+
+  build:
+    commands:
+      - phi-scan scan --diff HEAD~1
+          --output sarif
+          --report-path phi-scan.sarif
+          || true
+
+  post_build:
+    commands:
+      - aws s3 cp phi-scan.sarif s3://${ARTIFACT_BUCKET}/phi-scan/phi-scan.sarif
+
+reports:
+  phi-scan-report:
+    files:
+      - 'phi-scan.sarif'
+    file-format: SARIF
+```
+
+> **AWS Security Hub:** Convert the SARIF output to Amazon Security Finding Format
+> (ASFF) and import via `aws securityhub batch-import-findings` to surface results
+> in the Security Hub dashboard.
+
+---
+
+## Environment Variable Auto-Detection
+
+PhiScan auto-detects the CI/CD platform from environment variables and selects the
+correct integration automatically:
+
+| Environment variable | Platform |
+|---|---|
+| `GITHUB_ACTIONS=true` | GitHub Actions |
+| `GITLAB_CI=true` | GitLab CI |
+| `JENKINS_URL` | Jenkins |
+| `SYSTEM_TEAMFOUNDATIONCOLLECTIONURI` | Azure DevOps |
+| `CIRCLECI=true` | CircleCI |
+| `BITBUCKET_BUILD_NUMBER` | Bitbucket Pipelines |
+| `CODEBUILD_BUILD_ID` | AWS CodeBuild |
+
+When auto-detected, PhiScan adjusts console output accordingly (e.g. suppresses Rich
+formatting in environments that do not support ANSI codes).
 
 ---
 
 ## Exit Codes
 
-Both integration methods rely on phi-scan's standard exit codes:
+All integrations rely on the standard exit codes:
 
-| Code | Meaning |
-|---|---|
-| `0` | No findings (or all findings covered by baseline in `--baseline` mode) |
-| `1` | PHI/PII findings detected — commit blocked |
-| `2` | Scan error (config invalid, file unreadable, etc.) |
+| Code | Meaning | CI behaviour |
+|---|---|---|
+| `0` | No findings (or all covered by baseline) | Job passes |
+| `1` | PHI/PII detected | Job fails — blocks merge |
+| `2` | Configuration error or invalid CLI argument | Job fails |
