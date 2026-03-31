@@ -364,6 +364,10 @@ _UNSUPPORTED_OUTPUT_FORMAT_ERROR: str = (
 _INVALID_SEVERITY_THRESHOLD_ERROR: str = (
     "Invalid severity threshold {value!r}. Accepted values: info, low, medium, high."
 )
+_NO_CONFIG_FILE_HINT: str = (
+    "No {filename} found — using built-in defaults. "
+    "Run `phi-scan config init` to create a config file."
+)
 
 # ---------------------------------------------------------------------------
 # Log level configuration
@@ -551,6 +555,8 @@ def _load_scan_config(config_path: Path | None, severity_threshold: str | None) 
                     path=str(resolved_config_path), error=config_error
                 )
             )
+        else:
+            typer.echo(_NO_CONFIG_FILE_HINT.format(filename=resolved_config_path.name), err=True)
         scan_config = ScanConfig()
     if severity_threshold is None:
         return scan_config

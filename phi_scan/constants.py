@@ -529,6 +529,16 @@ class SeverityLevel(StrEnum):
     HIGH = "high"
 
 
+# Numeric rank for each SeverityLevel — used for threshold comparisons.
+# Higher rank = more severe. INFO=0, LOW=1, MEDIUM=2, HIGH=3.
+SEVERITY_RANK: dict[SeverityLevel, int] = {
+    SeverityLevel.INFO: 0,
+    SeverityLevel.LOW: 1,
+    SeverityLevel.MEDIUM: 2,
+    SeverityLevel.HIGH: 3,
+}
+
+
 class DetectionLayer(StrEnum):
     """The detection layers that can produce a ScanFinding.
 

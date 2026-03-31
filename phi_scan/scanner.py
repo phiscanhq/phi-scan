@@ -22,6 +22,7 @@ from phi_scan.constants import (
     BYTES_PER_MEGABYTE,
     DEFAULT_TEXT_ENCODING,
     KNOWN_BINARY_EXTENSIONS,
+    SEVERITY_RANK,
     PathspecMatchStyle,
     PhiCategory,
     RiskLevel,
@@ -417,7 +418,7 @@ def _apply_post_scan_filters(
     file_content: str,
     config: ScanConfig,
 ) -> list[ScanFinding]:
-    """Apply suppression and confidence filters to raw detection findings.
+    """Apply suppression, confidence, and severity filters to raw detection findings.
 
     Called after detection (fresh scan) and after cache retrieval so that
     threshold or suppression changes take effect even when returning cached results.
@@ -425,13 +426,14 @@ def _apply_post_scan_filters(
     Args:
         raw_findings: Unfiltered findings from detect_phi_in_text_content.
         file_content: Raw file content used to parse suppression directives.
-        config: Scan configuration controlling the confidence threshold.
+        config: Scan configuration controlling the confidence and severity thresholds.
 
     Returns:
-        Findings that passed both suppression and threshold filtering.
+        Findings that passed suppression, confidence, and severity filtering.
     """
     filtered = _apply_suppression_filter(raw_findings, file_content)
-    return _apply_confidence_filter(filtered, config.confidence_threshold)
+    filtered = _apply_confidence_filter(filtered, config.confidence_threshold)
+    return _apply_severity_filter(filtered, config.severity_threshold)
 
 
 def _preprocess_content_for_scan(file_content: str, file_path: Path) -> str:
@@ -518,6 +520,23 @@ def _apply_confidence_filter(
         Findings at or above confidence_threshold.
     """
     return [f for f in findings if f.confidence >= confidence_threshold]
+
+
+def _apply_severity_filter(
+    findings: list[ScanFinding],
+    severity_threshold: SeverityLevel,
+) -> list[ScanFinding]:
+    """Remove findings below the configured severity threshold.
+
+    Args:
+        findings: Confidence-filtered findings.
+        severity_threshold: Minimum severity level to retain a finding.
+
+    Returns:
+        Findings whose severity rank is at or above severity_threshold.
+    """
+    minimum_rank = SEVERITY_RANK[severity_threshold]
+    return [f for f in findings if SEVERITY_RANK[f.severity] >= minimum_rank]
 
 
 def _scan_archive_content(

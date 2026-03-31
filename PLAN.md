@@ -1293,31 +1293,31 @@ then enforce zero new PHI going forward.
 
 ### Phase 3 Verification Checklist
 
-- [ ] All four output formats produce valid, parseable output (table, json, csv, sarif)
-- [ ] CSV imports cleanly into Excel/Google Sheets
-- [ ] `--verbose` shows scan timing breakdown
-- [ ] `--severity-threshold high` filters low/medium findings
-- [ ] `--report-path` writes report to specified location
-- [ ] Package installs from PyPI with `pipx install phi-scan`
-- [ ] `phi-scan explain confidence` renders clear, formatted explanation in terminal
-- [ ] All 9 explain topics render correctly with Rich formatting
-- [ ] `docs/` folder contains all 7 core documentation files
-- [ ] README.md has badges, quick start, command reference
-- [ ] CODE_OF_CONDUCT.md merged to repo
-- [ ] Bug report and feature request issue templates live on GitHub
-- [ ] PR template with checklist live on GitHub
-- [ ] GitHub Discussions enabled with categories
-- [ ] `--output junit` produces valid JUnit XML consumable by CI test reporters
-- [ ] `--output codequality` produces valid GitLab Code Quality JSON
-- [ ] `--output gitlab-sast` produces valid GitLab SAST JSON v15+
-- [ ] Error messages suggest next steps (not just "failed")
-- [ ] First-run experience guides new user to `config init`
-- [ ] `phi-scan baseline create` creates `.phi-scanbaseline` with current findings
-- [ ] `phi-scan scan --baseline` only flags new findings, baselined shown as dimmed
-- [ ] Baseline entries auto-expire after configured age
-- [ ] `.pre-commit-hooks.yaml` works with `pre-commit run --all-files`
-- [ ] GitHub Release published automatically on tag push
-- [ ] CHANGELOG.md updated with 0.3.0 release notes
+- [x] All four output formats produce valid, parseable output (table, json, csv, sarif)
+- [x] CSV imports cleanly into Excel/Google Sheets
+- [x] `--verbose` shows scan timing breakdown
+- [x] `--severity-threshold high` filters low/medium findings
+- [x] `--report-path` writes report to specified location
+- [x] Package installs from PyPI with `pipx install phi-scan`
+- [x] `phi-scan explain confidence` renders clear, formatted explanation in terminal
+- [x] All 9 explain topics render correctly with Rich formatting
+- [x] `docs/` folder contains all 7 core documentation files
+- [x] README.md has badges, quick start, command reference
+- [x] CODE_OF_CONDUCT.md merged to repo
+- [x] Bug report and feature request issue templates live on GitHub
+- [x] PR template with checklist live on GitHub
+- [x] GitHub Discussions enabled with categories
+- [x] `--output junit` produces valid JUnit XML consumable by CI test reporters
+- [x] `--output codequality` produces valid GitLab Code Quality JSON
+- [x] `--output gitlab-sast` produces valid GitLab SAST JSON v15+
+- [x] Error messages suggest next steps (not just "failed")
+- [x] First-run experience guides new user to `config init`
+- [x] `phi-scan baseline create` creates `.phi-scanbaseline` with current findings
+- [x] `phi-scan scan --baseline` only flags new findings, baselined shown as dimmed
+- [x] Baseline entries auto-expire after configured age
+- [x] `.pre-commit-hooks.yaml` works with `pre-commit run --all-files`
+- [x] GitHub Release published automatically on tag push
+- [x] CHANGELOG.md updated with 0.3.0 release notes
 
 ---
 
