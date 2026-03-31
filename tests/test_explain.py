@@ -1,3 +1,4 @@
+# phi-scan:ignore-file
 """Tests for the explain command group — all 9 topics render without error.
 
 Each explain sub-command must:
@@ -39,8 +40,6 @@ _EXPLAIN_TOPIC_KEYWORDS: list[tuple[str, str]] = [
 
 _EXPLAIN_TOPIC_NAMES: list[str] = [topic for topic, _ in _EXPLAIN_TOPIC_KEYWORDS]
 
-_EXIT_CODE_SUCCESS: int = EXIT_CODE_CLEAN
-
 
 # ---------------------------------------------------------------------------
 # Shared runner
@@ -59,7 +58,7 @@ class TestExplainTopicsExitCleanly:
     def test_explain_topic_exits_with_code_zero(self, topic: str) -> None:
         result = _runner.invoke(app, ["explain", topic])
 
-        assert result.exit_code == _EXIT_CODE_SUCCESS, (
+        assert result.exit_code == EXIT_CODE_CLEAN, (
             f"explain {topic!r} exited {result.exit_code} — output: {result.output[:200]!r}"
         )
 
@@ -102,7 +101,7 @@ class TestExplainTopicsContainExpectedContent:
 def test_explain_help_exits_cleanly() -> None:
     result = _runner.invoke(app, ["explain", "--help"])
 
-    assert result.exit_code == _EXIT_CODE_SUCCESS
+    assert result.exit_code == EXIT_CODE_CLEAN
 
 
 # ---------------------------------------------------------------------------

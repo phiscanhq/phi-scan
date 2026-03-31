@@ -248,8 +248,8 @@ class TestOutputFormatsViaCli:
 
         assert result.exit_code == EXIT_CODE_VIOLATION
         parsed = json.loads(result.output)
-        results: list[object] = parsed["runs"][0]["results"]
-        assert len(results) >= 1
+        sarif_results: list[object] = parsed["runs"][0]["results"]
+        assert len(sarif_results) >= 1
 
 
 # ---------------------------------------------------------------------------

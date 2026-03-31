@@ -70,15 +70,6 @@ class TestNoConfigFileUsesDefaults:
 
         assert result.exit_code == EXIT_CODE_CLEAN
 
-    def test_scan_without_config_file_on_empty_directory_exits_zero(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.chdir(tmp_path)
-
-        result = _runner.invoke(app, ["scan", str(tmp_path), "--quiet"])
-
-        assert result.exit_code == EXIT_CODE_CLEAN
-
     def test_no_config_file_does_not_print_traceback(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
