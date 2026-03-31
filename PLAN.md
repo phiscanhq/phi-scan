@@ -48,9 +48,9 @@ All tools confirmed installed and version-verified in WSL on March 15, 2026:
 
 ---
 
-## Current State (March 29, 2026)
+## Current State (March 31, 2026)
 
-**Phase 1 complete. Phase 2 complete. Phase 3A complete. Phase 3B complete. Phase 3C complete. Phase 3D next.**
+**Phase 1 complete. Phase 2 complete. Phase 3A complete. Phase 3B complete. Phase 3C complete. Phase 3D complete. v0.3.0 published to PyPI. Phase 4 next.**
 
 ```
 phi-scan/
@@ -1255,14 +1255,14 @@ then enforce zero new PHI going forward.
 
 ### 3D — Package & First Publish
 
-- [ ] **3D.1** Finalize `pyproject.toml` — `[project.scripts]` entry point, classifiers, license (MIT)
-- [ ] **3D.2** Configure `pyproject.toml` build includes — ensure `.phi-scanner.yml` template, `py.typed`, and non-Python assets included in sdist/wheel
-- [ ] **3D.3** Pin all dependency versions in `pyproject.toml`
-- [ ] **3D.4** `uv build` — produce sdist and wheel
-- [ ] **3D.5** Test `pipx install ./dist/phi_scan-0.3.0.tar.gz` end-to-end
-- [ ] **3D.6** `uv publish` — publish to PyPI (triggered by `v0.3.0` tag via GitHub Actions release workflow)
-- [ ] **3D.7** Verify `pipx install phi-scan` works from PyPI
-- [ ] **3D.8** GitHub Release created automatically with changelog from `CHANGELOG.md`
+- [x] **3D.1** Finalize `pyproject.toml` — `[project.scripts]` entry point, classifiers, license (MIT)
+- [x] **3D.2** Configure `pyproject.toml` build includes — ensure `.phi-scanner.yml` template, `py.typed`, and non-Python assets included in sdist/wheel
+- [x] **3D.3** Pin all dependency versions in `pyproject.toml`
+- [x] **3D.4** `uv build` — produce sdist and wheel
+- [x] **3D.5** Test `pipx install ./dist/phi_scan-0.3.0.tar.gz` end-to-end
+- [x] **3D.6** `uv publish` — publish to PyPI (triggered by `v0.3.0` tag via GitHub Actions release workflow)
+- [x] **3D.7** Verify `pipx install phi-scan` works from PyPI
+- [x] **3D.8** GitHub Release created automatically with changelog from `CHANGELOG.md`
 
 ### 3E — Documentation (Core Set)
 
