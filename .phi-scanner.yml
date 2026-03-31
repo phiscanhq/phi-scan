@@ -8,8 +8,12 @@ version: 1
 
 scan:
   # Minimum confidence score to report a finding (0.0–1.0).
-  # Below 0.40 = INFO level — logged but not flagged by default.
-  confidence_threshold: 0.6
+  # Set to 0.7 for this repo: context-dependent patterns without matching context
+  # keywords (e.g. HEALTH_PLAN_NUMBER matching any 8–20 char identifier) fire at
+  # 0.65 (_CONFIDENCE_CONTEXT_ABSENT) and generate false positives in source code.
+  # Context-confirmed findings (0.88) and structural patterns (SSN, MBI, etc.) are
+  # well above 0.7 and are unaffected. Clinical repos should set this to 0.5–0.6.
+  confidence_threshold: 0.7
 
   # Minimum severity level to include in output and exit-code evaluation.
   # Maps to the SeverityLevel enum (not RiskLevel — that is per-scan aggregate).

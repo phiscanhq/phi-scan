@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
+import pathspec
 import typer
 from rich.live import Live
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -47,6 +48,7 @@ from phi_scan.constants import (
     EXIT_CODE_VIOLATION,
     IMPLEMENTED_OUTPUT_FORMATS,
     OutputFormat,
+    PathspecMatchStyle,
     SeverityLevel,
 )
 from phi_scan.diff import get_changed_files_from_diff
@@ -119,6 +121,7 @@ from phi_scan.scanner import (
     build_scan_result,
     collect_scan_targets,
     execute_scan,
+    is_path_excluded,
     load_ignore_patterns,
     scan_file,
 )
@@ -573,7 +576,15 @@ def _resolve_scan_targets(options: _ScanTargetOptions) -> list[Path]:
     if options.single_file is not None:
         return [options.single_file]
     if options.diff_ref is not None:
-        return get_changed_files_from_diff(options.diff_ref)
+        ignore_patterns = load_ignore_patterns(Path(DEFAULT_IGNORE_FILENAME))
+        if options.config.exclude_paths:
+            ignore_patterns.extend(options.config.exclude_paths)
+        exclusion_spec = pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, ignore_patterns)
+        return [
+            file_path
+            for file_path in get_changed_files_from_diff(options.diff_ref)
+            if not is_path_excluded(file_path, exclusion_spec)
+        ]
     ignore_patterns = load_ignore_patterns(Path(DEFAULT_IGNORE_FILENAME))
     if options.config.exclude_paths:
         ignore_patterns.extend(options.config.exclude_paths)
@@ -1164,8 +1175,8 @@ def watch(
     )
     event_handler = _FileChangeMonitor(watch_context)
     observer = Observer()
-    observer.schedule(event_handler, str(watch_path), recursive=True)
-    observer.start()
+    observer.schedule(event_handler, str(watch_path), recursive=True)  # type: ignore[no-untyped-call]
+    observer.start()  # type: ignore[no-untyped-call]
     try:
         _display_watch_live_screen(watch_path, watch_context.watch_events)
     except KeyboardInterrupt:
@@ -1173,7 +1184,7 @@ def watch(
         # into a clean exit code before the finally block tears down the observer.
         raise typer.Exit(code=EXIT_CODE_CLEAN)
     finally:
-        observer.stop()
+        observer.stop()  # type: ignore[no-untyped-call]
         observer.join()
 
 
