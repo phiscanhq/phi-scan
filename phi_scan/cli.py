@@ -562,6 +562,21 @@ def _load_scan_config(config_path: Path | None, severity_threshold: str | None) 
     return dataclasses.replace(scan_config, severity_threshold=parsed_severity)
 
 
+def _load_combined_ignore_patterns(scan_config: ScanConfig) -> list[str]:
+    """Return .phi-scanignore patterns merged with any config-level exclude_paths.
+
+    Args:
+        scan_config: Active scan configuration (provides optional exclude_paths).
+
+    Returns:
+        Flat list of gitignore-style exclusion patterns ready for pathspec.
+    """
+    ignore_patterns = load_ignore_patterns(Path(DEFAULT_IGNORE_FILENAME))
+    if scan_config.exclude_paths:
+        ignore_patterns.extend(scan_config.exclude_paths)
+    return ignore_patterns
+
+
 def _resolve_scan_targets(options: _ScanTargetOptions) -> list[Path]:
     """Return the list of files to scan based on the mode flags in options.
 
@@ -575,19 +590,14 @@ def _resolve_scan_targets(options: _ScanTargetOptions) -> list[Path]:
     """
     if options.single_file is not None:
         return [options.single_file]
+    ignore_patterns = _load_combined_ignore_patterns(options.config)
     if options.diff_ref is not None:
-        ignore_patterns = load_ignore_patterns(Path(DEFAULT_IGNORE_FILENAME))
-        if options.config.exclude_paths:
-            ignore_patterns.extend(options.config.exclude_paths)
         exclusion_spec = pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, ignore_patterns)
         return [
-            file_path
-            for file_path in get_changed_files_from_diff(options.diff_ref)
-            if not is_path_excluded(file_path, exclusion_spec)
+            diff_file
+            for diff_file in get_changed_files_from_diff(options.diff_ref)
+            if not is_path_excluded(diff_file, exclusion_spec)
         ]
-    ignore_patterns = load_ignore_patterns(Path(DEFAULT_IGNORE_FILENAME))
-    if options.config.exclude_paths:
-        ignore_patterns.extend(options.config.exclude_paths)
     return collect_scan_targets(options.scan_root, ignore_patterns, options.config)
 
 
