@@ -107,6 +107,24 @@ _MAX_CONTEXT_CHARS: int = 200
 # Top-N files shown in the files-with-most-findings chart
 _TOP_FILES_COUNT: int = 10
 
+# Chart file-label truncation threshold (chars before "..." prefix is added)
+_MAX_LABEL_CHARS: int = 40
+
+# Chart colours — matplotlib requires the leading "#"; fpdf2 constants above do not
+_CHART_COLOUR_ACTIVE: str = "#C0392B"  # bar/value with findings
+_CHART_COLOUR_INACTIVE: str = "#BDC3C7"  # bar with zero findings
+_CHART_COLOUR_NEUTRAL: str = "#95A5A6"  # severity fallback / unknown
+_CHART_COLOUR_BLUE: str = "#2980B9"  # trend line and top-files bars
+_CHART_COLOUR_SEVERITY_HIGH: str = "#C0392B"
+_CHART_COLOUR_SEVERITY_MEDIUM: str = "#E67E22"
+_CHART_COLOUR_SEVERITY_LOW: str = "#27AE60"
+_CHART_COLOUR_SEVERITY_INFO: str = "#3498DB"
+
+# Trend-line chart style constants
+_CHART_LINE_WIDTH: int = 2
+_CHART_FILL_ALPHA: float = 0.15
+_CHART_MARKER_STYLE: str = "o"
+
 # PDF findings table column widths and headers
 _PDF_COL_WIDTHS: tuple[float, ...] = (8.0, 52.0, 10.0, 28.0, 26.0, 16.0, 14.0, 16.0)
 _PDF_COL_HEADERS: tuple[str, ...] = (
@@ -191,6 +209,20 @@ def _severity_row_colour(severity: SeverityLevel) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _truncate_file_label(label: str) -> str:
+    """Shorten a file path label to _MAX_LABEL_CHARS for chart readability.
+
+    Args:
+        label: Raw file path string.
+
+    Returns:
+        Original label when short enough; otherwise a "..."-prefixed tail.
+    """
+    if len(label) <= _MAX_LABEL_CHARS:
+        return label
+    return "..." + label[-(_MAX_LABEL_CHARS - 1) :]
+
+
 def _render_chart_to_base64(figure: object) -> str:
     """Render a matplotlib Figure to a base64-encoded PNG string."""
     buffer = io.BytesIO()
@@ -227,11 +259,11 @@ def _build_category_chart(scan_result: ScanResult) -> object:
         category_counts = {"(no findings)": 0}
 
     sorted_items = sorted(category_counts.items(), key=lambda pair: pair[1], reverse=True)
-    labels = [item[0] for item in sorted_items]
-    values = [item[1] for item in sorted_items]
+    labels = [category_label for category_label, _ in sorted_items]
+    values = [category_value for _, category_value in sorted_items]
 
     fig, axis = plt.subplots(figsize=(_CHART_WIDTH_INCHES, _CHART_HEIGHT_CATEGORY_INCHES))
-    colours = ["#C0392B" if v > 0 else "#BDC3C7" for v in values]
+    colours = [_CHART_COLOUR_ACTIVE if v > 0 else _CHART_COLOUR_INACTIVE for v in values]
     bars = axis.barh(labels, values, color=colours)
     axis.bar_label(bars, padding=3, fontsize=8)
     axis.set_xlabel("Findings Count")
@@ -266,12 +298,12 @@ def _build_severity_chart(scan_result: ScanResult) -> object:
     pie_labels = [f"{lvl.value.title()} ({severity_data[lvl]})" for lvl in ordered_levels]
     pie_values = [severity_data[lvl] for lvl in ordered_levels]
     level_colours: dict[SeverityLevel, str] = {
-        SeverityLevel.HIGH: "#C0392B",
-        SeverityLevel.MEDIUM: "#E67E22",
-        SeverityLevel.LOW: "#27AE60",
-        SeverityLevel.INFO: "#3498DB",
+        SeverityLevel.HIGH: _CHART_COLOUR_SEVERITY_HIGH,
+        SeverityLevel.MEDIUM: _CHART_COLOUR_SEVERITY_MEDIUM,
+        SeverityLevel.LOW: _CHART_COLOUR_SEVERITY_LOW,
+        SeverityLevel.INFO: _CHART_COLOUR_SEVERITY_INFO,
     }
-    colours = [level_colours.get(lvl, "#95A5A6") for lvl in ordered_levels]
+    colours = [level_colours.get(lvl, _CHART_COLOUR_NEUTRAL) for lvl in ordered_levels]
 
     axis.pie(
         pie_values,
@@ -308,11 +340,10 @@ def _build_top_files_chart(scan_result: ScanResult) -> object:
         plt.close(fig)
         return fig
 
-    raw_labels = [pair[0] for pair in top_files]
-    values = [pair[1] for pair in top_files]
-    display_labels = [label if len(label) <= 40 else "..." + label[-39:] for label in raw_labels]
+    display_labels = [_truncate_file_label(fp) for fp, _ in top_files]
+    counts = [count for _, count in top_files]
 
-    bars = axis.barh(display_labels, values, color="#2980B9")
+    bars = axis.barh(display_labels, counts, color=_CHART_COLOUR_BLUE)
     axis.bar_label(bars, padding=3, fontsize=8)
     axis.set_xlabel("Findings Count")
     axis.set_title(f"Top {len(top_files)} Files by Finding Count")
@@ -320,6 +351,31 @@ def _build_top_files_chart(scan_result: ScanResult) -> object:
     fig.tight_layout()
     plt.close(fig)
     return fig
+
+
+def _parse_audit_dates_and_counts(
+    audit_rows: list[dict[str, object]],
+) -> tuple[list[datetime], list[int]]:
+    """Extract (date, findings_count) pairs from audit rows, skipping unparseable rows.
+
+    Args:
+        audit_rows: Raw rows from query_recent_scans.
+
+    Returns:
+        Tuple of (dates list, counts list), both in chronological order.
+    """
+    dates: list[datetime] = []
+    counts: list[int] = []
+    for row in sorted(audit_rows, key=lambda r: str(r.get("scanned_at", ""))):
+        raw_timestamp = row.get("scanned_at", "")
+        try:
+            parsed_date = datetime.fromisoformat(str(raw_timestamp))
+        except (ValueError, TypeError):
+            continue
+        dates.append(parsed_date)
+        raw_count = row.get("findings_count", 0)
+        counts.append(int(raw_count) if isinstance(raw_count, (int, float, str)) else 0)
+    return dates, counts
 
 
 def _build_trend_chart(audit_rows: list[dict[str, object]]) -> object:
@@ -331,36 +387,24 @@ def _build_trend_chart(audit_rows: list[dict[str, object]]) -> object:
     import matplotlib.pyplot as plt
 
     fig, axis = plt.subplots(figsize=(_CHART_WIDTH_INCHES, _CHART_HEIGHT_TREND_INCHES))
+    dates, counts = _parse_audit_dates_and_counts(audit_rows) if audit_rows else ([], [])
 
-    if not audit_rows:
+    if not dates:
         axis.text(0.5, 0.5, "No audit history available", ha="center", va="center", fontsize=12)
         axis.axis("off")
         fig.tight_layout()
         plt.close(fig)
         return fig
 
-    dates = []
-    counts = []
-    for row in sorted(audit_rows, key=lambda r: str(r.get("scanned_at", ""))):
-        raw_timestamp = row.get("scanned_at", "")
-        try:
-            parsed_date = datetime.fromisoformat(str(raw_timestamp))
-        except (ValueError, TypeError):
-            continue
-        dates.append(parsed_date)
-        raw_count = row.get("findings_count", 0)
-        counts.append(int(raw_count) if isinstance(raw_count, (int, float, str)) else 0)
-
-    if not dates:
-        axis.text(0.5, 0.5, "No dated audit records", ha="center", va="center", fontsize=12)
-        axis.axis("off")
-        fig.tight_layout()
-        plt.close(fig)
-        return fig
-
     date_nums = mdates.date2num(dates)  # type: ignore[no-untyped-call]
-    axis.plot(date_nums, counts, marker="o", linewidth=2, color="#2980B9")
-    axis.fill_between(date_nums, counts, alpha=0.15, color="#2980B9")
+    axis.plot(
+        date_nums,
+        counts,
+        marker=_CHART_MARKER_STYLE,
+        linewidth=_CHART_LINE_WIDTH,
+        color=_CHART_COLOUR_BLUE,
+    )
+    axis.fill_between(date_nums, counts, alpha=_CHART_FILL_ALPHA, color=_CHART_COLOUR_BLUE)
     axis.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))  # type: ignore[no-untyped-call]
     axis.xaxis.set_major_locator(mdates.AutoDateLocator())  # type: ignore[no-untyped-call]
     fig.autofmt_xdate()
