@@ -124,5 +124,8 @@ phi_scan/
 
 # Scanner configuration files — .phi-scanner.yml and .phi-scanignore reference
 # pattern names and detection concepts that match the scanner's own rules.
+# .gitignore comments reference PHI-adjacent concepts (credentials, hashes,
+# PHI values) that produce false positives against the quasi-identifier detector.
 .phi-scanner.yml
 .phi-scanignore
+.gitignore
