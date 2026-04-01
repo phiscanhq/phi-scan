@@ -471,6 +471,16 @@ class _FileChangeMonitor(FileSystemEventHandler):
     """
 
     def __init__(self, watch_config: _WatchConfig, watch_events: deque[WatchEvent]) -> None:
+        """Bind the immutable watch configuration and the mutable event buffer.
+
+        watch_config and watch_events are kept separate so that frozen=True on
+        _WatchConfig enforces the read-only invariant — scan_config must not be
+        mutated on the watchdog background thread.
+
+        Args:
+            watch_config: Frozen config holding watch_root and scan_config.
+            watch_events: Shared rolling deque appended to on each file change.
+        """
         super().__init__()
         self._watch_config = watch_config
         self._watch_events = watch_events
@@ -613,14 +623,30 @@ def _resolve_scan_targets(options: _ScanTargetOptions) -> list[Path]:
         return [
             diff_file
             for diff_file in get_changed_files_from_diff(options.diff_ref)
-            if not is_path_excluded(
-                diff_file.relative_to(scan_root)
-                if diff_file.is_relative_to(scan_root)
-                else diff_file,
-                exclusion_spec,
-            )
+            if not is_path_excluded(_normalize_diff_path(diff_file, scan_root), exclusion_spec)
         ]
     return collect_scan_targets(options.scan_root, ignore_patterns, options.config)
+
+
+def _normalize_diff_path(diff_file: Path, scan_root: Path) -> Path:
+    """Return diff_file as a path relative to scan_root for exclusion matching.
+
+    get_changed_files_from_diff returns absolute paths. Gitignore-style exclusion
+    patterns require relative paths to match correctly — an absolute path like
+    /home/user/project/tests/test_audit.py will never match the pattern
+    tests/test_audit.py. Falling back to the absolute path preserves behaviour
+    for files outside the scan root.
+
+    Args:
+        diff_file: Absolute path returned by get_changed_files_from_diff.
+        scan_root: Resolved absolute scan root used to make the path relative.
+
+    Returns:
+        Path relative to scan_root when diff_file is inside it, otherwise diff_file.
+    """
+    if diff_file.is_relative_to(scan_root):
+        return diff_file.relative_to(scan_root)
+    return diff_file
 
 
 def _truncate_filename_for_progress(file_path: Path) -> str:
@@ -709,25 +735,25 @@ def _resolve_output_format(output_format: str) -> OutputFormat:
         raise typer.Exit(code=EXIT_CODE_ERROR) from value_error
 
 
-def _execute_scan_phases(
+def _prepare_scan_phase(
     target_options: _ScanTargetOptions,
-    output_options: _ScanOutputOptions,
+    is_rich_mode: bool,
     is_verbose: bool,
-) -> ScanResult:
-    """Collect targets, run the scan, and write the audit record.
+) -> list[Path]:
+    """Emit collection-phase feedback and return the resolved scan target list.
 
-    Handles all three middle phases of the scan command with Rich display
-    calls gated on output_options.is_rich_mode.
+    Displays the collecting phase, resolves which files to scan, then displays
+    the file-type summary and announces the scanning phase. The return value
+    is ready to pass directly to _execute_scan_with_progress.
 
     Args:
         target_options: Scan root, diff ref, single file, and config.
-        output_options: Output format and Rich mode flag.
+        is_rich_mode: Whether Rich terminal display is active.
         is_verbose: Whether to emit verbose phase messages to stderr.
 
     Returns:
-        The completed ScanResult after scanning and audit write.
+        Ordered list of file paths selected for scanning.
     """
-    is_rich_mode = output_options.is_rich_mode
     if is_rich_mode:
         display_phase_collecting()
     _emit_verbose_phase(_VERBOSE_PHASE_COLLECTING, is_verbose)
@@ -736,13 +762,7 @@ def _execute_scan_phases(
         display_file_type_summary(scan_targets)
         display_phase_scanning()
     _emit_verbose_phase(_VERBOSE_PHASE_SCANNING.format(count=len(scan_targets)), is_verbose)
-    scan_result = _execute_scan_with_progress(scan_targets, target_options.config, is_rich_mode)
-    if is_rich_mode:
-        display_phase_audit()
-    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, is_verbose)
-    with display_status_spinner(_SPINNER_AUDIT_WRITE_MESSAGE, is_active=is_rich_mode):
-        _write_audit_record(scan_result, target_options.config.database_path)
-    return scan_result
+    return scan_targets
 
 
 def _display_rich_scan_results(scan_result: ScanResult) -> None:
@@ -1296,7 +1316,13 @@ def scan(
         report_path=report_path,
         scan_target=path,
     )
-    scan_result = _execute_scan_phases(target_options, output_options, is_verbose)
+    scan_targets = _prepare_scan_phase(target_options, is_rich_mode, is_verbose)
+    scan_result = _execute_scan_with_progress(scan_targets, scan_config, is_rich_mode)
+    if is_rich_mode:
+        display_phase_audit()
+    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, is_verbose)
+    with display_status_spinner(_SPINNER_AUDIT_WRITE_MESSAGE, is_active=is_rich_mode):
+        _write_audit_record(scan_result, scan_config.database_path)
     if is_rich_mode:
         display_phase_report()
     _emit_verbose_phase(_VERBOSE_PHASE_REPORT, is_verbose)
