@@ -41,6 +41,7 @@ CLAUDE.md
 # The public roadmap lives in ROADMAP.md.
 PLAN.md
 
-# PhiScan dev-time scanner config used when scanning this repo during development.
-# Users supply their own .phi-scanner.yml; this file is not needed in the package.
-.phi-scanner.yml
+# User-local scanner config overrides — personal tuning that should not be shared.
+# The project's .phi-scanner.yml is committed; this pattern covers personal overrides
+# named with a .local suffix (e.g. .phi-scanner.local.yml).
+.phi-scanner.local.yml
