@@ -135,7 +135,7 @@ from phi_scan.scanner import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from phi_scan.compliance import ComplianceControl
 
@@ -554,7 +554,7 @@ class _ScanOutputOptions:
     is_rich_mode: bool
     report_path: Path | None
     scan_target: Path = field(default_factory=lambda: Path("."))
-    framework_annotations: dict[int, tuple[ComplianceControl, ...]] | None = None
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None
 
 
 def _configure_logging(log_level: str, log_file: Path | None, is_quiet: bool) -> None:
@@ -1367,9 +1367,10 @@ def scan(
     # _execute_scan_with_progress will propagate before output_options is configured,
     # which is acceptable — output_options has no effect until _emit_scan_output is called.
     scan_result = _execute_scan_with_progress(scan_targets, scan_config, is_rich_mode)
-    framework_annotations = (
-        annotate_findings(scan_result.findings, enabled_frameworks) if enabled_frameworks else None
-    )
+    if not enabled_frameworks:
+        framework_annotations = None
+    else:
+        framework_annotations = annotate_findings(scan_result.findings, enabled_frameworks)
     output_options = _ScanOutputOptions(
         output_format=output_format_enum,
         is_rich_mode=is_rich_mode,

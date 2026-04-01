@@ -14,6 +14,7 @@ Design constraints:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -325,7 +326,7 @@ _HITRUST_09AB = ComplianceControl(
 
 # NIST SP 800-53 Rev 5 / SP 800-122 ------------------------------------
 
-_NIST_SC28 = ComplianceControl(
+_NIST_PROTECTION_INFORMATION_AT_REST = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="SC-28",
     control_name="Protection of Information at Rest",
@@ -335,7 +336,7 @@ _NIST_SC28 = ComplianceControl(
         "encryption or access controls violates SC-28."
     ),
 )
-_NIST_SI1 = ComplianceControl(
+_NIST_SYSTEM_INTEGRITY_POLICY = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="SI-1",
     control_name="System and Information Integrity Policy",
@@ -345,7 +346,7 @@ _NIST_SI1 = ComplianceControl(
         "process failure in information integrity controls."
     ),
 )
-_NIST_PM22 = ComplianceControl(
+_NIST_PII_QUALITY_MANAGEMENT = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="PM-22",
     control_name="Personally Identifiable Information Quality Management",
@@ -355,7 +356,7 @@ _NIST_PM22 = ComplianceControl(
         "unmanaged data quality gap."
     ),
 )
-_NIST_PT2 = ComplianceControl(
+_NIST_AUTHORITY_TO_PROCESS_PII = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="PT-2",
     control_name="Authority to Process PII",
@@ -365,7 +366,7 @@ _NIST_PT2 = ComplianceControl(
         "data flows, violating PT-2."
     ),
 )
-_NIST_PT3 = ComplianceControl(
+_NIST_PURPOSES_OF_PII_PROCESSING = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="PT-3",
     control_name="Purposes of PII Processing",
@@ -375,7 +376,7 @@ _NIST_PT3 = ComplianceControl(
         "the documented and authorised purpose."
     ),
 )
-_NIST_800_122_2_1 = ComplianceControl(
+_NIST_IDENTIFY_PII = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="SP 800-122 §2.1",
     control_name="Identify PII",
@@ -384,7 +385,7 @@ _NIST_800_122_2_1 = ComplianceControl(
         "PHI detected in source code indicates a gap in PII inventory and identification."
     ),
 )
-_NIST_800_122_2_2 = ComplianceControl(
+_NIST_MINIMIZE_PII = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="SP 800-122 §2.2",
     control_name="Minimise PII",
@@ -396,7 +397,7 @@ _NIST_800_122_2_2 = ComplianceControl(
 
 # GDPR ------------------------------------------------------------------
 
-_GDPR_ART4_1 = ComplianceControl(
+_GDPR_PERSONAL_DATA_DEFINITION = ComplianceControl(
     framework=ComplianceFramework.GDPR,
     control_id="GDPR Art. 4(1)",
     control_name="Personal Data Definition",
@@ -406,7 +407,7 @@ _GDPR_ART4_1 = ComplianceControl(
         "and must be protected accordingly."
     ),
 )
-_GDPR_ART25 = ComplianceControl(
+_GDPR_PROTECTION_BY_DESIGN = ComplianceControl(
     framework=ComplianceFramework.GDPR,
     control_id="GDPR Art. 25",
     control_name="Data Protection by Design and by Default",
@@ -416,7 +417,7 @@ _GDPR_ART25 = ComplianceControl(
         "of data protection by design."
     ),
 )
-_GDPR_ART32 = ComplianceControl(
+_GDPR_SECURITY_OF_PROCESSING = ComplianceControl(
     framework=ComplianceFramework.GDPR,
     control_id="GDPR Art. 32",
     control_name="Security of Processing",
@@ -426,7 +427,7 @@ _GDPR_ART32 = ComplianceControl(
         "and encryption required by Article 32."
     ),
 )
-_GDPR_ART4_15 = ComplianceControl(
+_GDPR_HEALTH_DATA_DEFINITION = ComplianceControl(
     framework=ComplianceFramework.GDPR,
     control_id="GDPR Art. 4(15)",
     control_name="Health Data Definition",
@@ -436,7 +437,7 @@ _GDPR_ART4_15 = ComplianceControl(
         "subject to the special-category protections of Article 9."
     ),
 )
-_GDPR_ART9 = ComplianceControl(
+_GDPR_SPECIAL_CATEGORIES = ComplianceControl(
     framework=ComplianceFramework.GDPR,
     control_id="GDPR Art. 9",
     control_name="Special Categories of Personal Data",
@@ -553,16 +554,20 @@ _MRPA_HEALTH_INFORMATION = ComplianceControl(
 _SOC2_ALL = (_SOC2_CC6_1, _SOC2_CC6_6, _SOC2_CC6_7)
 _HITRUST_ALL = (_HITRUST_07A, _HITRUST_09S, _HITRUST_01V, _HITRUST_09AB)
 _NIST_ALL = (
-    _NIST_SC28,
-    _NIST_SI1,
-    _NIST_PM22,
-    _NIST_PT2,
-    _NIST_PT3,
-    _NIST_800_122_2_1,
-    _NIST_800_122_2_2,
+    _NIST_PROTECTION_INFORMATION_AT_REST,
+    _NIST_SYSTEM_INTEGRITY_POLICY,
+    _NIST_PII_QUALITY_MANAGEMENT,
+    _NIST_AUTHORITY_TO_PROCESS_PII,
+    _NIST_PURPOSES_OF_PII_PROCESSING,
+    _NIST_IDENTIFY_PII,
+    _NIST_MINIMIZE_PII,
 )
-_GDPR_BASE = (_GDPR_ART4_1, _GDPR_ART25, _GDPR_ART32)
-_GDPR_HEALTH = (*_GDPR_BASE, _GDPR_ART4_15, _GDPR_ART9)
+_GDPR_BASE = (
+    _GDPR_PERSONAL_DATA_DEFINITION,
+    _GDPR_PROTECTION_BY_DESIGN,
+    _GDPR_SECURITY_OF_PROCESSING,
+)
+_GDPR_HEALTH = (*_GDPR_BASE, _GDPR_HEALTH_DATA_DEFINITION, _GDPR_SPECIAL_CATEGORIES)
 _GDPR_PERSONAL = _GDPR_BASE  # non-health personal data
 _HITECH_ALL = (_HITECH_BREACH_NOTIFICATION,)
 _CMIA_BASE = (_CMIA_MEDICAL_INFORMATION,)
@@ -708,7 +713,7 @@ CATEGORY_CONTROLS: dict[PhiCategory, tuple[ComplianceControl, ...]] = {
         _hipaa("P", "Biometric Identifiers Including Finger and Voice Prints"),
         *_UNIVERSAL_SECONDARY,
         *_GDPR_HEALTH,
-        _GDPR_ART9,  # Art. 9 explicitly covers biometric for unique identification
+        _GDPR_SPECIAL_CATEGORIES,  # Art. 9 explicitly covers biometric for unique identification
         _CMIA_BASE[0],
         _BIPA_BIOMETRIC_COLLECTION,
         _GINA_TITLE_II,
@@ -719,7 +724,7 @@ CATEGORY_CONTROLS: dict[PhiCategory, tuple[ComplianceControl, ...]] = {
         _hipaa("Q", "Full-Face Photographs and Comparable Images"),
         *_UNIVERSAL_SECONDARY,
         *_GDPR_HEALTH,
-        _GDPR_ART9,  # biometric data derived from photographs
+        _GDPR_SPECIAL_CATEGORIES,  # biometric data derived from photographs
         _CMIA_BASE[0],
         _MRPA_HEALTH_INFORMATION,
     ),
@@ -766,10 +771,18 @@ CATEGORY_CONTROLS: dict[PhiCategory, tuple[ComplianceControl, ...]] = {
 _HIPAA_SINGLETON: frozenset[ComplianceFramework] = frozenset({ComplianceFramework.HIPAA})
 
 
+def _filter_controls_for_frameworks(
+    controls: tuple[ComplianceControl, ...],
+    effective: frozenset[ComplianceFramework],
+) -> tuple[ComplianceControl, ...]:
+    """Return only the controls whose framework is in *effective*."""
+    return tuple(c for c in controls if c.framework in effective)
+
+
 def annotate_findings(
     findings: tuple[ScanFinding, ...],
     enabled_frameworks: frozenset[ComplianceFramework],
-) -> dict[int, tuple[ComplianceControl, ...]]:
+) -> Mapping[int, tuple[ComplianceControl, ...]]:
     """Return per-finding compliance controls for the enabled frameworks.
 
     Keys are 0-based positional indices produced by enumerate() over *findings*
@@ -788,14 +801,13 @@ def annotate_findings(
             added automatically if absent.
 
     Returns:
-        Dict mapping 0-based finding index → tuple of applicable ComplianceControl.
+        Mapping of 0-based finding index → tuple of applicable ComplianceControl.
     """
     effective = enabled_frameworks | _HIPAA_SINGLETON
     result: dict[int, tuple[ComplianceControl, ...]] = {}
     for idx, finding in enumerate(findings):
         all_controls = CATEGORY_CONTROLS.get(finding.hipaa_category, ())
-        applicable = tuple(c for c in all_controls if c.framework in effective)
-        result[idx] = applicable
+        result[idx] = _filter_controls_for_frameworks(all_controls, effective)
     return result
 
 

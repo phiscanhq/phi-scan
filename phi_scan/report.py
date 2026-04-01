@@ -46,6 +46,8 @@ from phi_scan.constants import (
 from phi_scan.logging_config import get_logger
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from phi_scan.compliance import ComplianceControl
     from phi_scan.models import ScanResult
 
@@ -908,7 +910,7 @@ _HTML_TEMPLATE: str = """\
 
 def _build_compliance_matrix_rows(
     scan_result: ScanResult,
-    framework_annotations: dict[int, tuple[ComplianceControl, ...]] | None,
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None,
 ) -> list[dict[str, object]]:
     """Build pre-processed compliance matrix rows for the HTML template.
 
@@ -942,7 +944,7 @@ def _build_html_context(
     scan_result: ScanResult,
     scan_target: Path,
     audit_rows: list[dict[str, object]],
-    framework_annotations: dict[int, tuple[ComplianceControl, ...]] | None = None,
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None,
 ) -> dict[str, object]:
     """Build the Jinja2 template context dict from a ScanResult."""
     present_categories: set[PhiCategory] = {f.hipaa_category for f in scan_result.findings}
@@ -992,7 +994,7 @@ def generate_html_report(
     scan_result: ScanResult,
     scan_target: Path,
     audit_rows: list[dict[str, object]] | None = None,
-    framework_annotations: dict[int, tuple[ComplianceControl, ...]] | None = None,
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None,
 ) -> bytes:
     """Render a self-contained HTML report from a ScanResult.
 
@@ -1299,7 +1301,7 @@ def _pdf_write_appendix(
 def _pdf_write_compliance_matrix(
     pdf: object,
     scan_result: ScanResult,
-    framework_annotations: dict[int, tuple[ComplianceControl, ...]],
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]],
 ) -> None:
     """Write the compliance matrix section listing controls per finding."""
     pdf.add_page()  # type: ignore[attr-defined]
@@ -1361,7 +1363,7 @@ def generate_pdf_report(
     scan_result: ScanResult,
     scan_target: Path,
     audit_rows: list[dict[str, object]] | None = None,
-    framework_annotations: dict[int, tuple[ComplianceControl, ...]] | None = None,
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None,
 ) -> bytes:
     """Render a professional PDF report from a ScanResult.
 
