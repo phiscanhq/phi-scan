@@ -548,8 +548,8 @@ class _ScanTargetOptions:
 class _ScanOutputOptions:
     """Options controlling how scan results are rendered or serialized.
 
-    Groups output-related flags so _emit_scan_output stays within the
-    three-argument limit required by CLAUDE.md.
+    Groups output-related flags so downstream helpers (_emit_scan_output,
+    _run_post_scan_phases) stay within the three-argument limit.
     """
 
     output_format: OutputFormat
@@ -557,6 +557,8 @@ class _ScanOutputOptions:
     report_path: Path | None
     scan_target: Path = field(default_factory=lambda: Path("."))
     framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None
+    is_verbose: bool = False
+    should_use_baseline: bool = False
 
 
 def _configure_logging(log_level: str, log_file: Path | None, is_quiet: bool) -> None:
@@ -1328,6 +1330,39 @@ def main_callback(
     """PHI/PII Scanner for CI/CD pipelines. HIPAA & FHIR compliant. Local execution only."""
 
 
+def _run_post_scan_phases(
+    scan_result: ScanResult,
+    scan_config: ScanConfig,
+    output_options: _ScanOutputOptions,
+) -> None:
+    """Write the audit record and emit scan output for a completed scan.
+
+    Handles audit-phase display, verbose emission, audit DB write, report-phase
+    display, and final output emission (with or without baseline comparison).
+
+    Args:
+        scan_result: Completed scan result from _execute_scan_with_progress.
+        scan_config: Loaded scan configuration (used for audit DB path).
+        output_options: All output-related options including rich mode, verbose,
+            and baseline flags.
+    """
+    if output_options.is_rich_mode:
+        display_phase_audit()
+    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, output_options.is_verbose)
+    with display_status_spinner(
+        _SPINNER_AUDIT_WRITE_MESSAGE, is_active=output_options.is_rich_mode
+    ):
+        _write_audit_record(scan_result, scan_config.database_path)
+    if output_options.is_rich_mode:
+        display_phase_report()
+    _emit_verbose_phase(_VERBOSE_PHASE_REPORT, output_options.is_verbose)
+    if output_options.should_use_baseline:
+        _emit_scan_output_with_baseline(scan_result, output_options)
+    else:
+        _emit_scan_output(scan_result, output_options)
+        raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
+
+
 @app.command()
 def scan(
     path: Annotated[Path, typer.Argument(help=_SCAN_PATH_HELP)] = Path("."),
@@ -1396,20 +1431,10 @@ def scan(
         report_path=report_path,
         scan_target=path,
         framework_annotations=framework_annotations,
+        is_verbose=is_verbose,
+        should_use_baseline=should_use_baseline,
     )
-    if is_rich_mode:
-        display_phase_audit()
-    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, is_verbose)
-    with display_status_spinner(_SPINNER_AUDIT_WRITE_MESSAGE, is_active=is_rich_mode):
-        _write_audit_record(scan_result, scan_config.database_path)
-    if is_rich_mode:
-        display_phase_report()
-    _emit_verbose_phase(_VERBOSE_PHASE_REPORT, is_verbose)
-    if should_use_baseline:
-        _emit_scan_output_with_baseline(scan_result, output_options)
-    else:
-        _emit_scan_output(scan_result, output_options)
-        raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
+    _run_post_scan_phases(scan_result, scan_config, output_options)
 
 
 @app.command()
