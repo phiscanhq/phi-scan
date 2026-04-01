@@ -95,6 +95,11 @@ tests/fixtures/phi/
 # CLAUDE.md§FixtureCorpusException but reside in the test file rather than the
 # fixtures directory because they are tightly coupled to the HL7 scanner unit tests.
 tests/test_hl7_scanner.py
+# Audit unit test file — imports HIPAA category names and remediation constants
+# (PhiCategory, HIPAA_REMEDIATION_GUIDANCE, ACCOUNT_NUMBER) as test identifiers.
+# These produce false positives against the quasi-identifier combination detector
+# when scanned as application source.
+tests/test_audit.py
 
 # PhiScan project-level documentation and CI configuration.
 # These files are excluded to suppress false positives when phi-scan scans its
