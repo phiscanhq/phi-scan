@@ -161,6 +161,15 @@ _PDF_HEADER_HEIGHT: float = 7.0
 # Page-break threshold for findings table (stop before footer area)
 _PDF_PAGE_BREAK_Y_MM: float = _PAGE_HEIGHT_MM - 25.0
 
+# Audit row column keys consumed by the trend chart sanitization boundary.
+# Only these two columns are ever read from audit rows in report.py.
+# The audit schema stores SHA-256 digests for all path-based identifiers
+# and never persists raw PHI values, so both columns are guaranteed PHI-free:
+#   timestamp      — ISO 8601 datetime string; no PHI
+#   findings_count — INTEGER aggregate count; no PHI
+_AUDIT_ROW_KEY_TIMESTAMP: str = "timestamp"
+_AUDIT_ROW_KEY_FINDINGS_COUNT: str = "findings_count"
+
 
 # ---------------------------------------------------------------------------
 # PDF table column definitions
@@ -185,6 +194,14 @@ _PDF_TABLE_COLUMNS: tuple[_PdfTableColumn, ...] = (
     _PdfTableColumn(header="Conf.", width_mm=14.0),
     _PdfTableColumn(header="Layer", width_mm=16.0),
 )
+
+
+@dataclass(frozen=True)
+class _TrendDataPoint:
+    """One sanitized (scan_date, finding_count) pair extracted from a single audit row."""
+
+    scan_date: datetime
+    finding_count: int
 
 
 # ---------------------------------------------------------------------------
@@ -533,29 +550,42 @@ def _build_top_files_chart(scan_result: ScanResult) -> _MatplotlibFigure:
     return fig  # type: ignore[return-value]
 
 
-def _parse_audit_dates_and_counts(
+def _extract_trend_data_points(
     audit_rows: list[dict[str, object]],
-) -> tuple[list[datetime], list[int]]:
-    """Extract (date, findings_count) pairs from audit rows, skipping unparseable rows.
+) -> tuple[_TrendDataPoint, ...]:
+    """Sanitization boundary: extract trend chart data from audit rows.
+
+    Only _AUDIT_ROW_KEY_TIMESTAMP and _AUDIT_ROW_KEY_FINDINGS_COUNT are read;
+    all other audit columns (repository_hash, branch_hash, findings_json, etc.)
+    are intentionally ignored. The audit schema guarantees both consumed columns
+    are PHI-free: timestamp is an ISO 8601 datetime string, findings_count is an
+    integer aggregate. Raw PHI values are never stored in the audit database —
+    all path-based identifiers are SHA-256 digested before insertion.
+
+    Rows with an unparseable timestamp are skipped so one malformed row does not
+    suppress the entire trend chart.
 
     Args:
         audit_rows: Raw rows from query_recent_scans.
 
     Returns:
-        Tuple of (dates list, counts list), both in chronological order.
+        Sanitized trend points in chronological order.
     """
-    dates: list[datetime] = []
-    counts: list[int] = []
-    for row in sorted(audit_rows, key=lambda audit_row: str(audit_row.get("scanned_at", ""))):
-        raw_timestamp = row.get("scanned_at", "")
+    sorted_rows = sorted(
+        audit_rows,
+        key=lambda row: str(row.get(_AUDIT_ROW_KEY_TIMESTAMP, "")),
+    )
+    points: list[_TrendDataPoint] = []
+    for row in sorted_rows:
+        raw_timestamp = row.get(_AUDIT_ROW_KEY_TIMESTAMP, "")
         try:
-            parsed_date = datetime.fromisoformat(str(raw_timestamp))
+            scan_date = datetime.fromisoformat(str(raw_timestamp))
         except (ValueError, TypeError):
             continue
-        dates.append(parsed_date)
-        raw_count = row.get("findings_count", 0)
-        counts.append(int(raw_count) if isinstance(raw_count, (int, float, str)) else 0)
-    return dates, counts
+        raw_count = row.get(_AUDIT_ROW_KEY_FINDINGS_COUNT, 0)
+        finding_count = int(raw_count) if isinstance(raw_count, (int, float, str)) else 0
+        points.append(_TrendDataPoint(scan_date=scan_date, finding_count=finding_count))
+    return tuple(points)
 
 
 def _build_trend_chart(audit_rows: list[dict[str, object]]) -> _MatplotlibFigure:
@@ -564,9 +594,9 @@ def _build_trend_chart(audit_rows: list[dict[str, object]]) -> _MatplotlibFigure
     import matplotlib.pyplot as plt
 
     fig, chart_axes = plt.subplots(figsize=(_CHART_WIDTH_INCHES, _CHART_HEIGHT_TREND_INCHES))
-    dates, counts = _parse_audit_dates_and_counts(audit_rows) if audit_rows else ([], [])
+    trend_points = _extract_trend_data_points(audit_rows)
 
-    if not dates:
+    if not trend_points:
         chart_axes.text(
             0.5,
             0.5,
@@ -580,7 +610,8 @@ def _build_trend_chart(audit_rows: list[dict[str, object]]) -> _MatplotlibFigure
         plt.close(fig)
         return fig  # type: ignore[return-value]
 
-    date_nums = mdates.date2num(dates)  # type: ignore[no-untyped-call]
+    date_nums = mdates.date2num([p.scan_date for p in trend_points])  # type: ignore[no-untyped-call]
+    counts = [p.finding_count for p in trend_points]
     chart_axes.plot(
         date_nums,
         counts,
