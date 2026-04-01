@@ -200,6 +200,10 @@ _SCAN_FRAMEWORK_HELP: str = (
     "(e.g. gdpr,soc2,hitrust). hipaa is always active. "
     "Run `phi-scan explain frameworks` for all supported values."
 )
+# The {error} placeholder receives a ValueError from parse_framework_flag, whose
+# message contains only the unrecognised framework name tokens the user supplied
+# (e.g. "nonexistent"). It never carries PHI or scan-result content because
+# parse_framework_flag operates solely on the --framework CLI flag string.
 _FRAMEWORK_PARSE_ERROR: str = "Invalid --framework value: {error}"
 _REPORT_PATH_TABLE_FORMAT_ERROR: str = (
     "--report-path requires a serialized output format. "
@@ -751,20 +755,20 @@ def _resolve_output_format(output_format: str) -> OutputFormat:
         raise typer.Exit(code=EXIT_CODE_ERROR) from value_error
 
 
-def _resolve_framework_flag(raw: str | None) -> frozenset[ComplianceFramework]:
+def _resolve_framework_flag(framework_flag_value: str | None) -> frozenset[ComplianceFramework]:
     """Parse the --framework flag and exit with an error on unknown framework names.
 
     Args:
-        raw: Comma-separated framework string from the CLI, or None.
+        framework_flag_value: Comma-separated framework string from the CLI, or None.
 
     Returns:
-        frozenset of ComplianceFramework members; empty when raw is None.
+        frozenset of ComplianceFramework members; empty when framework_flag_value is None.
 
     Raises:
         typer.Exit: If any framework token is not a valid ComplianceFramework value.
     """
     try:
-        return parse_framework_flag(raw)
+        return parse_framework_flag(framework_flag_value)
     except ValueError as value_error:
         typer.echo(_FRAMEWORK_PARSE_ERROR.format(error=value_error), err=True)
         raise typer.Exit(code=EXIT_CODE_ERROR) from value_error
@@ -1358,6 +1362,10 @@ def scan(
         scan_root=path, diff_ref=diff_ref, single_file=single_file, config=scan_config
     )
     scan_targets = _prepare_scan_phase(target_options, is_rich_mode, is_verbose)
+    # Intentional ordering: scan runs before output_options is constructed because
+    # framework_annotations depend on scan_result.findings. Any error raised by
+    # _execute_scan_with_progress will propagate before output_options is configured,
+    # which is acceptable — output_options has no effect until _emit_scan_output is called.
     scan_result = _execute_scan_with_progress(scan_targets, scan_config, is_rich_mode)
     framework_annotations = (
         annotate_findings(scan_result.findings, enabled_frameworks) if enabled_frameworks else None

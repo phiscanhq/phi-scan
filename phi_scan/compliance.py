@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 __all__ = [
     "ComplianceControl",
     "ComplianceFramework",
-    "_FrameworkMeta",
+    "FrameworkMetadata",
     "CATEGORY_CONTROLS",
     "FRAMEWORK_METADATA",
     "IMPLEMENTED_FRAMEWORKS",
@@ -76,7 +76,7 @@ class ComplianceControl:
 
 
 @dataclass(frozen=True)
-class _FrameworkMeta:
+class FrameworkMetadata:
     """Display metadata for a compliance framework (used by explain frameworks)."""
 
     display_name: str
@@ -89,8 +89,8 @@ class _FrameworkMeta:
 # Framework metadata (used by `phi-scan explain frameworks`)
 # ---------------------------------------------------------------------------
 
-FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
-    ComplianceFramework.HIPAA: _FrameworkMeta(
+FRAMEWORK_METADATA: dict[ComplianceFramework, FrameworkMetadata] = {
+    ComplianceFramework.HIPAA: FrameworkMetadata(
         display_name="HIPAA",
         enforcement_body="HHS Office for Civil Rights (OCR)",
         penalty_range="$100–$50,000 per violation; $1.9M annual cap per violation category",
@@ -101,7 +101,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "18 named identifiers before data is considered de-identified."
         ),
     ),
-    ComplianceFramework.HITECH: _FrameworkMeta(
+    ComplianceFramework.HITECH: FrameworkMetadata(
         display_name="HITECH Act",
         enforcement_body="HHS OCR + State Attorneys General",
         penalty_range="$100–$50,000 per violation; mandatory breach notification",
@@ -112,7 +112,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "trigger breach notification obligations to affected individuals, HHS, and the media."
         ),
     ),
-    ComplianceFramework.SOC2: _FrameworkMeta(
+    ComplianceFramework.SOC2: FrameworkMetadata(
         display_name="SOC 2 Type II",
         enforcement_body="AICPA (American Institute of CPAs)",
         penalty_range="Loss of certification; customer contract breach penalties",
@@ -123,7 +123,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "CC6.1 requires logical and physical access controls."
         ),
     ),
-    ComplianceFramework.HITRUST: _FrameworkMeta(
+    ComplianceFramework.HITRUST: FrameworkMetadata(
         display_name="HITRUST CSF v11",
         enforcement_body="HITRUST Alliance",
         penalty_range="Loss of certification; contractual penalties with covered entities",
@@ -134,7 +134,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "01.v (information access restriction), and 09.ab (monitoring system use)."
         ),
     ),
-    ComplianceFramework.NIST: _FrameworkMeta(
+    ComplianceFramework.NIST: FrameworkMetadata(
         display_name="NIST SP 800-53 Rev 5 / SP 800-122",
         enforcement_body="NIST (advisory); federal agencies via FISMA",
         penalty_range="Federal contract termination; FISMA non-compliance",
@@ -146,7 +146,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "minimisation, and safeguards."
         ),
     ),
-    ComplianceFramework.GDPR: _FrameworkMeta(
+    ComplianceFramework.GDPR: FrameworkMetadata(
         display_name="GDPR",
         enforcement_body="EU Data Protection Authorities (DPAs)",
         penalty_range="Up to €20M or 4% of global annual turnover (whichever is higher)",
@@ -158,7 +158,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "(Article 25)."
         ),
     ),
-    ComplianceFramework.CFR_PART_2: _FrameworkMeta(
+    ComplianceFramework.CFR_PART_2: FrameworkMetadata(
         display_name="42 CFR Part 2",
         enforcement_body="SAMHSA + HHS",
         penalty_range="Up to $500 per violation (first offense); enhanced for repeat violations",
@@ -169,7 +169,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "treatment program references, and SUD medication names."
         ),
     ),
-    ComplianceFramework.GINA: _FrameworkMeta(
+    ComplianceFramework.GINA: FrameworkMetadata(
         display_name="GINA",
         enforcement_body="EEOC (employment); HHS OCR (health plans)",
         penalty_range="$50,000–$300,000 per violation (employment context)",
@@ -180,7 +180,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "provisions under 45 CFR §164.514(b)(1)."
         ),
     ),
-    ComplianceFramework.CMIA: _FrameworkMeta(
+    ComplianceFramework.CMIA: FrameworkMetadata(
         display_name="California CMIA / SB 3 / AB 825",
         enforcement_body="California DOJ; private right of action",
         penalty_range="Up to $250,000 per violation; private right of action",
@@ -191,7 +191,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "$250,000 per violation; private right of action available."
         ),
     ),
-    ComplianceFramework.BIPA: _FrameworkMeta(
+    ComplianceFramework.BIPA: FrameworkMetadata(
         display_name="Illinois BIPA",
         enforcement_body="Illinois AG; private right of action",
         penalty_range=(
@@ -205,7 +205,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "limitations: 5 years. Class actions are common."
         ),
     ),
-    ComplianceFramework.SHIELD: _FrameworkMeta(
+    ComplianceFramework.SHIELD: FrameworkMetadata(
         display_name="New York SHIELD Act",
         enforcement_body="New York AG",
         penalty_range="Up to $5,000 per violation; up to $250,000 per incident",
@@ -216,7 +216,7 @@ FRAMEWORK_METADATA: dict[ComplianceFramework, _FrameworkMeta] = {
             "the entity is located."
         ),
     ),
-    ComplianceFramework.MRPA: _FrameworkMeta(
+    ComplianceFramework.MRPA: FrameworkMetadata(
         display_name="Texas MRPA",
         enforcement_body="Texas AG",
         penalty_range="Up to $5,000 per violation",
@@ -772,9 +772,15 @@ def annotate_findings(
 ) -> dict[int, tuple[ComplianceControl, ...]]:
     """Return per-finding compliance controls for the enabled frameworks.
 
-    Keys are 0-based indices into *findings*.  HIPAA controls are always
-    included regardless of *enabled_frameworks*.  Findings with no applicable
-    controls for the enabled frameworks map to an empty tuple.
+    Keys are 0-based positional indices produced by enumerate() over *findings*
+    — they are never PHI values, raw matched text, or value hashes.  The values
+    are tuples of ComplianceControl instances whose fields contain only
+    regulatory metadata (framework name, control ID, control name, citation).
+    No raw PHI or ScanFinding content is stored in the returned dict.
+
+    HIPAA controls are always included regardless of *enabled_frameworks*.
+    Findings with no applicable controls for the enabled frameworks map to
+    an empty tuple.
 
     Args:
         findings: Tuple of ScanFinding instances from a completed scan.
@@ -782,7 +788,7 @@ def annotate_findings(
             added automatically if absent.
 
     Returns:
-        Dict mapping finding index → tuple of applicable ComplianceControl.
+        Dict mapping 0-based finding index → tuple of applicable ComplianceControl.
     """
     effective = enabled_frameworks | _HIPAA_SINGLETON
     result: dict[int, tuple[ComplianceControl, ...]] = {}
@@ -793,14 +799,15 @@ def annotate_findings(
     return result
 
 
-def parse_framework_flag(raw: str | None) -> frozenset[ComplianceFramework]:
+def parse_framework_flag(framework_flag_value: str | None) -> frozenset[ComplianceFramework]:
     """Parse a comma-separated --framework flag value into a frozenset.
 
-    Returns an empty frozenset when *raw* is None or blank.
-    Raises ValueError for any unrecognised framework token.
+    Returns an empty frozenset when *framework_flag_value* is None or blank.
+    Raises ValueError for any unrecognised framework token.  The ValueError
+    message contains only framework name tokens (never PHI or scan content).
 
     Args:
-        raw: Comma-separated string of framework names, e.g. "gdpr,soc2,hitrust".
+        framework_flag_value: Comma-separated framework names, e.g. "gdpr,soc2,hitrust".
 
     Returns:
         frozenset of ComplianceFramework members for the requested frameworks.
@@ -808,11 +815,11 @@ def parse_framework_flag(raw: str | None) -> frozenset[ComplianceFramework]:
     Raises:
         ValueError: If any token is not a valid ComplianceFramework value.
     """
-    if not raw:
+    if not framework_flag_value:
         return frozenset()
     parsed: set[ComplianceFramework] = set()
     invalid: list[str] = []
-    for token in (t.strip().lower() for t in raw.split(",") if t.strip()):
+    for token in (t.strip().lower() for t in framework_flag_value.split(",") if t.strip()):
         try:
             parsed.add(ComplianceFramework(token))
         except ValueError:

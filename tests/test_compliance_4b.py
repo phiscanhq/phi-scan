@@ -13,7 +13,7 @@ from phi_scan.compliance import (
     IMPLEMENTED_FRAMEWORKS,
     ComplianceControl,
     ComplianceFramework,
-    _FrameworkMeta,
+    FrameworkMetadata,
     annotate_findings,
     parse_framework_flag,
 )
@@ -150,15 +150,15 @@ def test_framework_metadata_covers_all_frameworks() -> None:
 
 
 def test_framework_metadata_values_are_framework_meta() -> None:
-    """Every FRAMEWORK_METADATA value must be a _FrameworkMeta instance."""
+    """Every FRAMEWORK_METADATA value must be a FrameworkMetadata instance."""
     for member, meta in FRAMEWORK_METADATA.items():
-        assert isinstance(meta, _FrameworkMeta), (
-            f"FRAMEWORK_METADATA[{member!r}] is {type(meta)!r}, expected _FrameworkMeta"
+        assert isinstance(meta, FrameworkMetadata), (
+            f"FRAMEWORK_METADATA[{member!r}] is {type(meta)!r}, expected FrameworkMetadata"
         )
 
 
 def test_framework_metadata_fields_are_non_empty() -> None:
-    """Each _FrameworkMeta must have non-empty display_name, enforcement_body, penalty_range."""
+    """Each FrameworkMetadata must have non-empty display_name, enforcement_body, penalty_range."""
     for member, meta in FRAMEWORK_METADATA.items():
         assert meta.display_name, f"display_name is empty for {member!r}"
         assert meta.enforcement_body, f"enforcement_body is empty for {member!r}"
