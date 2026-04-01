@@ -52,7 +52,7 @@ _SAMPLE_VALUE_HASH: str = "a" * 64
 _SAMPLE_ENTITY_TYPE: str = "us_ssn"
 _SAMPLE_LINE_NUMBER: int = 42
 _SAMPLE_CONFIDENCE: float = 0.95
-_SAMPLE_CODE_CONTEXT: str = "ssn = '123-45-6789'"
+_SAMPLE_CODE_CONTEXT: str = "ssn = '[REDACTED]'"
 _SAMPLE_REMEDIATION_HINT: str = "Replace with synthetic SSN"
 _SAMPLE_SCAN_DURATION: float = 1.23
 _SAMPLE_FILES_SCANNED: int = 10

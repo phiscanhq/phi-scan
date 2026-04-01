@@ -66,7 +66,7 @@ def _make_finding(
         detection_layer=detection_layer,
         value_hash=value_hash,
         severity=severity_from_confidence(confidence),
-        code_context="test context",
+        code_context="test [REDACTED]",
         remediation_hint="test hint",
     )
 

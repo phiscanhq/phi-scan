@@ -1345,63 +1345,63 @@ compliance officer can hand directly to an auditor or executive.
 
 #### 4A.1 — Executive Summary Section
 
-- [ ] **4A.1a** Risk level assessment: CRITICAL / HIGH / MODERATE / LOW / CLEAN
+- [x] **4A.1a** Risk level assessment: CRITICAL / HIGH / MODERATE / LOW / CLEAN
   - CRITICAL: SSN, MRN, or health plan numbers found (>= 1 high-confidence)
   - HIGH: names + dates or geographic data found together
   - MODERATE: medium-confidence findings only
   - LOW: low-confidence findings or informational matches only
   - CLEAN: zero findings
-- [ ] **4A.1b** Total findings count with severity breakdown (HIGH / MEDIUM / LOW)
-- [ ] **4A.1c** Files scanned vs files with findings (e.g., "4 of 1,247 files contain PHI")
-- [ ] **4A.1d** HIPAA category breakdown — count per category (e.g., "SSN: 4, Names: 3, MRN: 2")
-- [ ] **4A.1e** Scan metadata: timestamp, repository, branch, scanner version, scan duration
+- [x] **4A.1b** Total findings count with severity breakdown (HIGH / MEDIUM / LOW)
+- [x] **4A.1c** Files scanned vs files with findings (e.g., "4 of 1,247 files contain PHI")
+- [x] **4A.1d** HIPAA category breakdown — count per category (e.g., "SSN: 4, Names: 3, MRN: 2")
+- [x] **4A.1e** Scan metadata: timestamp, repository, branch, scanner version, scan duration
 
 #### 4A.2 — Detailed Findings Table
 
 Each finding includes all of the following:
 
-- [ ] **4A.2a** File path — full path from repository root
-- [ ] **4A.2b** Line number — exact location in file
-- [ ] **4A.2c** Entity type — SSN, PERSON, EMAIL, MRN, IP_ADDRESS, etc.
-- [ ] **4A.2d** HIPAA category — which of the 18 identifiers (e.g., "#7 — Social Security Numbers")
-- [ ] **4A.2e** Confidence score — 0.0 to 1.0
-- [ ] **4A.2f** Severity level — HIGH (red), MEDIUM (yellow), LOW (green)
-- [ ] **4A.2g** Detection layer — regex, NLP/NER, FHIR, AI
-- [ ] **4A.2h** Code context — surrounding 3–5 lines with PHI value masked as `[REDACTED]`
-- [ ] **4A.2i** Value hash — SHA-256 of detected value (for audit correlation, never raw PHI)
+- [x] **4A.2a** File path — full path from repository root
+- [x] **4A.2b** Line number — exact location in file
+- [x] **4A.2c** Entity type — SSN, PERSON, EMAIL, MRN, IP_ADDRESS, etc.
+- [x] **4A.2d** HIPAA category — which of the 18 identifiers (e.g., "#7 — Social Security Numbers")
+- [x] **4A.2e** Confidence score — 0.0 to 1.0
+- [x] **4A.2f** Severity level — HIGH (red), MEDIUM (yellow), LOW (green)
+- [x] **4A.2g** Detection layer — regex, NLP/NER, FHIR, AI
+- [x] **4A.2h** Code context — surrounding 3–5 lines with PHI value masked as `[REDACTED]`
+- [x] **4A.2i** Value hash — SHA-256 of detected value (for audit correlation, never raw PHI)
 
 #### 4A.3 — Remediation Guidance Section
 
 Grouped by HIPAA category. Each category gets a specific, actionable fix:
 
-- [ ] **4A.3a** Build `HIPAA_REMEDIATION_GUIDANCE` dict mapping all 18 categories
-- [ ] **4A.3b** Per-finding remediation hint — attached to each finding row
-- [ ] **4A.3c** General remediation checklist at end of report
+- [x] **4A.3a** Build `HIPAA_REMEDIATION_GUIDANCE` dict mapping all 18 categories
+- [x] **4A.3b** Per-finding remediation hint — attached to each finding row
+- [x] **4A.3c** General remediation checklist at end of report
 
 #### 4A.4 — Visual Summary Charts
 
-- [ ] **4A.4a** Bar chart — findings count by HIPAA category (horizontal bar, sorted descending)
-- [ ] **4A.4b** Severity distribution — pie/donut chart (HIGH vs MEDIUM vs LOW with counts)
-- [ ] **4A.4c** Top 10 files with most findings — horizontal bar chart
-- [ ] **4A.4d** Trend line — findings over time from audit log history (last 30/60/90 days)
-- [ ] **4A.4e** Charts embedded in PDF and HTML reports as images (matplotlib → PNG → embed)
+- [x] **4A.4a** Bar chart — findings count by HIPAA category (horizontal bar, sorted descending)
+- [x] **4A.4b** Severity distribution — pie/donut chart (HIGH vs MEDIUM vs LOW with counts)
+- [x] **4A.4c** Top 10 files with most findings — horizontal bar chart
+- [x] **4A.4d** Trend line — findings over time from audit log history (last 30/60/90 days)
+- [x] **4A.4e** Charts embedded in PDF and HTML reports as images (matplotlib → PNG → embed)
 
 #### 4A.5 — Report Formats
 
-- [ ] **4A.5a** **PDF report** (`fpdf2`) — professional, printable, letterhead-style:
+- [x] **4A.5a** **PDF report** (`fpdf2`) — professional, printable, letterhead-style:
   - Cover page: "PHI/PII Scan Report" + repo name + date + risk level badge
   - Executive summary page with charts
   - Detailed findings table (paginated)
   - Remediation guidance section
   - Appendix: scan configuration, scanner version, HIPAA reference
-- [ ] **4A.5b** **HTML report** (`jinja2`) — shareable, self-contained single HTML file:
+- [x] **4A.5b** **HTML report** (`jinja2`) — shareable, self-contained single HTML file:
   - Responsive layout, works in any browser
   - Charts embedded as base64 PNG images
   - Clickable file paths (relative links)
   - Color-coded severity badges
   - Collapsible code context sections
   - Print-friendly CSS
-- [ ] **4A.5c** Wire `--output pdf` and `--output html` flags into CLI
+- [x] **4A.5c** Wire `--output pdf` and `--output html` flags into CLI
 
 ### 4B — Multi-Framework Compliance Mapping
 

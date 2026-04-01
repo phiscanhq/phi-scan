@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
     CONFIDENCE_HIGH_FLOOR,
     CONFIDENCE_LOW_FLOOR,
     CONFIDENCE_MEDIUM_FLOOR,
@@ -318,7 +319,7 @@ def test_build_hl7_finding_uses_segment_type_as_code_context():
 
     finding = _build_hl7_finding(_FAKE_MRN_VALUE, PhiCategory.MRN, context)
 
-    assert finding.code_context == _FAKE_SEGMENT_TYPE
+    assert finding.code_context == f"{_FAKE_SEGMENT_TYPE}: {CODE_CONTEXT_REDACTED_VALUE}"
 
 
 # ---------------------------------------------------------------------------

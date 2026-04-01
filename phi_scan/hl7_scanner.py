@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
     CONFIDENCE_HIGH_FLOOR,
     CONFIDENCE_STRUCTURED_MAX,
     CONFIDENCE_STRUCTURED_MIN,
@@ -176,7 +177,7 @@ def _build_hl7_finding(
         detection_layer=DetectionLayer.HL7,
         value_hash=compute_value_hash(field_value),
         severity=severity_from_confidence(confidence),
-        code_context=context.segment_type,
+        code_context=f"{context.segment_type}: {CODE_CONTEXT_REDACTED_VALUE}",
         remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(phi_category, ""),
     )
 

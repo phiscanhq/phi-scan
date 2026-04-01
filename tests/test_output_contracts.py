@@ -1,3 +1,4 @@
+# phi-scan:ignore-file
 """Output format contract tests — pin stable schema and exit-code behavior.
 
 These tests assert the contracts that downstream consumers (CI/CD integrations,
@@ -55,7 +56,7 @@ from phi_scan.output import (
 # Expected count of formats in IMPLEMENTED_OUTPUT_FORMATS.
 # Paired with individual membership tests below so that both adding and
 # removing a format without updating the tests is caught.
-_IMPLEMENTED_FORMAT_COUNT: int = 7
+_IMPLEMENTED_FORMAT_COUNT: int = 9
 
 # JSON schema: exact top-level keys emitted by format_json
 _JSON_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
@@ -124,8 +125,8 @@ _TEST_FILES_WITH_FINDINGS_CLEAN: int = 0
 _TEST_FILES_WITH_FINDINGS_DIRTY: int = 1
 _TEST_SCAN_DURATION: float = 0.1
 
-# A format that is a valid OutputFormat enum member but not yet implemented
-_UNIMPLEMENTED_FORMAT_VALUE: str = OutputFormat.PDF.value
+# A value that is not a valid OutputFormat enum member (used to test CLI rejection)
+_UNIMPLEMENTED_FORMAT_VALUE: str = "xml"
 
 # SYNTHETIC TEST FIXTURE — NOT A REAL SSN.
 # Area 900 is in SSN_EXCLUDED_AREA_NUMBERS — never assigned by the SSA.
@@ -135,7 +136,7 @@ _PHI_VIOLATION_FIXTURE_CONTENT: str = 'ssn = "900-00-0001"\n'
 # Sentinel value embedded in code_context to verify that no CI output format
 # serializes the surrounding-source-lines field. The value is deliberately
 # non-PHI and structured to be unmistakable if it ever appears in output.
-_CODE_CONTEXT_SENTINEL: str = "SENTINEL__CODE_CTX__MUST_NOT_APPEAR_IN_CI_OUTPUT"
+_CODE_CONTEXT_SENTINEL: str = "SENTINEL__[REDACTED]__CODE_CTX__MUST_NOT_APPEAR_IN_CI_OUTPUT"
 
 # All CI formatters share the signature (ScanResult) -> str. Parametrized with
 # a human-readable name so pytest failure output identifies the failing format.
@@ -291,12 +292,14 @@ def test_implemented_output_formats_has_expected_member_count() -> None:
     assert len(IMPLEMENTED_OUTPUT_FORMATS) == _IMPLEMENTED_FORMAT_COUNT
 
 
-def test_implemented_output_formats_does_not_include_future_formats() -> None:
-    """PDF and HTML are not in IMPLEMENTED_OUTPUT_FORMATS until their formatters ship."""
-    unimplemented_formats = set(OutputFormat) - IMPLEMENTED_OUTPUT_FORMATS
+def test_implemented_output_formats_contains_pdf() -> None:
+    """PDF must be implemented — it is the enterprise report format (Phase 4)."""
+    assert OutputFormat.PDF in IMPLEMENTED_OUTPUT_FORMATS
 
-    assert OutputFormat.PDF in unimplemented_formats
-    assert OutputFormat.HTML in unimplemented_formats
+
+def test_implemented_output_formats_contains_html() -> None:
+    """HTML must be implemented — it is the browser-readable enterprise report format (Phase 4)."""
+    assert OutputFormat.HTML in IMPLEMENTED_OUTPUT_FORMATS
 
 
 # ---------------------------------------------------------------------------
@@ -447,18 +450,63 @@ def test_exit_code_is_error_for_unimplemented_output_format(
 # Implemented-formats roundtrip contract
 # ---------------------------------------------------------------------------
 
+# Binary formats cannot write to stdout and require --report-path.
+_BINARY_OUTPUT_FORMATS: frozenset[OutputFormat] = frozenset({OutputFormat.PDF, OutputFormat.HTML})
+_TEXT_OUTPUT_FORMATS: frozenset[OutputFormat] = (
+    IMPLEMENTED_OUTPUT_FORMATS - {OutputFormat.TABLE} - _BINARY_OUTPUT_FORMATS
+)
+
 
 @pytest.mark.parametrize(
     "output_format",
-    sorted(IMPLEMENTED_OUTPUT_FORMATS - {OutputFormat.TABLE}, key=lambda fmt: fmt.value),
+    sorted(_TEXT_OUTPUT_FORMATS, key=lambda fmt: fmt.value),
 )
-def test_each_implemented_format_exits_clean_without_error(
+def test_each_text_format_exits_clean_without_error(
     tmp_path: Path, output_format: OutputFormat, runner: CliRunner
 ) -> None:
-    """Every format in IMPLEMENTED_OUTPUT_FORMATS (except TABLE) exits 0 on a clean scan."""
+    """Every text format in IMPLEMENTED_OUTPUT_FORMATS exits 0 on a clean scan."""
     result = runner.invoke(app, ["scan", str(tmp_path), "--output", output_format.value, "--quiet"])
 
     assert result.exit_code == EXIT_CODE_CLEAN
+
+
+@pytest.mark.parametrize(
+    "output_format",
+    sorted(_BINARY_OUTPUT_FORMATS, key=lambda fmt: fmt.value),
+)
+def test_each_binary_format_exits_clean_with_report_path(
+    tmp_path: Path, output_format: OutputFormat, runner: CliRunner
+) -> None:
+    """Every binary format exits 0 on a clean scan when --report-path is given."""
+    report_file = tmp_path / f"report.{output_format.value}"
+
+    result = runner.invoke(
+        app,
+        [
+            "scan",
+            str(tmp_path),
+            "--output",
+            output_format.value,
+            "--report-path",
+            str(report_file),
+            "--quiet",
+        ],
+    )
+
+    assert result.exit_code == EXIT_CODE_CLEAN
+
+
+@pytest.mark.parametrize(
+    "output_format",
+    sorted(_BINARY_OUTPUT_FORMATS, key=lambda fmt: fmt.value),
+)
+def test_each_binary_format_exits_error_without_report_path(
+    tmp_path: Path, output_format: OutputFormat, runner: CliRunner
+) -> None:
+    """Binary formats exit 2 (error) when --report-path is omitted."""
+    result = runner.invoke(app, ["scan", str(tmp_path), "--output", output_format.value, "--quiet"])
+
+    assert result.exit_code == EXIT_CODE_ERROR
 
 
 # ---------------------------------------------------------------------------

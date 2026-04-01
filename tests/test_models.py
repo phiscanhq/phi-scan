@@ -34,7 +34,7 @@ _FINDING_CONFIDENCE: float = 0.95
 _FINDING_DETECTION_LAYER: DetectionLayer = DetectionLayer.REGEX
 _FINDING_VALUE_HASH: str = "a" * SHA256_HEX_DIGEST_LENGTH
 _FINDING_SEVERITY: SeverityLevel = SeverityLevel.HIGH
-_FINDING_CODE_CONTEXT: str = "patient_ssn = '***-**-****'"
+_FINDING_CODE_CONTEXT: str = "patient_ssn = '[REDACTED]'"
 _FINDING_REMEDIATION_HINT: str = "Replace SSN with synthetic value using 000-00-0000 format."
 
 _INVALID_LINE_NUMBER_ZERO: int = 0

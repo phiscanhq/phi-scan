@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 
 from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
     COMBINATION_REPRESENTATIVE_COUNT,
     CONFIDENCE_HIGH_FLOOR,
     CONFIDENCE_SCORE_MAXIMUM,
@@ -486,6 +487,8 @@ def _build_combination_finding(
         detection_layer=DetectionLayer.COMBINATION,
         value_hash=compute_value_hash(combination_label),
         severity=severity_from_confidence(confidence),
-        code_context=f"{_COMBINATION_CODE_CONTEXT_PREFIX}{combination_label}",
+        code_context=(
+            f"{_COMBINATION_CODE_CONTEXT_PREFIX}{combination_label}: {CODE_CONTEXT_REDACTED_VALUE}"
+        ),
         remediation_hint=f"{base_hint} {note}".strip(),
     )

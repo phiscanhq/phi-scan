@@ -39,7 +39,7 @@ _FAKE_VALUE_HASH: str = hashlib.sha256(b"baseline-test-value").hexdigest()
 _FAKE_ALT_VALUE_HASH: str = hashlib.sha256(b"baseline-other-value").hexdigest()
 _FAKE_ENTITY_TYPE: str = "us_ssn"
 _FAKE_ALT_ENTITY_TYPE: str = "email"
-_FAKE_CODE_CONTEXT: str = 'ssn = "123-45-6789"'
+_FAKE_CODE_CONTEXT: str = 'ssn = "[REDACTED]"'
 _FAKE_REMEDIATION_HINT: str = "Replace with synthetic value."
 
 _FINDING_FILE_PATH: Path = Path("src/api/patient.py")

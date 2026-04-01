@@ -31,7 +31,7 @@ from phi_scan.models import ScanFinding
 
 _FAKE_VALUE_HASH: str = hashlib.sha256(b"test-value").hexdigest()
 _FAKE_REMEDIATION_HINT: str = "Remove this value."
-_FAKE_CODE_CONTEXT: str = 'ssn = "123-45-6789"'
+_FAKE_CODE_CONTEXT: str = 'ssn = "[REDACTED]"'
 _FAKE_ENTITY_TYPE: str = "SSN"
 
 _CLEAN_CONTENT: str = "greeting = 'hello world'\n"

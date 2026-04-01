@@ -63,7 +63,7 @@ _TEST_CONFIDENCE_MEDIUM: float = 0.75
 # Area 000 is in SSN_EXCLUDED_AREA_NUMBERS (the SSA has never issued area 000).
 # 000-00-0000 is structurally invalid as a real Social Security Number and
 # cannot identify any individual. Used only to exercise code-context formatting.
-_TEST_CODE_CONTEXT: str = 'field = "000-00-0000"'
+_TEST_CODE_CONTEXT: str = 'field = "[REDACTED]"'
 _TEST_REMEDIATION_HINT: str = "Replace SSN with synthetic value"
 _TEST_FILES_SCANNED: int = 10
 _TEST_FILES_WITH_FINDINGS_CLEAN: int = 0

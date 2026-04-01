@@ -11,6 +11,7 @@ from types import MappingProxyType
 from typing import final
 
 from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
     CONFIDENCE_SCORE_MAXIMUM,
     CONFIDENCE_SCORE_MINIMUM,
     DEFAULT_CONFIDENCE_THRESHOLD,
@@ -51,6 +52,17 @@ _ABSOLUTE_HL7_CONTEXT_FILE_PATH_ERROR: str = (
 _MAXIMUM_ENTITY_TYPE_LENGTH: int = 255
 _MAXIMUM_CODE_CONTEXT_LENGTH: int = 4096
 _MAXIMUM_REMEDIATION_HINT_LENGTH: int = 1024
+# HIPAA enforcement: all detection layers must substitute the matched PHI value
+# with CODE_CONTEXT_REDACTED_VALUE before constructing a ScanFinding.  An
+# empty code_context is permitted (e.g. HL7 segment-only findings, combination
+# quasi-identifier findings). Non-empty code_context that lacks the redaction
+# marker indicates the caller has passed a raw source line — this is rejected
+# at model construction time so no rendering path can expose raw PHI.
+_UNREDACTED_CODE_CONTEXT_ERROR: str = (
+    "code_context must contain CODE_CONTEXT_REDACTED_VALUE ('{marker}') before "
+    "ScanFinding construction — all detection layers must redact matched PHI "
+    "values in code_context (value omitted to prevent PHI leakage in error messages)"
+)
 # Both fields can legitimately be zero: a scan of an empty directory has
 # files_scanned=0, and a scan that finds no PHI has files_with_findings=0.
 _MINIMUM_FILE_COUNT: int = 0
@@ -150,6 +162,7 @@ class ScanFinding:
         _reject_invalid_line_number(self)
         _reject_invalid_value_hash(self)
         _reject_out_of_range_confidence(self)
+        _reject_unredacted_code_context(self)
         _reject_field_exceeds_maximum_length(
             self.entity_type, "entity_type", _MAXIMUM_ENTITY_TYPE_LENGTH
         )
@@ -191,6 +204,13 @@ def _reject_invalid_value_hash(finding: ScanFinding) -> None:
             f"value_hash is not a valid SHA-256 hex digest — "
             f"must be exactly {SHA256_HEX_DIGEST_LENGTH} lowercase hex characters [0-9a-f], "
             f"got {rejected_length} characters (value omitted to prevent PHI leakage)"
+        )
+
+
+def _reject_unredacted_code_context(finding: ScanFinding) -> None:
+    if finding.code_context and CODE_CONTEXT_REDACTED_VALUE not in finding.code_context:
+        raise PhiDetectionError(
+            _UNREDACTED_CODE_CONTEXT_ERROR.format(marker=CODE_CONTEXT_REDACTED_VALUE)
         )
 
 

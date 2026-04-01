@@ -89,6 +89,12 @@ target/
 # Synthetic PHI fixture corpus — contains intentional PHI-like patterns for
 # detection testing. Excluding prevents false positives when scanning this repo.
 tests/fixtures/phi/
+# HL7 v2 test file — embeds a multi-segment synthetic HL7 message (_FAKE_HL7_MESSAGE)
+# that contains dates, MRN-like identifiers, and a synthetic patient name required
+# for segment-level scanner tests. The fixture values are provably fictional per
+# CLAUDE.md§FixtureCorpusException but reside in the test file rather than the
+# fixtures directory because they are tightly coupled to the HL7 scanner unit tests.
+tests/test_hl7_scanner.py
 
 # PhiScan project-level documentation and CI configuration.
 # These files are excluded to suppress false positives when phi-scan scans its

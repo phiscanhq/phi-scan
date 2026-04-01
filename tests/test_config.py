@@ -1,3 +1,4 @@
+# phi-scan:ignore-file
 """Tests for phi_scan.config — YAML config loading and validation."""
 
 from __future__ import annotations
@@ -168,9 +169,9 @@ def test_load_config_should_follow_symlinks_is_always_false(tmp_path: Path) -> N
 def test_load_config_raises_configuration_error_for_unimplemented_output_format(
     tmp_path: Path,
 ) -> None:
-    """Config rejects formats not in IMPLEMENTED_OUTPUT_FORMATS (e.g. pdf)."""
+    """Config rejects format values that are not a valid OutputFormat (e.g. xml)."""
     config = _build_minimal_config()
-    config["output"] = {"format": "pdf"}
+    config["output"] = {"format": "xml"}
 
     config_file = _write_config(tmp_path, config)
 

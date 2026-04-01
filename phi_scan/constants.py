@@ -515,6 +515,8 @@ IMPLEMENTED_OUTPUT_FORMATS: frozenset[OutputFormat] = frozenset(
         OutputFormat.JUNIT,
         OutputFormat.CODEQUALITY,
         OutputFormat.GITLAB_SAST,
+        OutputFormat.PDF,
+        OutputFormat.HTML,
     }
 )
 
