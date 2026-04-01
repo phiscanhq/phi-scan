@@ -1333,9 +1333,7 @@ def scan(
     should_use_baseline: Annotated[
         bool, typer.Option("--baseline", help=_SCAN_BASELINE_HELP)
     ] = False,
-    framework: Annotated[
-        str | None, typer.Option("--framework", help=_SCAN_FRAMEWORK_HELP)
-    ] = None,
+    framework: Annotated[str | None, typer.Option("--framework", help=_SCAN_FRAMEWORK_HELP)] = None,
 ) -> None:
     """Scan a directory or file for PHI/PII.
 
@@ -1362,9 +1360,7 @@ def scan(
     scan_targets = _prepare_scan_phase(target_options, is_rich_mode, is_verbose)
     scan_result = _execute_scan_with_progress(scan_targets, scan_config, is_rich_mode)
     framework_annotations = (
-        annotate_findings(scan_result.findings, enabled_frameworks)
-        if enabled_frameworks
-        else None
+        annotate_findings(scan_result.findings, enabled_frameworks) if enabled_frameworks else None
     )
     output_options = _ScanOutputOptions(
         output_format=output_format_enum,

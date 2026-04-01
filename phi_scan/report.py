@@ -984,9 +984,7 @@ def _build_html_context(
         "remediation_by_category": remediation_by_category,
         "checklist": _GENERAL_REMEDIATION_CHECKLIST,
         "charts": charts,
-        "compliance_matrix_rows": _build_compliance_matrix_rows(
-            scan_result, framework_annotations
-        ),
+        "compliance_matrix_rows": _build_compliance_matrix_rows(scan_result, framework_annotations),
     }
 
 

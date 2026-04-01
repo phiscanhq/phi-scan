@@ -553,7 +553,13 @@ _MRPA_HEALTH_INFORMATION = ComplianceControl(
 _SOC2_ALL = (_SOC2_CC6_1, _SOC2_CC6_6, _SOC2_CC6_7)
 _HITRUST_ALL = (_HITRUST_07A, _HITRUST_09S, _HITRUST_01V, _HITRUST_09AB)
 _NIST_ALL = (
-    _NIST_SC28, _NIST_SI1, _NIST_PM22, _NIST_PT2, _NIST_PT3, _NIST_800_122_2_1, _NIST_800_122_2_2
+    _NIST_SC28,
+    _NIST_SI1,
+    _NIST_PM22,
+    _NIST_PT2,
+    _NIST_PT3,
+    _NIST_800_122_2_1,
+    _NIST_800_122_2_2,
 )
 _GDPR_BASE = (_GDPR_ART4_1, _GDPR_ART25, _GDPR_ART32)
 _GDPR_HEALTH = (*_GDPR_BASE, _GDPR_ART4_15, _GDPR_ART9)
@@ -814,7 +820,6 @@ def parse_framework_flag(raw: str | None) -> frozenset[ComplianceFramework]:
     if invalid:
         valid = ", ".join(sorted(f.value for f in ComplianceFramework))
         raise ValueError(
-            f"Unknown framework(s): {', '.join(sorted(invalid))}. "
-            f"Valid values: {valid}"
+            f"Unknown framework(s): {', '.join(sorted(invalid))}. Valid values: {valid}"
         )
     return frozenset(parsed)
