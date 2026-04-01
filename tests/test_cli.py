@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from phi_scan import __version__
@@ -15,6 +16,7 @@ from phi_scan.constants import (
     DEFAULT_CONFIG_FILENAME,
     EXIT_CODE_CLEAN,
     DetectionLayer,
+    OutputFormat,
     PhiCategory,
     SeverityLevel,
 )
@@ -624,3 +626,58 @@ def test_build_watch_result_violation_count_matches_findings_length(
     scan_outcome = _build_watch_result([finding_one, finding_two])
 
     assert "2" in scan_outcome.result_text
+
+
+# ---------------------------------------------------------------------------
+# _resolve_output_format
+# ---------------------------------------------------------------------------
+
+_VALID_OUTPUT_FORMAT_VALUE: str = "json"
+_INVALID_OUTPUT_FORMAT_VALUE: str = "unknown_format"
+
+
+def test_resolve_output_format_returns_enum_for_valid_value() -> None:
+    from phi_scan.cli import _resolve_output_format
+
+    result = _resolve_output_format(_VALID_OUTPUT_FORMAT_VALUE)
+
+    assert result == OutputFormat.JSON
+
+
+def test_resolve_output_format_exits_with_error_for_unknown_format() -> None:
+    from phi_scan.cli import _resolve_output_format
+
+    with pytest.raises(typer.Exit):
+        _resolve_output_format(_INVALID_OUTPUT_FORMAT_VALUE)
+
+
+# ---------------------------------------------------------------------------
+# _normalize_diff_path
+# ---------------------------------------------------------------------------
+
+_SCAN_ROOT_RELATIVE_SUFFIX: str = "tests/test_cli.py"
+
+
+def test_normalize_diff_path_returns_relative_path_when_inside_scan_root(
+    tmp_path: Path,
+) -> None:
+    from phi_scan.cli import _normalize_diff_path
+
+    diff_file = tmp_path / _SCAN_ROOT_RELATIVE_SUFFIX
+
+    result = _normalize_diff_path(diff_file, tmp_path)
+
+    assert result == Path(_SCAN_ROOT_RELATIVE_SUFFIX)
+
+
+def test_normalize_diff_path_returns_original_path_when_outside_scan_root(
+    tmp_path: Path,
+) -> None:
+    from phi_scan.cli import _normalize_diff_path
+
+    outside_root = tmp_path / "other_project"
+    diff_file = tmp_path / _SCAN_ROOT_RELATIVE_SUFFIX
+
+    result = _normalize_diff_path(diff_file, outside_root)
+
+    assert result == diff_file
