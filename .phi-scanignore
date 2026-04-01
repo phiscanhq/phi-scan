@@ -100,6 +100,10 @@ tests/test_hl7_scanner.py
 # These produce false positives against the quasi-identifier combination detector
 # when scanned as application source.
 tests/test_audit.py
+# CLI unit test file — contains SARIF output keys, date literals used as test
+# inputs, and constants like _JSON_FINDINGS_KEY that combine with surrounding
+# context to trigger quasi-identifier and date detectors as false positives.
+tests/test_cli.py
 
 # PhiScan project-level documentation and CI configuration.
 # These files are excluded to suppress false positives when phi-scan scans its
