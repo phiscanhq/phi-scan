@@ -448,20 +448,18 @@ class _WatchScanOutcome:
 
 
 @dataclass
-class _WatchState:
-    """Groups the three shared objects passed between watch() and _FileChangeMonitor.
+@dataclass(frozen=True)
+class _WatchConfig:
+    """Immutable configuration shared between watch() and _FileChangeMonitor.
 
-    Introduced so _append_watch_event can access watch_root (needed to compute a
-    PHI-safe relative display path) without exceeding the three-argument limit.
-    Not frozen: watch_events is an intentionally mutable shared rolling buffer
-    appended to by the watchdog background thread.
-    scan_config is mutable by type but must not be modified after construction —
-    it is read-only shared state; mutation on the watchdog thread would be an
+    Frozen enforces the invariant that watch_root and scan_config are read-only
+    once constructed — mutation on the watchdog background thread would be an
     unsynchronized write with no lock protection.
+    The mutable watch_events deque is kept separate and passed explicitly so
+    that immutable and mutable state are never mixed in one dataclass.
     """
 
     watch_root: Path
-    watch_events: deque[WatchEvent]
     scan_config: ScanConfig
 
 
@@ -472,9 +470,20 @@ class _FileChangeMonitor(FileSystemEventHandler):
     displayed inline; the watch header shows cumulative session state.
     """
 
-    def __init__(self, watch_state: _WatchState) -> None:
+    def __init__(self, watch_config: _WatchConfig, watch_events: deque[WatchEvent]) -> None:
+        """Bind the immutable watch configuration and the mutable event buffer.
+
+        watch_config and watch_events are kept separate so that frozen=True on
+        _WatchConfig enforces the read-only invariant — scan_config must not be
+        mutated on the watchdog background thread.
+
+        Args:
+            watch_config: Frozen config holding watch_root and scan_config.
+            watch_events: Shared rolling deque appended to on each file change.
+        """
         super().__init__()
-        self._watch_state = watch_state
+        self._watch_config = watch_config
+        self._watch_events = watch_events
 
     def on_any_event(self, event: FileSystemEvent) -> None:
         """Append a timestamped event record on any non-directory file change.
@@ -490,9 +499,9 @@ class _FileChangeMonitor(FileSystemEventHandler):
         # expose files containing PHI that were never intended to be scanned.
         if changed_path.is_symlink():
             return
-        scan_outcome = _scan_changed_file(changed_path, self._watch_state)
+        scan_outcome = _scan_changed_file(changed_path, self._watch_config)
         if scan_outcome is not None:
-            _append_watch_event(changed_path, scan_outcome, self._watch_state)
+            _append_watch_event(changed_path, scan_outcome, self._watch_config, self._watch_events)
 
 
 # ---------------------------------------------------------------------------
@@ -610,12 +619,34 @@ def _resolve_scan_targets(options: _ScanTargetOptions) -> list[Path]:
     ignore_patterns = _load_combined_ignore_patterns(options.config)
     if options.diff_ref is not None:
         exclusion_spec = pathspec.PathSpec.from_lines(PathspecMatchStyle.GITIGNORE, ignore_patterns)
+        scan_root = options.scan_root.resolve()
         return [
             diff_file
             for diff_file in get_changed_files_from_diff(options.diff_ref)
-            if not is_path_excluded(diff_file, exclusion_spec)
+            if not is_path_excluded(_normalize_diff_path(diff_file, scan_root), exclusion_spec)
         ]
     return collect_scan_targets(options.scan_root, ignore_patterns, options.config)
+
+
+def _normalize_diff_path(diff_file: Path, scan_root: Path) -> Path:
+    """Return diff_file as a path relative to scan_root for exclusion matching.
+
+    get_changed_files_from_diff returns absolute paths. Gitignore-style exclusion
+    patterns require relative paths to match correctly — an absolute path like
+    /home/user/project/tests/test_audit.py will never match the pattern
+    tests/test_audit.py. Falling back to the absolute path preserves behaviour
+    for files outside the scan root.
+
+    Args:
+        diff_file: Absolute path returned by get_changed_files_from_diff.
+        scan_root: Resolved absolute scan root used to make the path relative.
+
+    Returns:
+        Path relative to scan_root when diff_file is inside it, otherwise diff_file.
+    """
+    if diff_file.is_relative_to(scan_root):
+        return diff_file.relative_to(scan_root)
+    return diff_file
 
 
 def _truncate_filename_for_progress(file_path: Path) -> str:
@@ -683,6 +714,55 @@ def _write_audit_record(scan_result: ScanResult, database_path: Path) -> None:
         insert_scan_event(resolved_path, scan_result)
     except AuditLogError as audit_error:
         _logger.warning(_AUDIT_WRITE_FAILURE_WARNING.format(error=audit_error))
+
+
+def _resolve_output_format(output_format: str) -> OutputFormat:
+    """Parse the output format string and exit with an error on unknown values.
+
+    Args:
+        output_format: Raw string value of the --output flag.
+
+    Returns:
+        The matching OutputFormat enum member.
+
+    Raises:
+        typer.Exit: If output_format does not match any OutputFormat member.
+    """
+    try:
+        return OutputFormat(output_format)
+    except ValueError as value_error:
+        typer.echo(_UNSUPPORTED_OUTPUT_FORMAT_ERROR.format(fmt=output_format), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR) from value_error
+
+
+def _prepare_scan_phase(
+    target_options: _ScanTargetOptions,
+    is_rich_mode: bool,
+    is_verbose: bool,
+) -> list[Path]:
+    """Emit collection-phase feedback and return the resolved scan target list.
+
+    Displays the collecting phase, resolves which files to scan, then displays
+    the file-type summary and announces the scanning phase. The return value
+    is ready to pass directly to _execute_scan_with_progress.
+
+    Args:
+        target_options: Scan root, diff ref, single file, and config.
+        is_rich_mode: Whether Rich terminal display is active.
+        is_verbose: Whether to emit verbose phase messages to stderr.
+
+    Returns:
+        Ordered list of file paths selected for scanning.
+    """
+    if is_rich_mode:
+        display_phase_collecting()
+    _emit_verbose_phase(_VERBOSE_PHASE_COLLECTING, is_verbose)
+    scan_targets = _resolve_scan_targets(target_options)
+    if is_rich_mode:
+        display_file_type_summary(scan_targets)
+        display_phase_scanning()
+    _emit_verbose_phase(_VERBOSE_PHASE_SCANNING.format(count=len(scan_targets)), is_verbose)
+    return scan_targets
 
 
 def _display_rich_scan_results(scan_result: ScanResult) -> None:
@@ -1052,7 +1132,7 @@ def _build_relative_display_path(changed_path: Path, watch_root: Path) -> str:
         return _WATCH_PATH_OUTSIDE_ROOT_DISPLAY
 
 
-def _scan_changed_file(changed_path: Path, watch_state: _WatchState) -> _WatchScanOutcome | None:
+def _scan_changed_file(changed_path: Path, watch_config: _WatchConfig) -> _WatchScanOutcome | None:
     """Run scan_file on a watchdog-reported path and return a structured outcome.
 
     Returns None when the file cannot be read (deleted or permissions changed between
@@ -1060,13 +1140,13 @@ def _scan_changed_file(changed_path: Path, watch_state: _WatchState) -> _WatchSc
 
     Args:
         changed_path: The file that changed, already confirmed non-symlink.
-        watch_state: Shared watch state; provides the scan configuration.
+        watch_config: Immutable watch configuration; provides the scan config.
 
     Returns:
         _WatchScanOutcome with result text and is_clean flag, or None on I/O error.
     """
     try:
-        findings = scan_file(changed_path, watch_state.scan_config)
+        findings = scan_file(changed_path, watch_config.scan_config)
     except (PermissionError, FileNotFoundError):
         # File deleted or permissions revoked between watchdog event and scan call —
         # log and signal skip rather than crashing the watchdog background thread.
@@ -1076,22 +1156,26 @@ def _scan_changed_file(changed_path: Path, watch_state: _WatchState) -> _WatchSc
 
 
 def _append_watch_event(
-    changed_path: Path, scan_outcome: _WatchScanOutcome, watch_state: _WatchState
+    changed_path: Path,
+    scan_outcome: _WatchScanOutcome,
+    watch_config: _WatchConfig,
+    watch_events: deque[WatchEvent],
 ) -> None:
     """Build a WatchEvent from the scan outcome and append it to the rolling deque.
 
     Args:
         changed_path: The file that changed; used to compute the display path.
         scan_outcome: Structured result from _scan_changed_file.
-        watch_state: Shared watch state; provides the deque and watch root.
+        watch_config: Immutable watch configuration; provides the watch root path.
+        watch_events: Mutable rolling event buffer; receives the new WatchEvent.
     """
     # deque.append is atomic under CPython's GIL, so no explicit lock is needed here.
     # The main thread reads the deque via list(watch_events) (also atomic), making
     # this cross-thread access safe without threading.Lock for CPython.
-    watch_state.watch_events.append(
+    watch_events.append(
         WatchEvent(
             event_time=datetime.now(),
-            file_path=_build_relative_display_path(changed_path, watch_state.watch_root),
+            file_path=_build_relative_display_path(changed_path, watch_config.watch_root),
             result_text=scan_outcome.result_text,
             is_clean=scan_outcome.is_clean,
         )
@@ -1210,37 +1294,29 @@ def scan(
     Parameters are Typer CLI declarations, not regular call-site arguments — the
     3-argument rule from CLAUDE.md applies to regular functions, not CLI commands
     whose parameters are read by Typer introspection. Scan target parameters are
-    immediately packed into _ScanTargetOptions below. Rich UI (banner, progress,
-    results table) is suppressed for serialised formats (json/csv/sarif) to keep
-    stdout clean for pipe and file consumption.
+    immediately packed into _ScanTargetOptions. Rich UI (banner, progress, results
+    table) is suppressed for serialised formats (json/csv/sarif) to keep stdout
+    clean for pipe and file consumption.
     """
     effective_log_level = _LOG_LEVEL_DEBUG if is_verbose else log_level
     _configure_logging(effective_log_level, log_file, is_quiet)
-    try:
-        output_format_enum = OutputFormat(output_format)
-    except ValueError as value_error:
-        typer.echo(_UNSUPPORTED_OUTPUT_FORMAT_ERROR.format(fmt=output_format), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR) from value_error
+    output_format_enum = _resolve_output_format(output_format)
     is_rich_mode = not is_quiet and output_format_enum is OutputFormat.TABLE
     with display_status_spinner(_SPINNER_CONFIG_LOAD_MESSAGE, is_active=is_rich_mode):
         scan_config = _load_scan_config(config_path, severity_threshold)
-    target_options = _ScanTargetOptions(
-        scan_root=path,
-        diff_ref=diff_ref,
-        single_file=single_file,
-        config=scan_config,
-    )
     if is_rich_mode:
         display_banner()
         display_scan_header(path, scan_config)
-        display_phase_collecting()
-    _emit_verbose_phase(_VERBOSE_PHASE_COLLECTING, is_verbose)
-    scan_targets = _resolve_scan_targets(target_options)
-    if is_rich_mode:
-        display_file_type_summary(scan_targets)
-        display_phase_scanning()
-    scanning_phase_message = _VERBOSE_PHASE_SCANNING.format(count=len(scan_targets))
-    _emit_verbose_phase(scanning_phase_message, is_verbose)
+    target_options = _ScanTargetOptions(
+        scan_root=path, diff_ref=diff_ref, single_file=single_file, config=scan_config
+    )
+    output_options = _ScanOutputOptions(
+        output_format=output_format_enum,
+        is_rich_mode=is_rich_mode,
+        report_path=report_path,
+        scan_target=path,
+    )
+    scan_targets = _prepare_scan_phase(target_options, is_rich_mode, is_verbose)
     scan_result = _execute_scan_with_progress(scan_targets, scan_config, is_rich_mode)
     if is_rich_mode:
         display_phase_audit()
@@ -1250,12 +1326,6 @@ def scan(
     if is_rich_mode:
         display_phase_report()
     _emit_verbose_phase(_VERBOSE_PHASE_REPORT, is_verbose)
-    output_options = _ScanOutputOptions(
-        output_format=output_format_enum,
-        is_rich_mode=is_rich_mode,
-        report_path=report_path,
-        scan_target=path,
-    )
     if should_use_baseline:
         _emit_scan_output_with_baseline(scan_result, output_options)
     else:
@@ -1273,17 +1343,14 @@ def watch(
         raise typer.BadParameter(f"Path does not exist: {watch_path}", param_hint="'PATH'")
     if not watch_path.is_dir():
         raise typer.BadParameter(f"Path is not a directory: {watch_path}", param_hint="'PATH'")
-    watch_context = _WatchState(
-        watch_root=watch_path,
-        watch_events=deque(maxlen=_WATCH_LOG_MAX_EVENTS),
-        scan_config=ScanConfig(),
-    )
-    event_handler = _FileChangeMonitor(watch_context)
+    watch_config = _WatchConfig(watch_root=watch_path, scan_config=ScanConfig())
+    watch_events: deque[WatchEvent] = deque(maxlen=_WATCH_LOG_MAX_EVENTS)
+    event_handler = _FileChangeMonitor(watch_config, watch_events)
     observer = Observer()
     observer.schedule(event_handler, str(watch_path), recursive=True)  # type: ignore[no-untyped-call]
     observer.start()  # type: ignore[no-untyped-call]
     try:
-        _display_watch_live_screen(watch_path, watch_context.watch_events)
+        _display_watch_live_screen(watch_path, watch_events)
     except KeyboardInterrupt:
         # Ctrl+C is the standard exit for watch mode. Translate the BaseException
         # into a clean exit code before the finally block tears down the observer.

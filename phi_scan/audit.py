@@ -422,9 +422,13 @@ def _serialize_findings(findings: tuple[ScanFinding, ...]) -> str:
 
     Only fields that cannot contain raw PHI are included. ``code_context``
     is deliberately excluded — it stores surrounding source lines that may
-    contain the detected value in plaintext. ``file_path`` is stored as a
-    SHA-256 hash (``file_path_hash``) — paths can be PHI-revealing (e.g.
-    patient_ssn_export.csv) and must not be persisted in plaintext.
+    contain the detected value in plaintext. ``remediation_hint`` is excluded
+    because it is set by detection layers with no content enforcement — a buggy
+    layer could set it to a raw PHI value. Remediation guidance is recoverable
+    at display time via ``HIPAA_REMEDIATION_GUIDANCE[hipaa_category]``.
+    ``file_path`` is stored as a SHA-256 hash (``file_path_hash``) — paths can
+    be PHI-revealing (e.g. patient_ssn_export.csv) and must not be persisted
+    in plaintext.
 
     Args:
         findings: The findings tuple from a completed ScanResult.
@@ -442,7 +446,6 @@ def _serialize_findings(findings: tuple[ScanFinding, ...]) -> str:
             "detection_layer": finding.detection_layer,
             "value_hash": finding.value_hash,
             "severity": finding.severity.value,
-            "remediation_hint": finding.remediation_hint,
         }
         for finding in findings
     ]

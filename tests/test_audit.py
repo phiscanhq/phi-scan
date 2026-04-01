@@ -810,6 +810,15 @@ def test_serialize_findings_excludes_code_context(tmp_path: Path) -> None:
     assert "code_context" not in parsed[0]
 
 
+def test_serialize_findings_excludes_remediation_hint(tmp_path: Path) -> None:
+    finding = _build_scan_finding(_SAMPLE_FILE_PATH)
+
+    serialized = _serialize_findings((finding,))
+
+    parsed = json.loads(serialized)
+    assert "remediation_hint" not in parsed[0]
+
+
 def test_serialize_findings_includes_line_number(tmp_path: Path) -> None:
     finding = _build_scan_finding(_SAMPLE_FILE_PATH)
 
