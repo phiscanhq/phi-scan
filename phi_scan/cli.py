@@ -36,6 +36,7 @@ from phi_scan.baseline import (
 )
 from phi_scan.compliance import (
     ComplianceFramework,
+    InvalidFrameworkError,
     annotate_findings,
     parse_framework_flag,
 )
@@ -788,9 +789,9 @@ def _resolve_framework_flag(framework_flag_value: str | None) -> frozenset[Compl
     """
     try:
         return parse_framework_flag(framework_flag_value)
-    except ValueError as value_error:
-        typer.echo(_FRAMEWORK_PARSE_ERROR.format(error=value_error), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR) from value_error
+    except InvalidFrameworkError as framework_error:
+        typer.echo(_FRAMEWORK_PARSE_ERROR.format(error=framework_error), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR) from framework_error
 
 
 def _prepare_scan_phase(

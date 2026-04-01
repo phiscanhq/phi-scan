@@ -28,6 +28,7 @@ __all__ = [
     "ComplianceControl",
     "ComplianceFramework",
     "FrameworkMetadata",
+    "InvalidFrameworkError",
     "CATEGORY_CONTROLS",
     "FRAMEWORK_METADATA",
     "IMPLEMENTED_FRAMEWORKS",
@@ -84,6 +85,15 @@ class FrameworkMetadata:
     enforcement_body: str
     penalty_range: str
     description: str
+
+
+class InvalidFrameworkError(ValueError):
+    """Raised when an unrecognised framework token is passed to parse_framework_flag.
+
+    Subclasses ValueError so callers that need broad compatibility can still catch
+    ValueError, but _resolve_framework_flag catches this type precisely to avoid
+    masking unrelated ValueErrors from future refactors.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -838,7 +848,7 @@ def parse_framework_flag(framework_flag_value: str | None) -> frozenset[Complian
         frozenset of ComplianceFramework members for the requested frameworks.
 
     Raises:
-        ValueError: If any token is not a valid ComplianceFramework value.
+        InvalidFrameworkError: If any token is not a valid ComplianceFramework value.
     """
     if not framework_flag_value:
         return frozenset()
@@ -851,7 +861,7 @@ def parse_framework_flag(framework_flag_value: str | None) -> frozenset[Complian
             invalid.append(token)
     if invalid:
         valid = ", ".join(sorted(f.value for f in ComplianceFramework))
-        raise ValueError(
+        raise InvalidFrameworkError(
             f"Unknown framework(s): {', '.join(sorted(invalid))}. Valid values: {valid}"
         )
     return frozenset(parsed)
