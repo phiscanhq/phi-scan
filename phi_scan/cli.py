@@ -1355,7 +1355,7 @@ def _write_audit_phase(
 def _emit_report_phase(
     scan_result: ScanResult,
     output_options: _ScanOutputOptions,
-) -> None:
+) -> NoReturn:
     """Display the report phase header and emit scan output; always raises typer.Exit.
 
     Both branches terminate via typer.Exit: the baseline path delegates to
