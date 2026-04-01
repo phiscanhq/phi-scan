@@ -247,12 +247,6 @@ FRAMEWORK_METADATA: Mapping[ComplianceFramework, FrameworkMetadata] = {
 
 # HITECH ----------------------------------------------------------------
 
-# Documentary constant only — not used in runtime logic. Extracted from the
-# HITECH citation string so the regulatory threshold is named rather than a
-# bare numeric literal. If severity-escalation logic based on affected-individual
-# count is ever added, reference this constant rather than the literal 500.
-_HITECH_BREACH_NOTIFICATION_THRESHOLD: int = 500
-
 _HITECH_BREACH_NOTIFICATION = ComplianceControl(
     framework=ComplianceFramework.HITECH,
     control_id="45 CFR §§164.400–414",
@@ -260,8 +254,7 @@ _HITECH_BREACH_NOTIFICATION = ComplianceControl(
     citation=(
         "HITECH Act 45 CFR §§164.400–414: findings with HIGH confidence represent "
         "'unsecured PHI' and trigger mandatory breach notification to affected individuals, "
-        "HHS, and the media when "
-        f"{_HITECH_BREACH_NOTIFICATION_THRESHOLD}+ individuals are affected."
+        "HHS, and the media when 500+ individuals are affected (45 CFR §164.406)."
     ),
 )
 

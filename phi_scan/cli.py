@@ -197,6 +197,8 @@ _SCAN_REPORT_PATH_HELP: str = (
 )
 _SCAN_NO_CACHE_HELP: str = "Bypass the content-hash scan cache. Forces a full re-scan of all files."
 _FRAMEWORK_FLAG_NAME: str = "--framework"
+# Example framework tokens reference enum values so they stay in sync with
+# ComplianceFramework. If new frameworks are added, update the example list.
 _SCAN_FRAMEWORK_HELP: str = (
     "Comma-separated compliance frameworks to annotate findings with "
     f"(e.g. {ComplianceFramework.GDPR},{ComplianceFramework.SOC2},{ComplianceFramework.HITRUST}). "
@@ -1005,12 +1007,12 @@ def _emit_scan_output(scan_result: ScanResult, options: _ScanOutputOptions) -> N
 def _emit_scan_output_with_baseline(
     scan_result: ScanResult, output_options: _ScanOutputOptions
 ) -> NoReturn:
-    """Apply baseline filtering and emit output; exit code reflects new findings only.
+    """Apply baseline filtering and emit output; always raises typer.Exit.
 
-    Loads the default baseline file. If no baseline exists, warns and falls back
-    to standard scan output. When a baseline is found, splits findings into new
-    vs. baselined, displays new findings with the standard rich UI, and shows a
-    baseline notice panel summarising suppressed counts.
+    Every code path terminates with raise typer.Exit — the NoReturn annotation
+    is accurate. When no baseline file exists, emits standard scan output then
+    raises; when a baseline is found, emits new-findings output then raises.
+    The exit code reflects new (non-baselined) findings only.
 
     Args:
         scan_result: The completed scan result from the full detection pass.
