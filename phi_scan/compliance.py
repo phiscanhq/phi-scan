@@ -247,8 +247,10 @@ FRAMEWORK_METADATA: Mapping[ComplianceFramework, FrameworkMetadata] = {
 
 # HITECH ----------------------------------------------------------------
 
-# Regulatory threshold: breaches affecting this many or more individuals require
-# media notification in addition to individual and HHS notification (45 CFR §164.406).
+# Documentary constant only — not used in runtime logic. Extracted from the
+# HITECH citation string so the regulatory threshold is named rather than a
+# bare numeric literal. If severity-escalation logic based on affected-individual
+# count is ever added, reference this constant rather than the literal 500.
 _HITECH_BREACH_NOTIFICATION_THRESHOLD: int = 500
 
 _HITECH_BREACH_NOTIFICATION = ComplianceControl(

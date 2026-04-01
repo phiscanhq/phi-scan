@@ -1330,21 +1330,17 @@ def main_callback(
     """PHI/PII Scanner for CI/CD pipelines. HIPAA & FHIR compliant. Local execution only."""
 
 
-def _run_post_scan_phases(
+def _write_audit_phase(
     scan_result: ScanResult,
     scan_config: ScanConfig,
     output_options: _ScanOutputOptions,
 ) -> None:
-    """Write the audit record and emit scan output for a completed scan.
-
-    Handles audit-phase display, verbose emission, audit DB write, report-phase
-    display, and final output emission (with or without baseline comparison).
+    """Display the audit phase header and write the scan result to the audit database.
 
     Args:
         scan_result: Completed scan result from _execute_scan_with_progress.
-        scan_config: Loaded scan configuration (used for audit DB path).
-        output_options: All output-related options including rich mode, verbose,
-            and baseline flags.
+        scan_config: Loaded scan configuration (supplies the audit DB path).
+        output_options: Controls rich-mode display and verbose emission.
     """
     if output_options.is_rich_mode:
         display_phase_audit()
@@ -1353,11 +1349,28 @@ def _run_post_scan_phases(
         _SPINNER_AUDIT_WRITE_MESSAGE, is_active=output_options.is_rich_mode
     ):
         _write_audit_record(scan_result, scan_config.database_path)
+
+
+def _emit_report_phase(
+    scan_result: ScanResult,
+    output_options: _ScanOutputOptions,
+) -> None:
+    """Display the report phase header and emit scan output; always raises typer.Exit.
+
+    Both branches terminate via typer.Exit: the baseline path delegates to
+    _emit_scan_output_with_baseline, which raises before returning; the
+    standard path raises explicitly below.
+
+    Args:
+        scan_result: Completed scan result from _execute_scan_with_progress.
+        output_options: Controls output format, rich mode, verbose, and baseline.
+    """
     if output_options.is_rich_mode:
         display_phase_report()
     _emit_verbose_phase(_VERBOSE_PHASE_REPORT, output_options.is_verbose)
     if output_options.should_use_baseline:
         _emit_scan_output_with_baseline(scan_result, output_options)
+        # _emit_scan_output_with_baseline always raises typer.Exit before returning.
     else:
         _emit_scan_output(scan_result, output_options)
         raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
@@ -1434,7 +1447,8 @@ def scan(
         is_verbose=is_verbose,
         should_use_baseline=should_use_baseline,
     )
-    _run_post_scan_phases(scan_result, scan_config, output_options)
+    _write_audit_phase(scan_result, scan_config, output_options)
+    _emit_report_phase(scan_result, output_options)
 
 
 @app.command()
