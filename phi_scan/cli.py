@@ -10,7 +10,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 
 import pathspec
 import typer
@@ -33,6 +33,12 @@ from phi_scan.baseline import (
     filter_baselined_findings,
     get_baseline_summary,
     load_baseline,
+)
+from phi_scan.compliance import (
+    ComplianceFramework,
+    InvalidFrameworkError,
+    annotate_findings,
+    parse_framework_flag,
 )
 from phi_scan.config import create_default_config, load_config
 from phi_scan.constants import (
@@ -69,7 +75,9 @@ from phi_scan.fixer import (
 from phi_scan.help_text import (
     EXPLAIN_CONFIDENCE_TEXT,
     EXPLAIN_CONFIG_TEXT,
+    EXPLAIN_DEIDENTIFICATION_TEXT,
     EXPLAIN_DETECTION_TEXT,
+    EXPLAIN_FRAMEWORKS_TEXT,
     EXPLAIN_HIPAA_TEXT,
     EXPLAIN_IGNORE_TEXT,
     EXPLAIN_REMEDIATION_TEXT,
@@ -128,7 +136,9 @@ from phi_scan.scanner import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
+
+    from phi_scan.compliance import ComplianceControl
 
 __all__ = ["app"]
 
@@ -186,6 +196,20 @@ _SCAN_REPORT_PATH_HELP: str = (
     "Requires a non-table output format."
 )
 _SCAN_NO_CACHE_HELP: str = "Bypass the content-hash scan cache. Forces a full re-scan of all files."
+_FRAMEWORK_FLAG_NAME: str = "--framework"
+# Example framework tokens reference enum values so they stay in sync with
+# ComplianceFramework. If new frameworks are added, update the example list.
+_SCAN_FRAMEWORK_HELP: str = (
+    "Comma-separated compliance frameworks to annotate findings with "
+    f"(e.g. {ComplianceFramework.GDPR},{ComplianceFramework.SOC2},{ComplianceFramework.HITRUST}). "
+    f"{ComplianceFramework.HIPAA} is always active. "
+    "Run `phi-scan explain frameworks` for all supported values."
+)
+# The {error} placeholder receives a ValueError from parse_framework_flag, whose
+# message contains only the unrecognised framework name tokens the user supplied
+# (e.g. "nonexistent"). It never carries PHI or scan-result content because
+# parse_framework_flag operates solely on the --framework CLI flag string.
+_FRAMEWORK_PARSE_ERROR: str = "Invalid --framework value: {error}"
 _REPORT_PATH_TABLE_FORMAT_ERROR: str = (
     "--report-path requires a serialized output format. "
     "Use --output json, sarif, csv, junit, codequality, gitlab-sast, pdf, or html."
@@ -527,14 +551,27 @@ class _ScanTargetOptions:
 class _ScanOutputOptions:
     """Options controlling how scan results are rendered or serialized.
 
-    Groups output-related flags so _emit_scan_output stays within the
-    three-argument limit required by CLAUDE.md.
+    Groups output-rendering flags passed to _emit_scan_output and its helpers.
+    Execution-phase flags (verbosity, baseline mode) live in _ScanPhaseOptions.
     """
 
     output_format: OutputFormat
     is_rich_mode: bool
     report_path: Path | None
     scan_target: Path = field(default_factory=lambda: Path("."))
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None
+
+
+@dataclass(frozen=True)
+class _ScanPhaseOptions:
+    """Execution-phase flags controlling phase headers and data selection.
+
+    Kept separate from _ScanOutputOptions because these flags control when and
+    how scan phases execute, not how results are rendered.
+    """
+
+    is_verbose: bool = False
+    should_use_baseline: bool = False
 
 
 def _configure_logging(log_level: str, log_file: Path | None, is_quiet: bool) -> None:
@@ -735,6 +772,25 @@ def _resolve_output_format(output_format: str) -> OutputFormat:
         raise typer.Exit(code=EXIT_CODE_ERROR) from value_error
 
 
+def _resolve_framework_flag(framework_flag_value: str | None) -> frozenset[ComplianceFramework]:
+    """Parse the --framework flag and exit with an error on unknown framework names.
+
+    Args:
+        framework_flag_value: Comma-separated framework string from the CLI, or None.
+
+    Returns:
+        frozenset of ComplianceFramework members; empty when framework_flag_value is None.
+
+    Raises:
+        typer.Exit: If any framework token is not a valid ComplianceFramework value.
+    """
+    try:
+        return parse_framework_flag(framework_flag_value)
+    except InvalidFrameworkError as framework_error:
+        typer.echo(_FRAMEWORK_PARSE_ERROR.format(error=framework_error), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR) from framework_error
+
+
 def _prepare_scan_phase(
     target_options: _ScanTargetOptions,
     is_rich_mode: bool,
@@ -859,8 +915,18 @@ def _generate_report_bytes(
     if options.output_format not in {OutputFormat.PDF, OutputFormat.HTML}:
         raise ValueError(_UNEXPECTED_BINARY_FORMAT_ERROR.format(format=options.output_format))
     if options.output_format == OutputFormat.PDF:
-        return generate_pdf_report(scan_result, options.scan_target, audit_rows)
-    return generate_html_report(scan_result, options.scan_target, audit_rows)
+        return generate_pdf_report(
+            scan_result,
+            options.scan_target,
+            audit_rows,
+            options.framework_annotations,
+        )
+    return generate_html_report(
+        scan_result,
+        options.scan_target,
+        audit_rows,
+        options.framework_annotations,
+    )
 
 
 def _fetch_report_audit_rows() -> list[dict[str, object]]:
@@ -932,13 +998,13 @@ def _emit_scan_output(scan_result: ScanResult, options: _ScanOutputOptions) -> N
 
 def _emit_scan_output_with_baseline(
     scan_result: ScanResult, output_options: _ScanOutputOptions
-) -> None:
-    """Apply baseline filtering and emit output; exit code reflects new findings only.
+) -> NoReturn:
+    """Apply baseline filtering and emit output; always raises typer.Exit.
 
-    Loads the default baseline file. If no baseline exists, warns and falls back
-    to standard scan output. When a baseline is found, splits findings into new
-    vs. baselined, displays new findings with the standard rich UI, and shows a
-    baseline notice panel summarising suppressed counts.
+    Every code path terminates with raise typer.Exit — the NoReturn annotation
+    is accurate. When no baseline file exists, emits standard scan output then
+    raises; when a baseline is found, emits new-findings output then raises.
+    The exit code reflects new (non-baselined) findings only.
 
     Args:
         scan_result: The completed scan result from the full detection pass.
@@ -1259,6 +1325,67 @@ def main_callback(
     """PHI/PII Scanner for CI/CD pipelines. HIPAA & FHIR compliant. Local execution only."""
 
 
+def _display_audit_phase_header(
+    output_options: _ScanOutputOptions,
+    phase_options: _ScanPhaseOptions,
+) -> None:
+    """Display the audit phase Rich banner and verbose marker."""
+    if output_options.is_rich_mode:
+        display_phase_audit()
+    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, phase_options.is_verbose)
+
+
+def _persist_audit_record(
+    scan_result: ScanResult,
+    scan_config: ScanConfig,
+    output_options: _ScanOutputOptions,
+) -> None:
+    """Persist the scan result to the audit database with progress feedback.
+
+    Args:
+        scan_result: Completed scan result from _execute_scan_with_progress.
+        scan_config: Loaded scan configuration (supplies the audit DB path).
+        output_options: Controls Rich spinner activation.
+    """
+    with display_status_spinner(
+        _SPINNER_AUDIT_WRITE_MESSAGE, is_active=output_options.is_rich_mode
+    ):
+        _write_audit_record(scan_result, scan_config.database_path)
+
+
+def _display_report_phase_header(
+    output_options: _ScanOutputOptions,
+    phase_options: _ScanPhaseOptions,
+) -> None:
+    """Display the report phase Rich banner and verbose marker."""
+    if output_options.is_rich_mode:
+        display_phase_report()
+    _emit_verbose_phase(_VERBOSE_PHASE_REPORT, phase_options.is_verbose)
+
+
+def _emit_report_output(
+    scan_result: ScanResult,
+    output_options: _ScanOutputOptions,
+    phase_options: _ScanPhaseOptions,
+) -> NoReturn:
+    """Emit scan output via the appropriate path; always raises typer.Exit.
+
+    Both branches terminate via typer.Exit: the baseline path delegates to
+    _emit_scan_output_with_baseline, which raises before returning; the
+    standard path raises explicitly below.
+
+    Args:
+        scan_result: Completed scan result from _execute_scan_with_progress.
+        output_options: Controls output format, rich mode, and report path.
+        phase_options: Controls baseline mode selection.
+    """
+    if phase_options.should_use_baseline:
+        _emit_scan_output_with_baseline(scan_result, output_options)
+    else:
+        _emit_scan_output(scan_result, output_options)
+        raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
+
+
 @app.command()
 def scan(
     path: Annotated[Path, typer.Argument(help=_SCAN_PATH_HELP)] = Path("."),
@@ -1288,6 +1415,9 @@ def scan(
     should_use_baseline: Annotated[
         bool, typer.Option("--baseline", help=_SCAN_BASELINE_HELP)
     ] = False,
+    framework: Annotated[
+        str | None, typer.Option(_FRAMEWORK_FLAG_NAME, help=_SCAN_FRAMEWORK_HELP)
+    ] = None,
 ) -> None:
     """Scan a directory or file for PHI/PII.
 
@@ -1301,6 +1431,7 @@ def scan(
     effective_log_level = _LOG_LEVEL_DEBUG if is_verbose else log_level
     _configure_logging(effective_log_level, log_file, is_quiet)
     output_format_enum = _resolve_output_format(output_format)
+    enabled_frameworks = _resolve_framework_flag(framework)
     is_rich_mode = not is_quiet and output_format_enum is OutputFormat.TABLE
     with display_status_spinner(_SPINNER_CONFIG_LOAD_MESSAGE, is_active=is_rich_mode):
         scan_config = _load_scan_config(config_path, severity_threshold)
@@ -1310,27 +1441,30 @@ def scan(
     target_options = _ScanTargetOptions(
         scan_root=path, diff_ref=diff_ref, single_file=single_file, config=scan_config
     )
+    scan_targets = _prepare_scan_phase(target_options, is_rich_mode, is_verbose)
+    # Intentional ordering: scan runs before output_options is constructed because
+    # framework_annotations depend on scan_result.findings. Any error raised by
+    # _execute_scan_with_progress will propagate before output_options is configured,
+    # which is acceptable — output_options has no effect until _emit_scan_output is called.
+    scan_result = _execute_scan_with_progress(scan_targets, scan_config, is_rich_mode)
+    framework_annotations = (
+        annotate_findings(scan_result.findings, enabled_frameworks) if enabled_frameworks else None
+    )
     output_options = _ScanOutputOptions(
         output_format=output_format_enum,
         is_rich_mode=is_rich_mode,
         report_path=report_path,
         scan_target=path,
+        framework_annotations=framework_annotations,
     )
-    scan_targets = _prepare_scan_phase(target_options, is_rich_mode, is_verbose)
-    scan_result = _execute_scan_with_progress(scan_targets, scan_config, is_rich_mode)
-    if is_rich_mode:
-        display_phase_audit()
-    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, is_verbose)
-    with display_status_spinner(_SPINNER_AUDIT_WRITE_MESSAGE, is_active=is_rich_mode):
-        _write_audit_record(scan_result, scan_config.database_path)
-    if is_rich_mode:
-        display_phase_report()
-    _emit_verbose_phase(_VERBOSE_PHASE_REPORT, is_verbose)
-    if should_use_baseline:
-        _emit_scan_output_with_baseline(scan_result, output_options)
-    else:
-        _emit_scan_output(scan_result, output_options)
-        raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
+    phase_options = _ScanPhaseOptions(
+        is_verbose=is_verbose,
+        should_use_baseline=should_use_baseline,
+    )
+    _display_audit_phase_header(output_options, phase_options)
+    _persist_audit_record(scan_result, scan_config, output_options)
+    _display_report_phase_header(output_options, phase_options)
+    _emit_report_output(scan_result, output_options, phase_options)
 
 
 @app.command()
@@ -1706,6 +1840,18 @@ def explain_reports() -> None:
 def explain_remediation() -> None:
     """Show the full remediation playbook for all 18 HIPAA categories."""
     _render_explain_topic(EXPLAIN_REMEDIATION_TEXT)
+
+
+@explain_app.command("frameworks")
+def explain_frameworks() -> None:
+    """List all supported compliance frameworks with citations and penalty ranges."""
+    _render_explain_topic(EXPLAIN_FRAMEWORKS_TEXT)
+
+
+@explain_app.command("deidentification")
+def explain_deidentification() -> None:
+    """Explain HIPAA Safe Harbor vs Expert Determination and known detection gaps."""
+    _render_explain_topic(EXPLAIN_DEIDENTIFICATION_TEXT)
 
 
 # ---------------------------------------------------------------------------

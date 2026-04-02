@@ -46,6 +46,9 @@ from phi_scan.constants import (
 from phi_scan.logging_config import get_logger
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from phi_scan.compliance import ComplianceControl
     from phi_scan.models import ScanResult
 
 __all__ = [
@@ -713,6 +716,8 @@ _HTML_TEMPLATE: str = """\
   .remediation-group p { font-size: 12px; color: #555; line-height: 1.5; }
   .checklist { padding-left: 20px; margin-top: 8px; }
   .checklist li { font-size: 13px; margin-bottom: 6px; line-height: 1.4; }
+  .framework-tag { display: inline-block; margin: 1px 2px; padding: 1px 6px; border-radius: 10px;
+                   font-size: 10px; font-weight: 600; background: #eaf0fb; color: #2471a3; }
   footer { text-align: center; font-size: 12px; color: #95a5a6; padding: 16px 0 8px; }
   @media print {
     body { background: #fff; }
@@ -840,6 +845,45 @@ _HTML_TEMPLATE: str = """\
   </ul>
 </section>
 
+{% if compliance_matrix_rows %}
+<section>
+  <h2>Compliance Matrix</h2>
+  <p style="font-size:12px;color:#555;margin-bottom:12px">
+    Applicable regulatory controls per finding. HIPAA Safe Harbor is always shown;
+    additional frameworks reflect your <code>--framework</code> selection.
+  </p>
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>File</th><th>Line</th><th>Category</th><th>Applicable Controls</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in compliance_matrix_rows %}
+      <tr>
+        <td>{{ row.index }}</td>
+        <td style="font-size:11px">{{ row.file_path }}</td>
+        <td>{{ row.line_number }}</td>
+        <td>{{ row.category }}</td>
+        <td>
+          {% for fw, control_ids in row.frameworks.items() %}
+            <div style="margin-bottom:3px">
+              <strong style="font-size:10px;color:#2c3e50">{{ fw }}</strong>
+              {% for cid in control_ids %}
+                <span class="framework-tag">{{ cid }}</span>
+              {% endfor %}
+            </div>
+          {% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
 <section>
   <h2>Appendix &mdash; Scan Configuration</h2>
   <table style="width:auto">
@@ -864,10 +908,43 @@ _HTML_TEMPLATE: str = """\
 """
 
 
+def _build_compliance_matrix_rows(
+    scan_result: ScanResult,
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None,
+) -> list[dict[str, object]]:
+    """Build pre-processed compliance matrix rows for the HTML template.
+
+    Returns one dict per finding that has at least one applicable control,
+    with controls grouped by framework for template rendering.
+    """
+    if not framework_annotations:
+        return []
+    rows: list[dict[str, object]] = []
+    for idx, finding in enumerate(scan_result.findings):
+        controls = framework_annotations.get(idx, ())
+        if not controls:
+            continue
+        by_framework: dict[str, list[str]] = {}
+        for control in controls:
+            fw_label = control.framework.value.upper()
+            by_framework.setdefault(fw_label, []).append(control.control_id)
+        rows.append(
+            {
+                "index": idx + 1,
+                "file_path": str(finding.file_path),
+                "line_number": finding.line_number,
+                "category": finding.hipaa_category.value,
+                "frameworks": by_framework,
+            }
+        )
+    return rows
+
+
 def _build_html_context(
     scan_result: ScanResult,
     scan_target: Path,
     audit_rows: list[dict[str, object]],
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None,
 ) -> dict[str, object]:
     """Build the Jinja2 template context dict from a ScanResult."""
     present_categories: set[PhiCategory] = {f.hipaa_category for f in scan_result.findings}
@@ -909,6 +986,7 @@ def _build_html_context(
         "remediation_by_category": remediation_by_category,
         "checklist": _GENERAL_REMEDIATION_CHECKLIST,
         "charts": charts,
+        "compliance_matrix_rows": _build_compliance_matrix_rows(scan_result, framework_annotations),
     }
 
 
@@ -916,6 +994,7 @@ def generate_html_report(
     scan_result: ScanResult,
     scan_target: Path,
     audit_rows: list[dict[str, object]] | None = None,
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None,
 ) -> bytes:
     """Render a self-contained HTML report from a ScanResult.
 
@@ -923,6 +1002,8 @@ def generate_html_report(
         scan_result: Completed scan result.
         scan_target: Directory or file that was scanned.
         audit_rows: Optional rows from query_recent_scans for the trend chart.
+        framework_annotations: Optional per-finding compliance controls from
+            annotate_findings(); enables the compliance matrix section.
 
     Returns:
         UTF-8 encoded HTML bytes of the complete self-contained report.
@@ -934,7 +1015,7 @@ def generate_html_report(
     # cannot accidentally render raw code_context without going through the guard.
     env.globals["truncate_code_context"] = _truncate_code_context
     template = env.from_string(_HTML_TEMPLATE)
-    context = _build_html_context(scan_result, scan_target, audit_rows or [])
+    context = _build_html_context(scan_result, scan_target, audit_rows or [], framework_annotations)
     return template.render(**context).encode("utf-8")
 
 
@@ -1217,6 +1298,62 @@ def _pdf_write_appendix(
     )
 
 
+def _pdf_write_compliance_matrix(
+    pdf: object,
+    scan_result: ScanResult,
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]],
+) -> None:
+    """Write the compliance matrix section listing controls per finding."""
+    pdf.add_page()  # type: ignore[attr-defined]
+    _pdf_add_section_heading(pdf, "Compliance Matrix")
+
+    pdf.set_text_color(*_COLOUR_NAVY_RGB)  # type: ignore[attr-defined]
+    _pdf_set_font(pdf, size=_FONT_SMALL)
+    pdf.multi_cell(  # type: ignore[attr-defined]
+        0,
+        5,
+        "Applicable regulatory controls per finding. HIPAA Safe Harbor is always shown; "
+        "additional frameworks reflect the --framework selection.",
+    )
+    pdf.ln(4)  # type: ignore[attr-defined]
+
+    for idx, finding in enumerate(scan_result.findings):
+        controls = framework_annotations.get(idx, ())
+        if not controls:
+            continue
+        if pdf.get_y() > _PDF_PAGE_BREAK_Y_MM:  # type: ignore[attr-defined]
+            pdf.add_page()  # type: ignore[attr-defined]
+
+        _pdf_set_font(pdf, style="B", size=_FONT_BODY)
+        finding_label = (
+            f"#{idx + 1}  {finding.file_path}:{finding.line_number}"
+            f"  [{finding.hipaa_category.value}]"
+        )
+        pdf.cell(  # type: ignore[attr-defined]
+            0,
+            5,
+            _encode_pdf_text_as_latin1(finding_label[:100]),
+            new_x="LMARGIN",
+            new_y="NEXT",
+        )
+        _pdf_set_font(pdf, size=_FONT_SMALL)
+        by_framework: dict[str, list[str]] = {}
+        for control in controls:
+            fw_label = control.framework.value.upper()
+            by_framework.setdefault(fw_label, []).append(control.control_id)
+        for fw_label, control_ids in by_framework.items():
+            ids_str = ", ".join(control_ids)
+            line = f"  {fw_label}: {ids_str}"
+            pdf.cell(  # type: ignore[attr-defined]
+                0,
+                4,
+                _encode_pdf_text_as_latin1(line[:120]),
+                new_x="LMARGIN",
+                new_y="NEXT",
+            )
+        pdf.ln(2)  # type: ignore[attr-defined]
+
+
 # ---------------------------------------------------------------------------
 # Public entry points
 # ---------------------------------------------------------------------------
@@ -1226,6 +1363,7 @@ def generate_pdf_report(
     scan_result: ScanResult,
     scan_target: Path,
     audit_rows: list[dict[str, object]] | None = None,
+    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None,
 ) -> bytes:
     """Render a professional PDF report from a ScanResult.
 
@@ -1233,6 +1371,8 @@ def generate_pdf_report(
         scan_result: Completed scan result.
         scan_target: Directory or file that was scanned.
         audit_rows: Optional rows from query_recent_scans for the trend chart.
+        framework_annotations: Optional per-finding compliance controls from
+            annotate_findings(); enables the compliance matrix section.
 
     Returns:
         Raw PDF bytes of the complete multi-page report.
@@ -1261,6 +1401,8 @@ def generate_pdf_report(
     _pdf_write_summary_page(pdf, scan_result, charts)
     _pdf_write_findings_table(pdf, scan_result)
     _pdf_write_remediation_section(pdf, scan_result)
+    if framework_annotations:
+        _pdf_write_compliance_matrix(pdf, scan_result, framework_annotations)
     _pdf_write_appendix(pdf, scan_result, scan_target, timestamp)
 
     return bytes(pdf.output())
