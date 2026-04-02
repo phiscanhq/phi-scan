@@ -1325,35 +1325,50 @@ def main_callback(
     """PHI/PII Scanner for CI/CD pipelines. HIPAA & FHIR compliant. Local execution only."""
 
 
-def _write_audit_phase(
-    scan_result: ScanResult,
-    scan_config: ScanConfig,
+def _display_audit_phase_header(
     output_options: _ScanOutputOptions,
     phase_options: _ScanPhaseOptions,
 ) -> None:
-    """Display the audit phase header and write the scan result to the audit database.
+    """Display the audit phase Rich banner and verbose marker."""
+    if output_options.is_rich_mode:
+        display_phase_audit()
+    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, phase_options.is_verbose)
+
+
+def _persist_audit_record(
+    scan_result: ScanResult,
+    scan_config: ScanConfig,
+    output_options: _ScanOutputOptions,
+) -> None:
+    """Persist the scan result to the audit database with progress feedback.
 
     Args:
         scan_result: Completed scan result from _execute_scan_with_progress.
         scan_config: Loaded scan configuration (supplies the audit DB path).
-        output_options: Controls rich-mode display.
-        phase_options: Controls verbose emission.
+        output_options: Controls Rich spinner activation.
     """
-    if output_options.is_rich_mode:
-        display_phase_audit()
-    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, phase_options.is_verbose)
     with display_status_spinner(
         _SPINNER_AUDIT_WRITE_MESSAGE, is_active=output_options.is_rich_mode
     ):
         _write_audit_record(scan_result, scan_config.database_path)
 
 
-def _emit_report_phase(
+def _display_report_phase_header(
+    output_options: _ScanOutputOptions,
+    phase_options: _ScanPhaseOptions,
+) -> None:
+    """Display the report phase Rich banner and verbose marker."""
+    if output_options.is_rich_mode:
+        display_phase_report()
+    _emit_verbose_phase(_VERBOSE_PHASE_REPORT, phase_options.is_verbose)
+
+
+def _emit_report_output(
     scan_result: ScanResult,
     output_options: _ScanOutputOptions,
     phase_options: _ScanPhaseOptions,
 ) -> NoReturn:
-    """Display the report phase header and emit scan output; always raises typer.Exit.
+    """Emit scan output via the appropriate path; always raises typer.Exit.
 
     Both branches terminate via typer.Exit: the baseline path delegates to
     _emit_scan_output_with_baseline, which raises before returning; the
@@ -1362,11 +1377,8 @@ def _emit_report_phase(
     Args:
         scan_result: Completed scan result from _execute_scan_with_progress.
         output_options: Controls output format, rich mode, and report path.
-        phase_options: Controls verbose emission and baseline mode.
+        phase_options: Controls baseline mode selection.
     """
-    if output_options.is_rich_mode:
-        display_phase_report()
-    _emit_verbose_phase(_VERBOSE_PHASE_REPORT, phase_options.is_verbose)
     if phase_options.should_use_baseline:
         _emit_scan_output_with_baseline(scan_result, output_options)
     else:
@@ -1449,8 +1461,10 @@ def scan(
         is_verbose=is_verbose,
         should_use_baseline=should_use_baseline,
     )
-    _write_audit_phase(scan_result, scan_config, output_options, phase_options)
-    _emit_report_phase(scan_result, output_options, phase_options)
+    _display_audit_phase_header(output_options, phase_options)
+    _persist_audit_record(scan_result, scan_config, output_options)
+    _display_report_phase_header(output_options, phase_options)
+    _emit_report_output(scan_result, output_options, phase_options)
 
 
 @app.command()

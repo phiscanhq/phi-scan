@@ -10,7 +10,6 @@ import pytest
 from phi_scan.compliance import (
     CATEGORY_CONTROLS,
     FRAMEWORK_METADATA,
-    IMPLEMENTED_FRAMEWORKS,
     ComplianceControl,
     ComplianceFramework,
     FrameworkMetadata,
@@ -92,11 +91,6 @@ def test_compliance_framework_values_are_lowercase() -> None:
         assert member.value == member.value.lower(), (
             f"ComplianceFramework.{member.name} value {member.value!r} is not lowercase"
         )
-
-
-def test_implemented_frameworks_matches_enum_members() -> None:
-    """IMPLEMENTED_FRAMEWORKS must contain exactly the ComplianceFramework members."""
-    assert IMPLEMENTED_FRAMEWORKS == frozenset(ComplianceFramework)
 
 
 def test_hipaa_member_exists() -> None:

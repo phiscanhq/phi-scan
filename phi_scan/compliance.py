@@ -9,7 +9,7 @@ Design constraints:
   - CATEGORY_CONTROLS is a module-level constant built once at import time.
   - annotate_findings is a pure function — no I/O, no mutation.
   - parse_framework_flag raises InvalidFrameworkError (not typer.BadParameter) so this module
-    stays framework-agnostic; the CLI layer converts the error to typer.BadParameter.
+    stays framework-agnostic; the CLI layer converts the error to typer.Exit.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ __all__ = [
     "InvalidFrameworkError",
     "CATEGORY_CONTROLS",
     "FRAMEWORK_METADATA",
-    "IMPLEMENTED_FRAMEWORKS",
     "annotate_findings",
     "parse_framework_flag",
 ]
@@ -60,11 +59,6 @@ class ComplianceFramework(StrEnum):
     BIPA = "bipa"
     SHIELD = "shield"
     MRPA = "mrpa"
-
-
-# Every ComplianceFramework member is implemented; updated here when new
-# frameworks are added so the CLI validation uses a single source of truth.
-IMPLEMENTED_FRAMEWORKS: frozenset[ComplianceFramework] = frozenset(ComplianceFramework)
 
 
 @dataclass(frozen=True)
@@ -833,7 +827,7 @@ def parse_framework_flag(framework_flag_value: str | None) -> frozenset[Complian
     """Parse a comma-separated --framework flag value into a frozenset.
 
     Returns an empty frozenset when *framework_flag_value* is None or blank.
-    Raises ValueError for any unrecognised framework token.  The ValueError
+    Raises InvalidFrameworkError for any unrecognised framework token. The error
     message contains only framework name tokens (never PHI or scan content).
 
     Args:
