@@ -360,7 +360,7 @@ _NIST_PERSONALLY_IDENTIFIABLE_INFORMATION_QUALITY_MANAGEMENT = ComplianceControl
         "unmanaged data quality gap."
     ),
 )
-_NIST_AUTHORITY_TO_PROCESS_PII = ComplianceControl(
+_NIST_AUTHORITY_TO_PROCESS_PERSONALLY_IDENTIFIABLE_INFORMATION = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="PT-2",
     control_name="Authority to Process PII",
@@ -370,7 +370,7 @@ _NIST_AUTHORITY_TO_PROCESS_PII = ComplianceControl(
         "data flows, violating PT-2."
     ),
 )
-_NIST_PURPOSES_OF_PII_PROCESSING = ComplianceControl(
+_NIST_PURPOSES_OF_PERSONALLY_IDENTIFIABLE_INFORMATION_PROCESSING = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="PT-3",
     control_name="Purposes of PII Processing",
@@ -380,7 +380,7 @@ _NIST_PURPOSES_OF_PII_PROCESSING = ComplianceControl(
         "the documented and authorised purpose."
     ),
 )
-_NIST_IDENTIFY_PII = ComplianceControl(
+_NIST_IDENTIFY_PERSONALLY_IDENTIFIABLE_INFORMATION = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="SP 800-122 §2.1",
     control_name="Identify PII",
@@ -389,7 +389,7 @@ _NIST_IDENTIFY_PII = ComplianceControl(
         "PHI detected in source code indicates a gap in PII inventory and identification."
     ),
 )
-_NIST_MINIMIZE_PII = ComplianceControl(
+_NIST_MINIMIZE_PERSONALLY_IDENTIFIABLE_INFORMATION = ComplianceControl(
     framework=ComplianceFramework.NIST,
     control_id="SP 800-122 §2.2",
     control_name="Minimise PII",
@@ -570,10 +570,10 @@ _NIST_ALL = (
     _NIST_PROTECTION_INFORMATION_AT_REST,
     _NIST_SYSTEM_INTEGRITY_POLICY,
     _NIST_PERSONALLY_IDENTIFIABLE_INFORMATION_QUALITY_MANAGEMENT,
-    _NIST_AUTHORITY_TO_PROCESS_PII,
-    _NIST_PURPOSES_OF_PII_PROCESSING,
-    _NIST_IDENTIFY_PII,
-    _NIST_MINIMIZE_PII,
+    _NIST_AUTHORITY_TO_PROCESS_PERSONALLY_IDENTIFIABLE_INFORMATION,
+    _NIST_PURPOSES_OF_PERSONALLY_IDENTIFIABLE_INFORMATION_PROCESSING,
+    _NIST_IDENTIFY_PERSONALLY_IDENTIFIABLE_INFORMATION,
+    _NIST_MINIMIZE_PERSONALLY_IDENTIFIABLE_INFORMATION,
 )
 _GDPR_BASE = (
     _GDPR_PERSONAL_DATA_DEFINITION,
