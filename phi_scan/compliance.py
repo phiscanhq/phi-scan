@@ -254,7 +254,7 @@ _HITECH_BREACH_NOTIFICATION = ComplianceControl(
 
 # SOC 2 Type II ---------------------------------------------------------
 
-_SOC2_CC6_1 = ComplianceControl(
+_SOC2_LOGICAL_AND_PHYSICAL_ACCESS_CONTROLS = ComplianceControl(
     framework=ComplianceFramework.SOC2,
     control_id="CC6.1",
     control_name="Logical and Physical Access Controls",
@@ -264,7 +264,7 @@ _SOC2_CC6_1 = ComplianceControl(
         "access control boundaries."
     ),
 )
-_SOC2_CC6_6 = ComplianceControl(
+_SOC2_LOGICAL_ACCESS_SECURITY_MEASURES = ComplianceControl(
     framework=ComplianceFramework.SOC2,
     control_id="CC6.6",
     control_name="Logical Access Security Measures",
@@ -274,7 +274,7 @@ _SOC2_CC6_6 = ComplianceControl(
         "developers with repository access."
     ),
 )
-_SOC2_CC6_7 = ComplianceControl(
+_SOC2_DATA_TRANSMISSION_AND_DISPOSAL = ComplianceControl(
     framework=ComplianceFramework.SOC2,
     control_id="CC6.7",
     control_name="Data Transmission and Disposal",
@@ -287,7 +287,7 @@ _SOC2_CC6_7 = ComplianceControl(
 
 # HITRUST CSF v11 -------------------------------------------------------
 
-_HITRUST_07A = ComplianceControl(
+_HITRUST_ASSET_INVENTORY = ComplianceControl(
     framework=ComplianceFramework.HITRUST,
     control_id="07.a",
     control_name="Inventory of Assets",
@@ -297,7 +297,7 @@ _HITRUST_07A = ComplianceControl(
         "that falls outside the approved asset inventory."
     ),
 )
-_HITRUST_09S = ComplianceControl(
+_HITRUST_MONITORING_AND_INFORMATION_EXCHANGE = ComplianceControl(
     framework=ComplianceFramework.HITRUST,
     control_id="09.s",
     control_name="Monitoring System Use and Exchange of Information",
@@ -307,7 +307,7 @@ _HITRUST_09S = ComplianceControl(
         "data was committed without detection."
     ),
 )
-_HITRUST_01V = ComplianceControl(
+_HITRUST_INFORMATION_ACCESS_RESTRICTION = ComplianceControl(
     framework=ComplianceFramework.HITRUST,
     control_id="01.v",
     control_name="Information Access Restriction",
@@ -317,7 +317,7 @@ _HITRUST_01V = ComplianceControl(
         "violating the principle of least privilege."
     ),
 )
-_HITRUST_09AB = ComplianceControl(
+_HITRUST_MONITORING_SYSTEM_USE = ComplianceControl(
     framework=ComplianceFramework.HITRUST,
     control_id="09.ab",
     control_name="Monitoring System Use",
@@ -555,8 +555,17 @@ _MRPA_HEALTH_INFORMATION = ComplianceControl(
 # Convenience tuples — groups of controls shared across many categories
 # ---------------------------------------------------------------------------
 
-_SOC2_ALL = (_SOC2_CC6_1, _SOC2_CC6_6, _SOC2_CC6_7)
-_HITRUST_ALL = (_HITRUST_07A, _HITRUST_09S, _HITRUST_01V, _HITRUST_09AB)
+_SOC2_ALL = (
+    _SOC2_LOGICAL_AND_PHYSICAL_ACCESS_CONTROLS,
+    _SOC2_LOGICAL_ACCESS_SECURITY_MEASURES,
+    _SOC2_DATA_TRANSMISSION_AND_DISPOSAL,
+)
+_HITRUST_ALL = (
+    _HITRUST_ASSET_INVENTORY,
+    _HITRUST_MONITORING_AND_INFORMATION_EXCHANGE,
+    _HITRUST_INFORMATION_ACCESS_RESTRICTION,
+    _HITRUST_MONITORING_SYSTEM_USE,
+)
 _NIST_ALL = (
     _NIST_PROTECTION_INFORMATION_AT_REST,
     _NIST_SYSTEM_INTEGRITY_POLICY,
