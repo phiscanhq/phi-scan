@@ -10,7 +10,9 @@ Rich markup is used throughout: [bold], [cyan], [yellow], [red], [green].
 __all__ = [
     "EXPLAIN_CONFIDENCE_TEXT",
     "EXPLAIN_CONFIG_TEXT",
+    "EXPLAIN_DEIDENTIFICATION_TEXT",
     "EXPLAIN_DETECTION_TEXT",
+    "EXPLAIN_FRAMEWORKS_TEXT",
     "EXPLAIN_HIPAA_TEXT",
     "EXPLAIN_IGNORE_TEXT",
     "EXPLAIN_REMEDIATION_TEXT",
@@ -361,4 +363,185 @@ EXPLAIN_REMEDIATION_TEXT: str = """\
   Generalise at least one field: use 3-digit ZIP prefix, birth year only,
   or remove the combination entirely. Risk is in the combination, not any
   single field.
+"""
+
+# ---------------------------------------------------------------------------
+# Compliance frameworks
+# ---------------------------------------------------------------------------
+
+EXPLAIN_FRAMEWORKS_TEXT: str = """\
+[bold cyan]Compliance Frameworks[/bold cyan]
+
+PhiScan annotates findings with applicable regulatory controls. Use the
+[cyan]--framework[/cyan] flag to enable one or more frameworks:
+
+  [cyan]phi-scan scan . --framework gdpr,soc2,hitrust[/cyan]
+
+[bold]hipaa[/bold] — always active, no flag needed
+  Enforcement: HHS Office for Civil Rights (OCR)
+  Penalty: $100–$50,000 per violation; $1.9M annual cap per category
+  Citation: 45 CFR §164.514(b)(2) Safe Harbor method — all 18 named identifiers
+  must be removed before health information is considered de-identified.
+
+[bold]hitech[/bold] — HITECH Act
+  Enforcement: HHS OCR + State Attorneys General
+  Penalty: $100–$50,000 per violation; mandatory breach notification
+  Citation: 45 CFR §§164.400–414 — HIGH-confidence findings represent "unsecured
+  PHI" and trigger mandatory breach notification obligations.
+
+[bold]soc2[/bold] — SOC 2 Type II
+  Enforcement: AICPA
+  Penalty: Loss of certification; customer contract penalties
+  Citation: Trust Services Criteria CC6.1 (access controls), CC6.6 (logical
+  access security — PHI in code is a CC6.6 violation), CC6.7 (data disposal).
+
+[bold]hitrust[/bold] — HITRUST CSF v11
+  Enforcement: HITRUST Alliance
+  Penalty: Loss of certification; contractual penalties with covered entities
+  Citation: 07.a (asset inventory), 09.s (monitoring), 01.v (access restriction),
+  09.ab (system use monitoring). PHI in source is an uncontrolled asset (07.a).
+
+[bold]nist[/bold] — NIST SP 800-53 Rev 5 + SP 800-122
+  Enforcement: NIST (advisory); federal agencies via FISMA
+  Penalty: Federal contract termination; FISMA non-compliance
+  Citation: SC-28 (protection at rest), PM-22 (PII quality), PT-2 (authority to
+  process PII), PT-3 (purposes of processing), SP 800-122 §§2.1–4.1 (PII guide).
+
+[bold]gdpr[/bold] — EU General Data Protection Regulation
+  Enforcement: EU Data Protection Authorities (DPAs)
+  Penalty: Up to €20M or 4% of global annual turnover (whichever is higher)
+  Citation: Art. 4(1) personal data, Art. 4(15) health data, Art. 9 special
+  categories (health/genetic/biometric — highest risk), Art. 25 data protection
+  by design, Art. 32 security of processing.
+
+[bold]42cfr2[/bold] — 42 CFR Part 2 (Substance Use Disorder records)
+  Enforcement: SAMHSA + HHS
+  Penalty: Up to $500 per violation (first offense)
+  Citation: Stricter than HIPAA — prohibits SUD record disclosure without explicit
+  written patient consent, even for treatment referrals. Re-disclosure prohibited.
+  Applies only to SUBSTANCE_USE_DISORDER category findings.
+
+[bold]gina[/bold] — Genetic Information Nondiscrimination Act
+  Enforcement: EEOC (employment); HHS OCR (health plans)
+  Penalty: $50,000–$300,000 per violation (employment context)
+  Citation: GINA Title II + 45 CFR §164.514(b)(1). Applies to rs-IDs, VCF data,
+  Ensembl gene IDs, and gene panel names.
+
+[bold]cmia[/bold] — California CMIA / SB 3 / AB 825
+  Enforcement: California DOJ; private right of action
+  Penalty: Up to $250,000 per violation; private right of action
+  Citation: Cal. Civ. Code §56.10 (medical information), §56.181 (genomic data).
+  Stricter than HIPAA for health apps. Genomic data requires explicit consent.
+
+[bold]bipa[/bold] — Illinois Biometric Information Privacy Act
+  Enforcement: Illinois AG; private right of action
+  Penalty: $1,000 per negligent violation; $5,000 per intentional violation
+  Citation: 740 ILCS 14/15. Covers fingerprints, iris scans, face geometry,
+  voiceprints. Written release required before collection. Applies to BIOMETRIC.
+
+[bold]shield[/bold] — New York SHIELD Act
+  Enforcement: New York AG
+  Penalty: Up to $5,000 per violation; up to $250,000 per incident
+  Citation: NY Gen. Bus. Law §899-bb. Broader definition of private information
+  than HIPAA. Applies to any entity handling NY residents' data.
+
+[bold]mrpa[/bold] — Texas Medical Records Privacy Act
+  Enforcement: Texas AG
+  Penalty: Up to $5,000 per violation
+  Citation: Tex. Health & Safety Code §181.001–.205. Covers all identifiable
+  health information including data not covered by HIPAA.
+
+[bold]Example usage:[/bold]
+
+  [cyan]phi-scan scan . --framework gdpr,soc2         [/cyan]  # federal + EU + SOC 2
+  [cyan]phi-scan scan . --framework 42cfr2             [/cyan]  # SUD-specific annotation
+  [cyan]phi-scan scan . --framework hipaa,hitech,nist  [/cyan]  # federal compliance stack
+  [cyan]phi-scan scan . --framework bipa,cmia,shield   [/cyan]  # state privacy laws
+  [cyan]phi-scan scan . -o pdf --framework gdpr,soc2 --report-path report.pdf[/cyan]
+
+Framework annotations appear in the compliance matrix section of PDF and HTML
+reports. The HIPAA column is always present.
+"""
+
+# ---------------------------------------------------------------------------
+# De-identification methods
+# ---------------------------------------------------------------------------
+
+EXPLAIN_DEIDENTIFICATION_TEXT: str = """\
+[bold cyan]De-identification Methods[/bold cyan]
+
+HIPAA (45 CFR §164.514) defines two methods for de-identifying health information.
+PhiScan implements the [bold]Safe Harbor[/bold] method.
+
+[bold]Safe Harbor Method (§164.514(b)(2))[/bold]
+
+  Remove all 18 named identifier categories listed in §164.514(b)(2)(i)(A)–(R):
+  names, geographic subdivisions smaller than state, dates (except year), phone
+  numbers, fax numbers, email addresses, SSNs, MRNs, health plan beneficiary
+  numbers, account numbers, certificate/license numbers, vehicle identifiers,
+  device identifiers, URLs, IP addresses, biometric identifiers, full-face
+  photographs, and any other unique identifying number or code.
+
+  Additionally (§164.514(b)(2)(ii)), the covered entity must have no actual
+  knowledge that the information could identify an individual.
+
+  PhiScan flags all 18 categories as defined by the Safe Harbor method.
+
+[bold]Expert Determination Method (§164.514(b)(1))[/bold]
+
+  A qualified statistician applies generally accepted statistical and scientific
+  principles to certify that the risk of identifying an individual is very small.
+  The expert's methods and results must be documented and retained.
+
+  [yellow]PhiScan does NOT implement Expert Determination.[/yellow]
+  Expert Determination requires a qualified statistician's sign-off. A scan tool
+  alone cannot certify that the re-identification risk is "very small" under
+  §164.514(b)(1) — that certification must come from a human expert.
+
+[bold]Known Detection Gaps (Safe Harbor)[/bold]
+
+  The following file types are currently skipped. PHI in these formats will not
+  be detected by PhiScan and must be reviewed separately:
+
+  [red]PDF documents (.pdf)[/red]
+    PDFs may contain embedded forms, clinical notes, or scanned records with PHI.
+    Archive inspection for PDF is not yet implemented. Review PDFs out-of-band.
+
+  [red]DICOM files (.dcm)[/red]
+    DICOM is the standard medical imaging format and embeds extensive patient
+    metadata (patient name, DOB, MRN, study date). DICOM inspection is not yet
+    implemented. Use a DICOM anonymisation tool (e.g. DicomCleaner, pydicom).
+
+  [red]Office documents (.docx, .xlsx, .pptx, .doc, .xls, .ppt)[/red]
+    Office formats may contain PHI in body text, headers, metadata, or embedded
+    objects. Binary Office formats are currently skipped. Review these files
+    manually or via a dedicated document scanner.
+
+  [red]Compiled code (.class, .pyc, .exe, .dll, .so)[/red]
+    Compiled artefacts may embed string literals from source code that contain
+    PHI. PhiScan cannot decompile compiled code. Do not commit compiled
+    artefacts that were built from PHI-containing source.
+
+  [yellow]Java archives (.jar, .war)[/yellow]
+    The archive scanner inspects .jar and .war files for scannable text resources
+    (.properties, .xml, .yml, .json, .conf) but skips embedded .class files.
+    PHI in class-level string constants may not be detected.
+
+[bold]Quasi-identifier Re-identification Risk[/bold]
+
+  The Sweeney (2000) study demonstrated that ZIP code + date of birth + sex
+  uniquely re-identifies 87% of the US population, even when no single field
+  is a named Safe Harbor identifier. PhiScan detects quasi-identifier combinations
+  within a 50-line proximity window (Phase 2E.11).
+
+  Generalise at least one field to break re-identification potential:
+  use only the first 3 digits of a ZIP code, replace full date of birth
+  with birth year only, or remove the combination from the codebase entirely.
+
+[bold]Summary[/bold]
+
+  PhiScan implements:    Safe Harbor (§164.514(b)(2)) — yes
+  PhiScan implements:    Expert Determination (§164.514(b)(1)) — no
+  Human sign-off needed: Expert Determination always requires a statistician.
+  Known gaps:            PDF, DICOM, Office documents, compiled code.
 """

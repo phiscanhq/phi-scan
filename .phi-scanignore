@@ -104,6 +104,10 @@ tests/test_audit.py
 # inputs, and constants like _JSON_FINDINGS_KEY that combine with surrounding
 # context to trigger quasi-identifier and date detectors as false positives.
 tests/test_cli.py
+# Compliance unit test file — imports ComplianceFramework, PhiCategory, and
+# ComplianceControl constants whose combinations trigger the quasi-identifier
+# combination detector when scanned as application source.
+tests/test_compliance_4b.py
 
 # PhiScan project-level documentation and CI configuration.
 # These files are excluded to suppress false positives when phi-scan scans its
