@@ -87,7 +87,7 @@ use case (source code repositories).
 
 ---
 
-## De-identification Method Coverage
+## Advisory Scope Limitations
 
 ### Expert Determination Not Implemented
 
@@ -99,6 +99,75 @@ is "very small." A clean PhiScan scan does **not** constitute Expert
 Determination certification.
 
 See `docs/de-identification.md` for the full scope description.
+
+---
+
+### State Law Compliance Is Advisory
+
+PhiScan maps PHI findings to state-level frameworks (California CMIA, Illinois
+BIPA, New York SHIELD Act, Texas MRPA) using the `--framework` flag. These
+mappings are advisory only.
+
+**What the mappings provide:**
+- The applicable control ID and name from each framework
+- The regulatory citation for that control
+- A reference to which PHI category triggers the control
+
+**What the mappings do not determine:**
+- Whether your organisation is subject to a given state law (this depends on
+  where your patients, customers, or employees are located)
+- Whether a specific finding constitutes a violation under that law (context
+  that only legal counsel can assess)
+- Compliance with state-specific procedural requirements (notice periods,
+  breach notification formats, consent forms)
+
+> **Advisory:** State law compliance annotation is a research aid, not a legal
+> determination. Confirm applicability and compliance posture with qualified
+> legal counsel for each jurisdiction.
+
+---
+
+### 42 CFR Part 2 Detection Is Pattern-Based
+
+PhiScan's 42 CFR Part 2 detection identifies field names and identifiers that
+match SUD (Substance Use Disorder) treatment terminology using
+`SUD_FIELD_NAME_PATTERNS`. It does **not** determine:
+
+- Whether the scanned record is held by a **federally assisted** SUD treatment
+  programme (the primary applicability criterion under 42 CFR § 2.12)
+- Whether the field actually contains SUD treatment information, or merely
+  uses SUD-adjacent terminology
+- Whether a disclosure would require patient consent under Part 2
+
+A `SUBSTANCE_USE_DISORDER` finding means: "this field name matches SUD
+terminology — verify whether Part 2 applies to this record."
+
+---
+
+### PHI in Context vs. PHI in Isolation
+
+PhiScan evaluates each file and finding independently. It does not model
+cross-file or cross-system context. This creates two important limitations:
+
+**False positives from context:** A field named `patient_mrn` containing a
+clearly fictional value (e.g., `MRN-000000`) may still be flagged because the
+field name implies PHI. Use `# phi-scan:ignore[MRN]` to suppress confirmed
+false positives.
+
+**False negatives from isolation:** PHI that is safe in isolation may be
+identifying in combination with data from another file or system. For example:
+
+- A file containing only a ZIP code produces no finding
+- A separate file containing only a date of birth produces no finding
+- Together, the ZIP + DOB combination creates re-identification risk
+
+Layer 4 (quasi-identifier combination detection) catches same-file
+combinations within 50 lines. Cross-file combinations are outside the
+detection scope.
+
+> **Recommendation:** For datasets with high re-identification risk, supplement
+> PhiScan with a dataset-level privacy analysis tool that evaluates the full
+> data schema across all files.
 
 ---
 
