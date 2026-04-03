@@ -77,10 +77,15 @@ class ChainVerifyResult(NamedTuple):
         is_intact: True if all recomputed hashes match stored hashes, False if tampered.
         key_present: True if the audit key was found and verification was performed.
             False means the key was absent and the chain was not actually verified.
+        skipped_rows: Count of rows whose row_chain_hash was empty and were skipped
+            during verification. Non-zero means some rows could not be verified —
+            an attacker who can blank row_chain_hash would cause rows to be counted
+            here rather than flagged as tampered.
     """
 
     is_intact: bool
     key_present: bool
+    skipped_rows: int = 0
 
 
 _logger: logging.Logger = get_logger("audit")
@@ -113,6 +118,15 @@ _CHAIN_KEY_MISSING_WARNING: str = (
 _ENCRYPTION_KEY_MISSING_WARNING: str = (
     "Audit encryption key not found at %r — findings_json stored as plaintext. "
     "Run 'phi-scan setup' to generate the audit key."
+)
+_CHAIN_ROW_SKIPPED_WARNING: str = (
+    "Audit chain: row id={row_id} has an empty row_chain_hash and was skipped. "
+    "This may indicate the row predates hash-chain support, or that the hash was "
+    "cleared by an attacker. Treat skipped_rows > 0 as unverified."
+)
+_INSERT_WITHOUT_CHAIN_HASH_WARNING: str = (
+    "Audit row id={row_id} committed without a chain hash — audit key is absent. "
+    "Run 'phi-scan setup' to enable hash-chain integrity protection."
 )
 _KEY_FILE_EXISTS_ERROR: str = (
     "Audit key already exists at {key_path!r} — "
@@ -358,6 +372,8 @@ def insert_scan_event(
         chain_hash = _compute_row_chain_hash(database_path, connection, new_row_id, scan_event_row)
         if chain_hash:
             connection.execute(_UPDATE_ROW_CHAIN_HASH_SQL, (chain_hash, new_row_id))
+        else:
+            _logger.warning(_INSERT_WITHOUT_CHAIN_HASH_WARNING.format(row_id=new_row_id))
         connection.commit()
     except sqlite3.Error as db_error:
         connection.rollback()
@@ -509,20 +525,24 @@ def verify_audit_chain(database_path: Path) -> ChainVerifyResult:
         connection.close()
 
     prev_hash = AUDIT_GENESIS_CHAIN_HASH
+    skipped_rows = 0
     for row in rows:
         row_dict = dict(row)
         row_id = row_dict["id"]
         stored_hash: str = row_dict.get("row_chain_hash", "")
         if not stored_hash:
-            # Row was written before hash chain was introduced — skip.
+            # Row has no chain hash — either pre-dates hash-chain support or was
+            # cleared by an attacker. Log at WARNING so this is never silent.
+            _logger.warning(_CHAIN_ROW_SKIPPED_WARNING.format(row_id=row_id))
+            skipped_rows += 1
             continue
         content = _row_content_for_hashing(row_dict)
         recomputed = _hmac_sha256(audit_key, prev_hash + content)
         if not hmac.compare_digest(stored_hash, recomputed):
             _logger.error(_CHAIN_TAMPER_ERROR.format(row_id=row_id))
-            return ChainVerifyResult(is_intact=False, key_present=True)
+            return ChainVerifyResult(is_intact=False, key_present=True, skipped_rows=skipped_rows)
         prev_hash = stored_hash
-    return ChainVerifyResult(is_intact=True, key_present=True)
+    return ChainVerifyResult(is_intact=True, key_present=True, skipped_rows=skipped_rows)
 
 
 def purge_expired_audit_rows(database_path: Path) -> int:
@@ -844,7 +864,12 @@ def _assemble_scan_event_row(
 
 
 def _audit_key_path(key_dir: Path) -> Path:
-    """Return the Path to the audit key file within key_dir."""
+    """Return the Path to the audit key file within key_dir.
+
+    key_dir is always database_path.parent — the key lives beside the database,
+    not at a hardcoded global path. For the default database (~/.phi-scanner/audit.db)
+    this resolves to ~/.phi-scanner/audit.key.
+    """
     return key_dir / AUDIT_KEY_FILENAME
 
 

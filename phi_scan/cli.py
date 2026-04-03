@@ -408,6 +408,10 @@ _AUDIT_CHAIN_SKIP_MESSAGE: str = (
     "Audit chain verification skipped — no audit key found. "
     "Run 'phi-scan setup' to generate the key."
 )
+_AUDIT_CHAIN_SKIPPED_ROWS_WARNING: str = (
+    "Warning: {skipped_rows} row(s) had no chain hash and were not verified. "
+    "Treat this audit as partially unverified."
+)
 _AUDIT_CHAIN_VERIFY_FLAG: str = "--verify"
 _SPINNER_NOTIFY_MESSAGE: str = "Sending notifications…"
 _IMPLEMENTED_FORMAT_NAMES: str = ", ".join(sorted(fmt.value for fmt in IMPLEMENTED_OUTPUT_FORMATS))
@@ -1599,6 +1603,13 @@ def display_history(
             typer.echo(_AUDIT_CHAIN_SKIP_MESSAGE, err=True)
         elif verify_result.is_intact:
             typer.echo(_AUDIT_CHAIN_PASS_MESSAGE)
+            if verify_result.skipped_rows > 0:
+                typer.echo(
+                    _AUDIT_CHAIN_SKIPPED_ROWS_WARNING.format(
+                        skipped_rows=verify_result.skipped_rows
+                    ),
+                    err=True,
+                )
         else:
             typer.echo(_AUDIT_CHAIN_FAIL_MESSAGE, err=True)
             raise typer.Exit(code=EXIT_CODE_VIOLATION)

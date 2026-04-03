@@ -325,6 +325,7 @@ def test_verify_audit_chain_returns_intact_for_empty_db(tmp_path: Path) -> None:
     assert isinstance(result, ChainVerifyResult)
     assert result.is_intact is True
     assert result.key_present is False
+    assert result.skipped_rows == 0
 
 
 def test_verify_audit_chain_reports_key_absent_without_key(tmp_path: Path) -> None:
@@ -349,6 +350,7 @@ def test_verify_audit_chain_returns_intact_with_key(tmp_path: Path) -> None:
     assert isinstance(result, ChainVerifyResult)
     assert result.key_present is True
     assert result.is_intact is True
+    assert result.skipped_rows == 0
 
 
 def test_verify_audit_chain_detects_tampering(tmp_path: Path) -> None:
@@ -368,6 +370,26 @@ def test_verify_audit_chain_detects_tampering(tmp_path: Path) -> None:
     assert isinstance(result, ChainVerifyResult)
     assert result.key_present is True
     assert result.is_intact is False
+
+
+def test_verify_audit_chain_counts_skipped_rows(tmp_path: Path) -> None:
+    """verify_audit_chain must count rows whose row_chain_hash was blanked."""
+    db_path = tmp_path / "audit.db"
+    create_audit_schema(db_path)
+    generate_audit_key(db_path)
+    insert_scan_event(db_path, _make_clean_result())
+    insert_scan_event(db_path, _make_clean_result())
+    # Blank chain hash on row 1 to simulate an attacker clearing it.
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("UPDATE scan_events SET row_chain_hash = '' WHERE id = 1")
+        conn.commit()
+    finally:
+        conn.close()
+    result = verify_audit_chain(db_path)
+    assert isinstance(result, ChainVerifyResult)
+    assert result.key_present is True
+    assert result.skipped_rows == 1
 
 
 def test_hmac_sha256_returns_64_hex_chars() -> None:
