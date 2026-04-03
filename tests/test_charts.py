@@ -19,6 +19,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import base64
+from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 
@@ -208,8 +210,6 @@ def test_build_trend_chart_returns_figure_for_empty_history() -> None:
 
 def test_build_trend_chart_returns_figure_with_data_points() -> None:
     """_build_trend_chart must return a figure for non-empty trend data."""
-    from datetime import UTC, datetime
-
     data_points = (
         _TrendDataPoint(scan_date=datetime(2025, 1, 1, tzinfo=UTC), findings_count=3),
         _TrendDataPoint(scan_date=datetime(2025, 1, 2, tzinfo=UTC), findings_count=1),
@@ -292,8 +292,6 @@ def test_html_report_embeds_chart_image_for_dirty_result() -> None:
 
 def test_html_chart_data_uri_contains_valid_base64() -> None:
     """The chart data URI in HTML must contain a non-empty base64 payload."""
-    import base64
-
     scan_result = _make_scan_result()
     html = generate_html_report(scan_result, _SAMPLE_SCAN_TARGET).decode("utf-8")
     prefix_pos = html.find(_HTML_CHART_IMG_PREFIX)

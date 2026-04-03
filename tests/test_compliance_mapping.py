@@ -31,7 +31,7 @@ from phi_scan.models import ScanFinding
 # ---------------------------------------------------------------------------
 
 _SAMPLE_HASH: str = "a" * 64
-_SAMPLE_FILE_PATH: Path = Path("src/handler.py")
+_SAMPLE_FILE_PATH: Path = Path("src/patient_service.py")
 _SAMPLE_LINE_NUMBER: int = 10
 _SAMPLE_CONFIDENCE: float = 0.92
 _SAMPLE_ENTITY_TYPE: str = "us_ssn"
@@ -80,11 +80,11 @@ def _make_finding(
     )
 
 
-def _hipaa_control_ids(controls: tuple[ComplianceControl, ...]) -> list[str]:
+def _extract_hipaa_control_ids(controls: tuple[ComplianceControl, ...]) -> list[str]:
     return [c.control_id for c in controls if c.framework is ComplianceFramework.HIPAA]
 
 
-def _framework_control_ids(
+def _extract_framework_control_ids(
     controls: tuple[ComplianceControl, ...], framework: ComplianceFramework
 ) -> list[str]:
     return [c.control_id for c in controls if c.framework is framework]
@@ -98,49 +98,49 @@ def _framework_control_ids(
 def test_name_finding_maps_to_hipaa_safeharbor_item_a() -> None:
     """A NAME finding must map to HIPAA Safe Harbor item A (Names)."""
     controls = CATEGORY_CONTROLS[PhiCategory.NAME]
-    hipaa_ids = _hipaa_control_ids(controls)
+    hipaa_ids = _extract_hipaa_control_ids(controls)
     assert any(_HIPAA_CONTROL_ID_NAME in cid for cid in hipaa_ids)
 
 
 def test_ssn_finding_maps_to_hipaa_safeharbor_item_g() -> None:
     """An SSN finding must map to HIPAA Safe Harbor item G (Social Security Numbers)."""
     controls = CATEGORY_CONTROLS[PhiCategory.SSN]
-    hipaa_ids = _hipaa_control_ids(controls)
+    hipaa_ids = _extract_hipaa_control_ids(controls)
     assert any(_HIPAA_CONTROL_ID_SSN in cid for cid in hipaa_ids)
 
 
 def test_mrn_finding_maps_to_hipaa_safeharbor_item_h() -> None:
     """An MRN finding must map to HIPAA Safe Harbor item H (Medical Record Numbers)."""
     controls = CATEGORY_CONTROLS[PhiCategory.MRN]
-    hipaa_ids = _hipaa_control_ids(controls)
+    hipaa_ids = _extract_hipaa_control_ids(controls)
     assert any(_HIPAA_CONTROL_ID_MRN in cid for cid in hipaa_ids)
 
 
 def test_email_finding_maps_to_hipaa_safeharbor_item_f() -> None:
     """An EMAIL finding must map to HIPAA Safe Harbor item F (Email Addresses)."""
     controls = CATEGORY_CONTROLS[PhiCategory.EMAIL]
-    hipaa_ids = _hipaa_control_ids(controls)
+    hipaa_ids = _extract_hipaa_control_ids(controls)
     assert any(_HIPAA_CONTROL_ID_EMAIL in cid for cid in hipaa_ids)
 
 
 def test_date_finding_maps_to_hipaa_safeharbor_item_c() -> None:
     """A DATE finding must map to HIPAA Safe Harbor item C (Elements of Dates)."""
     controls = CATEGORY_CONTROLS[PhiCategory.DATE]
-    hipaa_ids = _hipaa_control_ids(controls)
+    hipaa_ids = _extract_hipaa_control_ids(controls)
     assert any(_HIPAA_CONTROL_ID_DATE in cid for cid in hipaa_ids)
 
 
 def test_phone_finding_maps_to_hipaa_safeharbor_item_d() -> None:
     """A PHONE finding must map to HIPAA Safe Harbor item D (Phone Numbers)."""
     controls = CATEGORY_CONTROLS[PhiCategory.PHONE]
-    hipaa_ids = _hipaa_control_ids(controls)
+    hipaa_ids = _extract_hipaa_control_ids(controls)
     assert any(_HIPAA_CONTROL_ID_PHONE in cid for cid in hipaa_ids)
 
 
 def test_biometric_finding_maps_to_hipaa_safeharbor_item_p() -> None:
     """A BIOMETRIC finding must map to HIPAA Safe Harbor item P (Biometric Identifiers)."""
     controls = CATEGORY_CONTROLS[PhiCategory.BIOMETRIC]
-    hipaa_ids = _hipaa_control_ids(controls)
+    hipaa_ids = _extract_hipaa_control_ids(controls)
     assert any(_HIPAA_CONTROL_ID_BIOMETRIC in cid for cid in hipaa_ids)
 
 
@@ -174,7 +174,7 @@ def test_ssn_maps_to_soc2_cc6_controls_when_enabled() -> None:
     """SSN finding must include SOC2 CC6-series controls when soc2 is enabled."""
     finding = _make_finding(PhiCategory.SSN)
     result = annotate_findings((finding,), frozenset({ComplianceFramework.SOC2}))
-    soc2_ids = _framework_control_ids(result[0], ComplianceFramework.SOC2)
+    soc2_ids = _extract_framework_control_ids(result[0], ComplianceFramework.SOC2)
     assert any("CC6" in cid for cid in soc2_ids), f"No SOC2 CC6 control found; got: {soc2_ids}"
 
 
@@ -182,7 +182,7 @@ def test_mrn_maps_to_soc2_cc6_controls_when_enabled() -> None:
     """MRN finding must include SOC2 CC6 controls when soc2 is enabled."""
     finding = _make_finding(PhiCategory.MRN)
     result = annotate_findings((finding,), frozenset({ComplianceFramework.SOC2}))
-    soc2_ids = _framework_control_ids(result[0], ComplianceFramework.SOC2)
+    soc2_ids = _extract_framework_control_ids(result[0], ComplianceFramework.SOC2)
     assert soc2_ids, "SOC2 controls must be present for MRN when soc2 is enabled"
 
 
@@ -219,7 +219,7 @@ def test_ssn_maps_to_hitrust_controls_when_enabled() -> None:
     """SSN finding must include HITRUST controls when hitrust is enabled."""
     finding = _make_finding(PhiCategory.SSN)
     result = annotate_findings((finding,), frozenset({ComplianceFramework.HITRUST}))
-    hitrust_ids = _framework_control_ids(result[0], ComplianceFramework.HITRUST)
+    hitrust_ids = _extract_framework_control_ids(result[0], ComplianceFramework.HITRUST)
     assert hitrust_ids, "HITRUST controls must be present for SSN when hitrust is enabled"
 
 
@@ -251,7 +251,7 @@ def test_mrn_maps_to_hitrust_controls_when_enabled() -> None:
     """MRN finding must include HITRUST controls when hitrust is enabled."""
     finding = _make_finding(PhiCategory.MRN)
     result = annotate_findings((finding,), frozenset({ComplianceFramework.HITRUST}))
-    hitrust_ids = _framework_control_ids(result[0], ComplianceFramework.HITRUST)
+    hitrust_ids = _extract_framework_control_ids(result[0], ComplianceFramework.HITRUST)
     assert hitrust_ids, "HITRUST controls must be present for MRN when hitrust is enabled"
 
 
