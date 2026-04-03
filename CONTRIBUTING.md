@@ -64,8 +64,9 @@ be merged.
 ### Naming
 
 - **Functions**: `verb_noun` in `snake_case` (e.g., `compute_value_hash`,
-  `resolve_scan_targets`). No banned verbs: `process`, `handle`, `manage`,
-  `run` (use a more specific verb).
+  `resolve_scan_targets`). Banned verbs: `process`, `handle`, `manage`,
+  `run`, `do`, `data`, `info` (use a more specific verb that names the
+  operation, e.g., `parse_framework_flag` not `handle_framework`).
 - **Boolean variables and fields**: `is_`, `has_`, `should_` prefix
   (e.g., `is_clean`, `should_use_baseline`, `has_findings`).
 - **Constants**: `UPPER_SNAKE_CASE`. No abbreviations — spell out every word.

@@ -13,6 +13,12 @@ phi-scan explain frameworks   # quick in-terminal reference
 
 ## Framework Summary
 
+> **Penalty figures are current as of April 2026.** HIPAA/HITECH penalty tiers
+> were last updated by the HHS final rule effective October 2024 (adjusting
+> the §1176(a)(1)(C) annual cap for inflation). Regulatory penalties change
+> over time — verify current figures with official HHS/agency publications
+> before relying on them for compliance decisions.
+
 | Framework | Value | Enforcement Body | Key Penalty |
 |---|---|---|---|
 | HIPAA | `hipaa` | HHS OCR | $100–$50,000/violation; $1.9M annual cap |

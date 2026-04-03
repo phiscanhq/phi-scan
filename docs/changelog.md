@@ -9,9 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Phase 4D test suite** — 163 tests covering PDF generation, HTML structure,
+  chart PNG output, compliance control mapping, multi-framework annotation,
+  executive summary accuracy, remediation coverage, and output format dispatch
+
 ---
 
-## [0.4.0] — 2026-04-02 (Phase 4B)
+## [0.4.0] — 2026-04-02 (Phase 4A–4C)
 
 ### Added
 
@@ -69,7 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.3.0] — 2026-03-30 (Phases 1–3C)
+## [0.3.0] — 2026-03-30 (Phases 2–3C)
+
+> **Note:** There is no `0.2.0` release. Phases 2 and 3 were developed
+> incrementally on feature branches and shipped together as `0.3.0`.
+> Version `0.1.0` was the initial scaffold; all detection engine, CLI,
+> and output-format work accumulated in `0.3.0`.
 
 ### Added
 
