@@ -34,7 +34,7 @@ PHI found → exit code 1 → commit blocked.
 - **4 detection layers.** Regex (all 18 HIPAA Safe Harbor categories), NLP named entity recognition, FHIR R4 field scanning, and HL7 v2 segment parsing work together.
 - **Zero configuration required.** Sensible defaults work out of the box. Tune with a single YAML file.
 - **Baseline mode.** Adopt incrementally in existing codebases — only new findings block CI.
-- **7 output formats.** Table, JSON, SARIF, CSV, JUnit, GitLab Code Quality, GitLab SAST.
+- **9 output formats.** Table, JSON, SARIF, CSV, JUnit, GitLab Code Quality, GitLab SAST, PDF, and HTML enterprise reports.
 - **Inline suppression.** `# phi-scan:ignore` comments let developers acknowledge false positives without disabling the scanner.
 - **HIPAA audit trail.** Every scan is recorded in an immutable SQLite log. SHA-256 hashes only — raw PHI values are never stored.
 
@@ -76,7 +76,8 @@ pipx install "phi-scan[full]"
 | `phi-scan scan [PATH]` | Scan a directory or file for PHI/PII |
 | `phi-scan scan --diff HEAD~1` | Scan only files changed since a git ref |
 | `phi-scan scan --file handler.py` | Scan a single file with detailed output |
-| `phi-scan scan --output FORMAT` | Output as JSON, SARIF, CSV, JUnit, etc. |
+| `phi-scan scan --output FORMAT` | Output as JSON, SARIF, CSV, JUnit, PDF, HTML, etc. |
+| `phi-scan scan --framework gdpr,soc2` | Annotate findings with compliance framework controls |
 | `phi-scan scan --baseline` | Only report NEW findings not in baseline |
 | `phi-scan baseline create` | Snapshot current findings as accepted baseline |
 | `phi-scan baseline show` | Display baseline statistics |
@@ -86,11 +87,14 @@ pipx install "phi-scan[full]"
 | `phi-scan uninstall-hook` | Remove the pre-commit hook |
 | `phi-scan config init` | Generate a default `.phi-scanner.yml` |
 | `phi-scan explain hipaa` | Explain HIPAA Safe Harbor categories |
+| `phi-scan explain frameworks` | List all 12 supported compliance frameworks |
+| `phi-scan explain deidentification` | Safe Harbor vs Expert Determination methods |
 | `phi-scan explain detection` | Explain detection layers and confidence scores |
 | `phi-scan explain config` | Full configuration reference in the terminal |
 | `phi-scan report` | Display last scan results from audit log |
 | `phi-scan history --last 30d` | Query scan history |
 | `phi-scan dashboard` | Real-time scan statistics dashboard |
+| `phi-scan plugins list` | List all discovered recognizer plugins |
 
 Run `phi-scan COMMAND --help` for full flag documentation.
 
@@ -107,12 +111,51 @@ Run `phi-scan COMMAND --help` for full flag documentation.
 | `junit` | `--output junit` | Test result summary | CircleCI, Jenkins, Azure Pipelines |
 | `codequality` | `--output codequality` | MR inline annotations | GitLab |
 | `gitlab-sast` | `--output gitlab-sast` | Security dashboard | GitLab |
+| `pdf` | `--output pdf` | Enterprise compliance reports | Auditors, legal teams |
+| `html` | `--output html` | Shareable browser-based reports | Stakeholder distribution |
 
 Write to a file with `--report-path`:
 
 ```bash
 phi-scan scan . --output sarif --report-path phi-scan-results.sarif
 ```
+
+PDF and HTML reports include a compliance control matrix when `--framework` is specified.
+
+---
+
+## Compliance Framework Annotation
+
+PhiScan maps every PHI finding to applicable regulatory controls using the
+`--framework` flag. HIPAA is always active. All other frameworks are opt-in.
+
+```bash
+# Annotate with GDPR and SOC 2
+phi-scan scan . --framework gdpr,soc2
+
+# Full multi-framework compliance report (PDF)
+phi-scan scan . --framework gdpr,soc2,hitrust,nist --output pdf --report-path report.pdf
+```
+
+**Supported frameworks:**
+
+| Flag | Framework | Enforcement Body |
+|---|---|---|
+| `hipaa` | HIPAA Privacy & Security Rules | HHS Office for Civil Rights |
+| `hitech` | HITECH Act | HHS / State AGs |
+| `soc2` | SOC 2 Type II (CC6 controls) | AICPA |
+| `hitrust` | HITRUST CSF v11 | HITRUST Alliance |
+| `nist` | NIST SP 800-53 Rev 5 / SP 800-122 | NIST |
+| `gdpr` | GDPR (EU) 2016/679 | EU Data Protection Authorities |
+| `42cfr2` | 42 CFR Part 2 (SUD records) | SAMHSA |
+| `gina` | Genetic Information Nondiscrimination Act | EEOC / HHS |
+| `cmia` | California CMIA | California AG |
+| `bipa` | Illinois BIPA | Illinois AG |
+| `shield` | New York SHIELD Act | New York AG |
+| `mrpa` | Texas Medical Records Privacy Act | Texas AG |
+
+Run `phi-scan explain frameworks` for penalty ranges and full regulatory descriptions.
+See [docs/compliance-frameworks.md](docs/compliance-frameworks.md) for the complete reference.
 
 ---
 
@@ -183,7 +226,7 @@ Full syntax: [docs/ignore-patterns.md](docs/ignore-patterns.md)
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/joeyessak/phi-scan
-    rev: v0.3.0
+    rev: v0.4.0
     hooks:
       - id: phi-scan
 ```
@@ -202,7 +245,22 @@ repos:
     sarif_file: phi-scan.sarif
 ```
 
-Copy-paste templates for all 7 CI platforms: [docs/ci-cd-integration.md](docs/ci-cd-integration.md)
+**GitHub Actions with compliance annotation:**
+
+```yaml
+- name: Scan for PHI (HIPAA + GDPR + SOC 2)
+  run: |
+    pipx install "phi-scan[reports]"
+    phi-scan scan . --framework gdpr,soc2 --output pdf --report-path phi-scan-report.pdf
+
+- name: Upload compliance report
+  uses: actions/upload-artifact@v4
+  with:
+    name: phi-scan-compliance-report
+    path: phi-scan-report.pdf
+```
+
+Copy-paste templates for all CI platforms: [docs/ci-cd-integration.md](docs/ci-cd-integration.md)
 
 ---
 
@@ -212,12 +270,20 @@ Copy-paste templates for all 7 CI platforms: [docs/ci-cd-integration.md](docs/ci
 |---|---|
 | [docs/getting-started.md](docs/getting-started.md) | Install, first scan, understanding output (5-minute guide) |
 | [docs/configuration.md](docs/configuration.md) | Complete `.phi-scanner.yml` reference |
+| [docs/hipaa-identifiers.md](docs/hipaa-identifiers.md) | All 18 HIPAA Safe Harbor categories with detection notes |
+| [docs/detection-layers.md](docs/detection-layers.md) | Four-layer detection architecture and confidence scoring |
+| [docs/confidence-scoring.md](docs/confidence-scoring.md) | Confidence bands, per-layer ranges, tuning guide |
+| [docs/output-formats.md](docs/output-formats.md) | All 9 output formats with CI/CD integration examples |
+| [docs/compliance-frameworks.md](docs/compliance-frameworks.md) | Complete regulatory reference for all 12 frameworks |
+| [docs/remediation-guide.md](docs/remediation-guide.md) | Per-category PHI removal playbook and `phi-scan fix` workflow |
+| [docs/de-identification.md](docs/de-identification.md) | Safe Harbor vs Expert Determination; regulatory scope |
+| [docs/plugin-developer-guide.md](docs/plugin-developer-guide.md) | Custom recognizer development guide |
 | [docs/ignore-patterns.md](docs/ignore-patterns.md) | `.phi-scanignore` syntax, suppression comments |
-| [docs/ci-cd-integration.md](docs/ci-cd-integration.md) | All 7 CI/CD platform copy-paste templates |
+| [docs/ci-cd-integration.md](docs/ci-cd-integration.md) | CI/CD platform copy-paste templates |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common issues, FAQ, debug tips |
-| [docs/security.md](docs/security.md) | PHI protection model and audit log guarantees |
-| [docs/known-limitations.md](docs/known-limitations.md) | Binary formats, Expert Determination scope |
-| [CHANGELOG.md](CHANGELOG.md) | Version history |
+| [docs/known-limitations.md](docs/known-limitations.md) | Binary formats, advisory scope boundaries |
+| [docs/changelog.md](docs/changelog.md) | Version history |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, standards, PR process |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting policy |
 
 ---
@@ -237,6 +303,7 @@ Copy-paste templates for all 7 CI platforms: [docs/ci-cd-integration.md](docs/ci
 - All changes arrive via pull request — no direct pushes to `main`
 - CI must pass: lint (`ruff`), type check (`mypy`), tests (`pytest`) on Python 3.12 × ubuntu / macos / windows
 - Every PR receives an automated Claude code review
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code standards, and PR process
 - See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ---

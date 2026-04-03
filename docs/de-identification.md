@@ -110,6 +110,13 @@ PhiScan detects SUD-related field names from `SUD_FIELD_NAME_PATTERNS`
 separate from `PhiCategory.UNIQUE_ID` — SUD records fall under a different
 statute with different consent requirements.
 
+> **Advisory:** PhiScan's 42 CFR Part 2 detection is **pattern-based** —
+> it identifies field names and identifiers that match SUD treatment terminology.
+> It does not determine whether a given record is held by a federally assisted
+> SUD treatment programme (the statutory applicability criterion). Confirm
+> regulatory scope with legal counsel before relying on scan results for
+> 42 CFR Part 2 compliance purposes.
+
 ---
 
 ## GINA — Genetic Information Nondiscrimination Act
@@ -131,8 +138,9 @@ PhiScan's genetic identifier detection layer covers:
 These identifiers are also subject to **GDPR Article 9** (special category
 data) in EU contexts.
 
-> **Note:** GINA compliance mapping will be completed in Phase 4
-> (`phi_scan/compliance.py`).
+GINA compliance mapping is implemented in `phi_scan/compliance.py`.
+Findings in the `UNIQUE_ID` category that match genetic identifier patterns
+are annotated with GINA controls when `--framework gina` is specified.
 
 ---
 
@@ -156,8 +164,69 @@ following categories:
 | Financial account number | PhiCategory.ACCOUNT |
 | Biometric identifiers | PhiCategory.BIOMETRIC |
 
-> **Note:** Full NIST SP 800-122 compliance mapping will be completed in
-> Phase 4 (`phi_scan/compliance.py`).
+NIST SP 800-122 compliance mapping is implemented in `phi_scan/compliance.py`
+and is activated with `--framework nist`. NIST SP 800-53 Rev 5 controls are
+also mapped for relevant PHI categories.
+
+---
+
+## Quasi-Identifier Re-identification Risk
+
+Quasi-identifiers are fields that are not PHI individually but can identify
+an individual when combined. Research by Latanya Sweeney demonstrated that
+87% of the U.S. population can be uniquely identified using only three fields:
+**ZIP code, date of birth, and sex**.
+
+PhiScan's Layer 4 (quasi-identifier combination detector) flags co-located
+combinations of two or more PHI categories within a 50-line window. The
+following combinations trigger a `QUASI_IDENTIFIER_COMBINATION` finding:
+
+| Combination | Risk | Notes |
+|---|---|---|
+| ZIP + DOB | High | Sweeney 87% re-identification threshold |
+| ZIP + DOB + sex | Very high | Exact Sweeney triple |
+| NAME + DATE | High | Patient name with any date field |
+| AGE > 90 + geographic | High | HIPAA §164.514(b)(2)(i) special case |
+| Any 3+ PHI categories within 50 lines | Medium–High | Additive re-identification risk |
+
+> **Important:** A Safe Harbor scan that finds no individual PHI identifiers
+> may still produce a `QUASI_IDENTIFIER_COMBINATION` finding when safe-looking
+> values appear together. Safe Harbor compliance requires removing the
+> combination, not just the individual fields.
+
+### Residual Re-identification Risk
+
+Safe Harbor removes specific identifier categories. It does not model all
+possible re-identification paths. Residual risk exists when:
+
+- Free-text fields contain indirect identifiers (rare diagnoses, unique
+  treatment histories) that can identify an individual even after direct
+  identifiers are removed
+- Combination data with external datasets allows linkage attacks
+- Small patient populations make even aggregate statistics identifying
+
+PhiScan addresses direct identifiers and flagged quasi-identifier combinations.
+Residual risk modelling beyond these combinations requires Expert Determination.
+
+---
+
+## Recommended Remediation Workflow
+
+After a PhiScan scan identifies PHI in a codebase:
+
+```
+1. phi-scan scan .                   Identify all PHI
+2. phi-scan fix --dry-run            Preview synthetic replacements
+3. phi-scan fix --apply              Apply replacements
+4. phi-scan scan .                   Verify clean
+5. phi-scan baseline create          Accept any acknowledged false positives
+6. git commit                        Commit clean or baselined state
+7. phi-scan scan . --baseline        CI only flags new findings going forward
+```
+
+For findings that cannot be automatically fixed (biometric field names,
+quasi-identifier combinations), use the per-category guidance in
+[docs/remediation-guide.md](docs/remediation-guide.md).
 
 ---
 
