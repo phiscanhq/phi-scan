@@ -45,14 +45,26 @@ _logger: logging.Logger = logging.getLogger(__name__)
 # Optional dependency detection
 # ---------------------------------------------------------------------------
 
+# Defined before the try block so it can be used in the model availability
+# probe without referencing a name that may not yet exist.
+_SPACY_MODEL_NAME: str = "en_core_web_lg"
+
 try:
+    import spacy as _spacy_probe  # type: ignore[import-not-found]
     from presidio_analyzer import AnalyzerEngine  # type: ignore[import-not-found]
     from presidio_analyzer.nlp_engine import (  # type: ignore[import-not-found]
         NlpEngineProvider,
     )
 
+    # Presidio crashes with SystemExit (not ImportError) when the spaCy model
+    # is absent — it attempts a pip download which fails in venvs without pip.
+    # Check model presence here so we can set _NLP_AVAILABLE = False cleanly.
+    if not _spacy_probe.util.is_package(_SPACY_MODEL_NAME):
+        raise OSError(f"spaCy model '{_SPACY_MODEL_NAME}' is not installed")
+    del _spacy_probe
+
     _NLP_AVAILABLE: bool = True
-except ImportError:
+except (ImportError, OSError):
     _NLP_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
@@ -65,7 +77,6 @@ _NLP_INSTALL_HINT: str = (
 )
 _NLP_LANGUAGE_CODE: str = "en"
 _NLP_ENGINE_NAME: str = "spacy"
-_SPACY_MODEL_NAME: str = "en_core_web_lg"
 _LINE_NUMBER_START: int = 1
 # Returned as code_context when an offset maps past the last line of a file.
 # This cannot happen in practice (Presidio only returns offsets within the text

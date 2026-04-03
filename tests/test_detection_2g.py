@@ -1,3 +1,4 @@
+# phi-scan:ignore-file
 """Phase 2G — Detection Testing.
 
 Fixture-based scanning (2G.1 / 2G.2 / 2G.4), confidence → severity mapping
@@ -30,21 +31,22 @@ from phi_scan.constants import (
 from phi_scan.detection_coordinator import detect_phi_in_text_content
 from phi_scan.hashing import severity_from_confidence
 from phi_scan.models import ScanConfig, ScanFinding
+from phi_scan.nlp_detector import _NLP_AVAILABLE as _IS_NLP_AVAILABLE
 from phi_scan.scanner import collect_scan_targets, execute_scan, scan_file
 
 # ---------------------------------------------------------------------------
-# NLP availability guard — skip NLP-dependent tests when presidio is absent
+# NLP availability guard — skip NLP-dependent tests when model is absent
 # ---------------------------------------------------------------------------
 
-try:
-    from presidio_analyzer import AnalyzerEngine as _AnalyzerEngine  # noqa: F401
-
-    _IS_NLP_AVAILABLE: bool = True
-except ImportError:
-    _IS_NLP_AVAILABLE = False
+# Import the authoritative flag from nlp_detector rather than re-implementing
+# the availability check here. This ensures the test guard stays in sync with
+# the actual runtime state — presidio installed but model absent still counts
+# as NLP unavailable.
 
 # Reason string extracted so the skipif decorator contains no string literals.
-_NLP_SKIP_REASON: str = "presidio_analyzer not installed — run 'pip install phi-scan[nlp]'"
+_NLP_SKIP_REASON: str = (
+    "NLP layer unavailable — run 'pip install phi-scan[nlp]' and 'phi-scan setup'"
+)
 
 _requires_nlp = pytest.mark.skipif(not _IS_NLP_AVAILABLE, reason=_NLP_SKIP_REASON)
 
