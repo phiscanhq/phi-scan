@@ -18,10 +18,11 @@ Hash chain (5C.8):
 
 Encryption (5C.9):
   ``findings_json`` is encrypted at rest with AES-256-GCM using a key stored
-  at ``~/.phi-scanner/audit.key``. Rows written before the key existed are
-  stored as plaintext JSON and are decrypted transparently on read (the
-  ``enc:`` prefix distinguishes ciphertext). Requires the ``cryptography``
-  package (Phase 5 dependency).
+  at ``~/.phi-scanner/audit.key``. If the key file is absent,
+  ``insert_scan_event`` raises ``AuditKeyMissingError`` — plaintext fallback
+  is explicitly prohibited. The ``enc:`` prefix on stored values distinguishes
+  ciphertext from any legacy plaintext rows that predate Phase 5. Requires the
+  ``cryptography`` package (Phase 5 dependency).
 
 Retention purge (5C.4):
   ``purge_expired_audit_rows`` deletes rows older than AUDIT_RETENTION_DAYS.
@@ -32,6 +33,7 @@ Retention purge (5C.4):
 from __future__ import annotations
 
 import datetime
+import errno
 import hashlib
 import hmac
 import json
@@ -612,7 +614,13 @@ def generate_audit_key(database_path: Path) -> Path:
             os.write(fd, key_bytes)
         finally:
             os.close(fd)
-        tmp_path.rename(key_path)
+        try:
+            tmp_path.rename(key_path)
+        except OSError:
+            # Rename failed (e.g. cross-device move) — erase the temp file so
+            # 256-bit key material does not remain on disk unprotected.
+            tmp_path.unlink(missing_ok=True)
+            raise
     except OSError as io_error:
         raise AuditLogError(
             _KEY_WRITE_ERROR.format(key_path=str(key_path), io_error=io_error)
@@ -660,7 +668,7 @@ def _apply_migration_steps(
 
 
 def _reject_symlink_database_path(database_path: Path) -> None:
-    """Raise AuditLogError if database_path is a symlink.
+    """Raise AuditLogError if database_path is a symbolic link.
 
     Symlinks are rejected to prevent log-redirection attacks: an attacker
     who can create a symlink at the expected database path could redirect
@@ -668,14 +676,28 @@ def _reject_symlink_database_path(database_path: Path) -> None:
     control), silently discarding the audit trail or poisoning a different
     file. Rejecting symlinks forces the path to resolve to a real file.
 
+    Uses ``os.open`` with ``O_NOFOLLOW`` to detect symlinks atomically.
+    ``Path.is_symlink()`` + ``sqlite3.connect()`` has a TOCTOU race window;
+    ``O_NOFOLLOW`` closes it because the kernel rejects the symlink in a
+    single syscall. ``ENOENT`` is not an error — new databases are created
+    by ``sqlite3.connect``.
+
     Args:
         database_path: Resolved path to validate.
 
     Raises:
-        AuditLogError: If database_path is a symbolic link.
+        AuditLogError: If database_path is a symbolic link (errno.ELOOP).
     """
-    if database_path.is_symlink():
-        raise AuditLogError(_SYMLINK_DATABASE_PATH_ERROR.format(path=database_path))
+    try:
+        fd = os.open(str(database_path), os.O_RDONLY | os.O_NOFOLLOW)
+        os.close(fd)
+    except OSError as os_error:
+        if os_error.errno == errno.ELOOP:
+            raise AuditLogError(
+                _SYMLINK_DATABASE_PATH_ERROR.format(path=database_path)
+            ) from os_error
+        # ENOENT = new database (will be created by sqlite3.connect) — not a symlink.
+        # All other errors are not symlink-related; sqlite3.connect will surface them.
 
 
 def _ensure_database_parent_exists(database_path: Path) -> None:
@@ -697,8 +719,9 @@ def _ensure_database_parent_exists(database_path: Path) -> None:
 def _open_database(database_path: Path) -> sqlite3.Connection:
     """Open and configure a SQLite connection to the audit database.
 
-    Security note: TOCTOU race between is_symlink() and sqlite3.connect() remains.
-    A future fix would use O_NOFOLLOW at the OS level (platform-specific).
+    Symlink detection uses O_NOFOLLOW (see _reject_symlink_database_path),
+    which closes the TOCTOU race that existed between is_symlink() and
+    sqlite3.connect() in earlier versions.
 
     Args:
         database_path: Path to the SQLite file to open or create.
