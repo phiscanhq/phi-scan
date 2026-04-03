@@ -253,7 +253,7 @@ def test_render_chart_to_bytes_starts_with_png_magic() -> None:
     scan_result = _make_scan_result()
     figure = _build_category_chart(scan_result)
     png_bytes = _render_chart_to_bytes(figure)
-    assert png_bytes[:len(_PNG_MAGIC_BYTES)] == _PNG_MAGIC_BYTES
+    assert png_bytes[: len(_PNG_MAGIC_BYTES)] == _PNG_MAGIC_BYTES
 
 
 def test_severity_chart_png_starts_with_png_magic() -> None:
@@ -261,7 +261,7 @@ def test_severity_chart_png_starts_with_png_magic() -> None:
     scan_result = _make_scan_result()
     figure = _build_severity_chart(scan_result)
     png_bytes = _render_chart_to_bytes(figure)
-    assert png_bytes[:len(_PNG_MAGIC_BYTES)] == _PNG_MAGIC_BYTES
+    assert png_bytes[: len(_PNG_MAGIC_BYTES)] == _PNG_MAGIC_BYTES
 
 
 def test_top_files_chart_png_starts_with_png_magic() -> None:
@@ -269,7 +269,7 @@ def test_top_files_chart_png_starts_with_png_magic() -> None:
     scan_result = _make_scan_result()
     figure = _build_top_files_chart(scan_result)
     png_bytes = _render_chart_to_bytes(figure)
-    assert png_bytes[:len(_PNG_MAGIC_BYTES)] == _PNG_MAGIC_BYTES
+    assert png_bytes[: len(_PNG_MAGIC_BYTES)] == _PNG_MAGIC_BYTES
 
 
 # ---------------------------------------------------------------------------
@@ -305,4 +305,4 @@ def test_html_chart_data_uri_contains_valid_base64() -> None:
     assert len(encoded) > 0
     # Must be valid base64
     decoded = base64.b64decode(encoded)
-    assert decoded[:len(_PNG_MAGIC_BYTES)] == _PNG_MAGIC_BYTES
+    assert decoded[: len(_PNG_MAGIC_BYTES)] == _PNG_MAGIC_BYTES
