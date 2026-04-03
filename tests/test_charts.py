@@ -12,6 +12,13 @@ Verifies that:
 
 from __future__ import annotations
 
+# Force the non-interactive Agg backend before any matplotlib import.
+# This prevents _tkinter.TclError on headless CI runners (Windows, Linux
+# without a display) where the default TkAgg backend is unavailable.
+import matplotlib
+
+matplotlib.use("Agg")
+
 from pathlib import Path
 from types import MappingProxyType
 
