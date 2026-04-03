@@ -150,6 +150,7 @@ _BOOLEAN_TRUE: int = 1
 _BOOLEAN_FALSE: int = 0
 _EVENT_TYPE_SCAN: str = "scan"
 _CHAIN_HASH_PLACEHOLDER: str = ""
+_NOTIFICATIONS_EMPTY_JSON: str = "[]"
 _PRAGMA_WAL_MODE: str = "PRAGMA journal_mode=WAL"
 _LAST_SCAN_LIMIT: int = 1
 _GIT_SUBPROCESS_TIMEOUT_SECONDS: int = 5
@@ -282,7 +283,8 @@ _MIGRATION_V1_TO_V2: list[str] = [
     f"ALTER TABLE {_SCAN_EVENTS_TABLE} ADD COLUMN pr_number TEXT NOT NULL DEFAULT ''",
     f"ALTER TABLE {_SCAN_EVENTS_TABLE} ADD COLUMN pipeline TEXT NOT NULL DEFAULT ''",
     f"ALTER TABLE {_SCAN_EVENTS_TABLE} ADD COLUMN action_taken TEXT NOT NULL DEFAULT ''",
-    f"ALTER TABLE {_SCAN_EVENTS_TABLE} ADD COLUMN notifications_sent TEXT NOT NULL DEFAULT '[]'",
+    f"ALTER TABLE {_SCAN_EVENTS_TABLE}"
+    f" ADD COLUMN notifications_sent TEXT NOT NULL DEFAULT '{_NOTIFICATIONS_EMPTY_JSON}'",
     f"ALTER TABLE {_SCAN_EVENTS_TABLE}"
     f" ADD COLUMN row_chain_hash TEXT NOT NULL DEFAULT '{_CHAIN_HASH_PLACEHOLDER}'",
 ]
@@ -516,7 +518,7 @@ def verify_audit_chain(database_path: Path) -> ChainVerifyResult:
     connection = _open_database(database_path)
     try:
         cursor = connection.execute(_SELECT_ALL_ROWS_ORDERED_SQL)
-        rows = cursor.fetchall()
+        audit_rows = cursor.fetchall()
     except sqlite3.Error as db_error:
         raise AuditLogError(_DATABASE_ERROR.format(detail=db_error)) from db_error
     finally:
@@ -525,7 +527,7 @@ def verify_audit_chain(database_path: Path) -> ChainVerifyResult:
     prev_hash = AUDIT_GENESIS_CHAIN_HASH
     skipped_rows = 0
     chain_intact = True
-    for audit_row in rows:
+    for audit_row in audit_rows:
         audit_row_dict = dict(audit_row)
         row_id = audit_row_dict["id"]
         stored_hash: str = audit_row_dict.get("row_chain_hash", "")
@@ -536,8 +538,8 @@ def verify_audit_chain(database_path: Path) -> ChainVerifyResult:
             skipped_rows += 1
             chain_intact = False
             continue
-        content = _row_content_for_hashing(audit_row_dict)
-        recomputed = _hmac_sha256(audit_key, prev_hash + content)
+        row_content_string = _row_content_for_hashing(audit_row_dict)
+        recomputed = _hmac_sha256(audit_key, prev_hash + row_content_string)
         if not hmac.compare_digest(stored_hash, recomputed):
             _logger.error(_CHAIN_TAMPER_ERROR.format(row_id=row_id))
             return ChainVerifyResult(is_intact=False, key_present=True, skipped_rows=skipped_rows)
@@ -600,13 +602,16 @@ def generate_audit_key(database_path: Path) -> Path:
     try:
         key_path.parent.mkdir(parents=True, exist_ok=True)
         key_bytes = os.urandom(_AES_GCM_KEY_BYTES)
-        # Atomic write: create temp file, set permissions before writing the key
-        # so the key is never readable by other users even for an instant, then
-        # rename into place. This prevents a window where key data exists in a
-        # world-readable file before chmod runs.
+        # Atomic write: open the temp file with O_CREAT | O_EXCL so the file
+        # is created with mode 0o600 in a single syscall — no chmod-after-open
+        # window. Write key bytes directly to the fd, close it, then rename
+        # the temp file into the final path for atomicity.
         tmp_path = key_path.with_suffix(".tmp")
-        tmp_path.touch(mode=0o600)
-        tmp_path.write_bytes(key_bytes)
+        fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, key_bytes)
+        finally:
+            os.close(fd)
         tmp_path.rename(key_path)
     except OSError as io_error:
         raise AuditLogError(
@@ -655,13 +660,34 @@ def _apply_migration_steps(
 
 
 def _reject_symlink_database_path(database_path: Path) -> None:
-    """Raise AuditLogError if database_path is a symlink."""
+    """Raise AuditLogError if database_path is a symlink.
+
+    Symlinks are rejected to prevent log-redirection attacks: an attacker
+    who can create a symlink at the expected database path could redirect
+    all audit writes to an arbitrary file (e.g. /dev/null or a file they
+    control), silently discarding the audit trail or poisoning a different
+    file. Rejecting symlinks forces the path to resolve to a real file.
+
+    Args:
+        database_path: Resolved path to validate.
+
+    Raises:
+        AuditLogError: If database_path is a symbolic link.
+    """
     if database_path.is_symlink():
         raise AuditLogError(_SYMLINK_DATABASE_PATH_ERROR.format(path=database_path))
 
 
 def _ensure_database_parent_exists(database_path: Path) -> None:
-    """Create the parent directory of database_path if it does not exist."""
+    """Create the parent directory of database_path if it does not exist.
+
+    Args:
+        database_path: Path to the SQLite file whose parent must exist.
+
+    Raises:
+        AuditLogError: If the directory cannot be created (e.g. permission
+            denied or a file already occupies the expected directory path).
+    """
     try:
         database_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as io_error:
@@ -733,7 +759,18 @@ def _serialize_findings(findings: tuple[ScanFinding, ...]) -> str:
 
 
 def _get_current_branch() -> str:
-    """Return the current git branch name, or 'unknown' if unavailable."""
+    """Return the current git branch name, or 'unknown' if unavailable.
+
+    Security note: the raw branch name is never stored or logged. Callers
+    hash it with SHA-256 before persisting to the audit database because
+    branch names can be PHI-revealing (e.g. feature/patient-john-doe-ssn-fix).
+    Only the type of the subprocess exception is logged on failure — not any
+    path or argument value — to avoid leaking filesystem layout.
+
+    Returns:
+        The branch name string for hashing, or 'unknown' when git is
+        unavailable, returns a non-zero exit code, or times out.
+    """
     try:
         completed_process = subprocess.run(
             _GIT_BRANCH_ARGS,
@@ -750,7 +787,18 @@ def _get_current_branch() -> str:
 
 
 def _get_current_repository_path() -> str:
-    """Return the git repository root path, or the current directory if unavailable."""
+    """Return the git repository root path, or the current directory if unavailable.
+
+    Security note: the raw path is never stored or logged. Callers hash it
+    with SHA-256 before persisting because repository paths can be PHI-
+    revealing (e.g. /home/nurse_jones/patient_records). The exception type
+    only is logged on failure — not the path — to avoid leaking filesystem
+    layout in log files.
+
+    Returns:
+        The absolute repository root path string for hashing, or the
+        current working directory when git is unavailable or times out.
+    """
     try:
         completed_process = subprocess.run(
             _GIT_TOPLEVEL_ARGS,
@@ -765,7 +813,7 @@ def _get_current_repository_path() -> str:
     return str(Path.cwd())
 
 
-def _fetch_git_format_output(args: tuple[str, ...]) -> str:
+def _fetch_git_command_stdout(args: tuple[str, ...]) -> str:
     """Run a git log format command and return its stdout, or empty string on failure."""
     try:
         completed_process = subprocess.run(
@@ -790,7 +838,7 @@ def _hash_git_committer_field(args: tuple[str, ...]) -> str:
     Returns:
         64-char hex digest, or empty string when git is unavailable or returns no output.
     """
-    field_value = _fetch_git_format_output(args)
+    field_value = _fetch_git_command_stdout(args)
     return hashlib.sha256(field_value.encode()).hexdigest() if field_value else ""
 
 
@@ -1152,5 +1200,5 @@ def _compute_row_chain_hash(
         "action_taken": row_tuple[14],
         "notifications_sent": row_tuple[15],
     }
-    content = _row_content_for_hashing(scan_event_row_dict)
-    return _hmac_sha256(key, prev_hash + content)
+    row_content_string = _row_content_for_hashing(scan_event_row_dict)
+    return _hmac_sha256(key, prev_hash + row_content_string)
