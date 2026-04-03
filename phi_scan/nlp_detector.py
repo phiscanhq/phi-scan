@@ -34,6 +34,7 @@ from phi_scan.constants import (
     DetectionLayer,
     PhiCategory,
 )
+from phi_scan.exceptions import MissingOptionalDependencyError
 from phi_scan.hashing import compute_value_hash, severity_from_confidence
 from phi_scan.models import ScanFinding
 
@@ -60,11 +61,14 @@ try:
     # is absent — it attempts a pip download which fails in venvs without pip.
     # Check model presence here so we can set _NLP_AVAILABLE = False cleanly.
     if not _spacy_probe.util.is_package(_SPACY_MODEL_NAME):
-        raise OSError(f"spaCy model '{_SPACY_MODEL_NAME}' is not installed")
+        raise MissingOptionalDependencyError(
+            f"spaCy model '{_SPACY_MODEL_NAME}' is not installed — "
+            "run 'phi-scan setup' to download it"
+        )
     del _spacy_probe
 
     _NLP_AVAILABLE: bool = True
-except (ImportError, OSError):
+except (ImportError, MissingOptionalDependencyError):
     _NLP_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
