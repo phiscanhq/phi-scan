@@ -373,7 +373,7 @@ def test_verify_audit_chain_detects_tampering(tmp_path: Path) -> None:
 
 
 def test_verify_audit_chain_counts_skipped_rows(tmp_path: Path) -> None:
-    """verify_audit_chain must count rows whose row_chain_hash was blanked."""
+    """verify_audit_chain must set is_intact=False and count rows whose hash was blanked."""
     db_path = tmp_path / "audit.db"
     create_audit_schema(db_path)
     generate_audit_key(db_path)
@@ -390,6 +390,9 @@ def test_verify_audit_chain_counts_skipped_rows(tmp_path: Path) -> None:
     assert isinstance(result, ChainVerifyResult)
     assert result.key_present is True
     assert result.skipped_rows == 1
+    # Blanked hashes must set is_intact=False — callers checking only is_intact
+    # must not get a false sense of integrity when rows were unverifiable.
+    assert result.is_intact is False
 
 
 def test_hmac_sha256_returns_64_hex_chars() -> None:

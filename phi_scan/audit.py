@@ -71,16 +71,16 @@ __all__ = [
 
 
 class ChainVerifyResult(NamedTuple):
-    """Result of verify_audit_chain, distinguishing verified-clean from unverifiable.
+    """Result of verify_audit_chain.
 
     Attributes:
-        is_intact: True if all recomputed hashes match stored hashes, False if tampered.
+        is_intact: True only when all rows were verified and every hash matched.
+            False if any row failed hash verification OR if any row had an empty
+            row_chain_hash (which an attacker could use to bypass verification).
         key_present: True if the audit key was found and verification was performed.
             False means the key was absent and the chain was not actually verified.
-        skipped_rows: Count of rows whose row_chain_hash was empty and were skipped
-            during verification. Non-zero means some rows could not be verified —
-            an attacker who can blank row_chain_hash would cause rows to be counted
-            here rather than flagged as tampered.
+        skipped_rows: Count of rows with empty row_chain_hash that could not be
+            verified. When this is non-zero, is_intact is always False.
     """
 
     is_intact: bool
@@ -154,18 +154,14 @@ _LAST_SCAN_LIMIT: int = 1
 _GIT_SUBPROCESS_TIMEOUT_SECONDS: int = 5
 _GIT_BRANCH_ARGS: tuple[str, ...] = ("git", "branch", "--show-current")
 _GIT_TOPLEVEL_ARGS: tuple[str, ...] = ("git", "rev-parse", "--show-toplevel")
-_GIT_COMMITTER_NAME_ARGS: tuple[str, ...] = (
-    "git",
-    "log",
-    "-1",
-    "--format=%cn",
-)
-_GIT_COMMITTER_EMAIL_ARGS: tuple[str, ...] = (
-    "git",
-    "log",
-    "-1",
-    "--format=%ce",
-)
+# git log pretty-format specifiers used for committer identity.
+# %cn = committer name (the person who applied the commit, not the author)
+# %ce = committer email
+# These are hashed before storage — raw values are never persisted.
+_GIT_FORMAT_COMMITTER_NAME: str = "--format=%cn"
+_GIT_FORMAT_COMMITTER_EMAIL: str = "--format=%ce"
+_GIT_COMMITTER_NAME_ARGS: tuple[str, ...] = ("git", "log", "-1", _GIT_FORMAT_COMMITTER_NAME)
+_GIT_COMMITTER_EMAIL_ARGS: tuple[str, ...] = ("git", "log", "-1", _GIT_FORMAT_COMMITTER_EMAIL)
 
 # CI/CD environment variable names for PR number and pipeline detection.
 _ENV_PR_NUMBER_GITHUB: str = "GITHUB_PR_NUMBER"
@@ -363,17 +359,14 @@ def insert_scan_event(
     Raises:
         AuditLogError: If the database cannot be written to.
     """
-    sent_channels: list[str] = notifications_sent or []
-    scan_event_row = _assemble_scan_event_row(database_path, scan_result, sent_channels)
+    delivered_channels: list[str] = notifications_sent or []
+    scan_event_row = _assemble_scan_event_row(database_path, scan_result, delivered_channels)
     connection = _open_database(database_path)
     try:
         cursor = connection.execute(_INSERT_SCAN_EVENT_SQL, scan_event_row)
         new_row_id = cursor.lastrowid
         chain_hash = _compute_row_chain_hash(database_path, connection, new_row_id, scan_event_row)
-        if chain_hash:
-            connection.execute(_UPDATE_ROW_CHAIN_HASH_SQL, (chain_hash, new_row_id))
-        else:
-            _logger.warning(_INSERT_WITHOUT_CHAIN_HASH_WARNING.format(row_id=new_row_id))
+        _attach_chain_hash(connection, new_row_id, chain_hash)
         connection.commit()
     except sqlite3.Error as db_error:
         connection.rollback()
@@ -526,15 +519,17 @@ def verify_audit_chain(database_path: Path) -> ChainVerifyResult:
 
     prev_hash = AUDIT_GENESIS_CHAIN_HASH
     skipped_rows = 0
+    chain_intact = True
     for row in rows:
         row_dict = dict(row)
         row_id = row_dict["id"]
         stored_hash: str = row_dict.get("row_chain_hash", "")
         if not stored_hash:
             # Row has no chain hash — either pre-dates hash-chain support or was
-            # cleared by an attacker. Log at WARNING so this is never silent.
+            # cleared by an attacker. Log at WARNING and mark chain as not fully intact.
             _logger.warning(_CHAIN_ROW_SKIPPED_WARNING.format(row_id=row_id))
             skipped_rows += 1
+            chain_intact = False
             continue
         content = _row_content_for_hashing(row_dict)
         recomputed = _hmac_sha256(audit_key, prev_hash + content)
@@ -542,7 +537,7 @@ def verify_audit_chain(database_path: Path) -> ChainVerifyResult:
             _logger.error(_CHAIN_TAMPER_ERROR.format(row_id=row_id))
             return ChainVerifyResult(is_intact=False, key_present=True, skipped_rows=skipped_rows)
         prev_hash = stored_hash
-    return ChainVerifyResult(is_intact=True, key_present=True, skipped_rows=skipped_rows)
+    return ChainVerifyResult(is_intact=chain_intact, key_present=True, skipped_rows=skipped_rows)
 
 
 def purge_expired_audit_rows(database_path: Path) -> int:
@@ -1058,6 +1053,25 @@ def _get_previous_chain_hash(connection: sqlite3.Connection, new_row_id: int | N
     except sqlite3.Error:
         pass
     return AUDIT_GENESIS_CHAIN_HASH
+
+
+def _attach_chain_hash(connection: sqlite3.Connection, row_id: int | None, chain_hash: str) -> None:
+    """Write chain_hash into the row_chain_hash column for row_id, or log if absent.
+
+    If chain_hash is empty (audit key absent), logs at DEBUG level. The key-absent
+    state is already warned about inside _compute_row_chain_hash; this function
+    avoids emitting an additional WARNING that would appear in every scan output
+    when the key is not configured.
+
+    Args:
+        connection: Open database connection.
+        row_id: The autoincrement id of the just-inserted row.
+        chain_hash: The computed chain hash, or empty string if key was absent.
+    """
+    if chain_hash:
+        connection.execute(_UPDATE_ROW_CHAIN_HASH_SQL, (chain_hash, row_id))
+    else:
+        _logger.debug(_INSERT_WITHOUT_CHAIN_HASH_WARNING.format(row_id=row_id))
 
 
 def _compute_row_chain_hash(
