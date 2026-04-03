@@ -1,3 +1,4 @@
+# phi-scan:ignore-file
 """Tests for phi_scan.nlp_detector — Layer 2 NLP PHI detection."""
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from phi_scan.constants import (
 )
 from phi_scan.hashing import compute_value_hash, severity_from_confidence
 from phi_scan.nlp_detector import (  # type: ignore[attr-defined]
-    _NLP_AVAILABLE,
+    _IS_NLP_AVAILABLE,
     _build_line_start_offsets,
     _build_nlp_finding,
     _clamp_to_nlp_range,
@@ -406,7 +407,7 @@ class TestNlpLayerUnavailable:
     def test_returns_empty_list_when_nlp_not_installed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", False)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", False)
 
         import warnings
 
@@ -419,7 +420,7 @@ class TestNlpLayerUnavailable:
     def test_warning_is_raised_when_nlp_not_installed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", False)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", False)
 
         with pytest.warns(UserWarning, match="phi-scan\\[nlp\\]"):
             detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
@@ -427,7 +428,7 @@ class TestNlpLayerUnavailable:
     def test_warning_message_references_setup_command(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", False)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", False)
 
         with pytest.warns(UserWarning, match="phi-scan setup"):
             detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
@@ -444,7 +445,7 @@ class TestDetectPhiWithNlp:
     ) -> None:
         mock_engine = MagicMock()
         mock_engine.analyze.return_value = []
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", True)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", True)
         monkeypatch.setattr("phi_scan.nlp_detector._create_analyzer_engine", lambda: mock_engine)
 
         findings = detect_phi_with_nlp("x = 1\n", _FAKE_FILE_PATH)
@@ -457,7 +458,7 @@ class TestDetectPhiWithNlp:
         )
         mock_engine = MagicMock()
         mock_engine.analyze.return_value = [fake_result]
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", True)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", True)
         monkeypatch.setattr("phi_scan.nlp_detector._create_analyzer_engine", lambda: mock_engine)
 
         findings = detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
@@ -472,7 +473,7 @@ class TestDetectPhiWithNlp:
         )
         mock_engine = MagicMock()
         mock_engine.analyze.return_value = [fake_result]
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", True)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", True)
         monkeypatch.setattr("phi_scan.nlp_detector._create_analyzer_engine", lambda: mock_engine)
 
         findings = detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
@@ -484,7 +485,7 @@ class TestDetectPhiWithNlp:
     ) -> None:
         mock_engine = MagicMock()
         mock_engine.analyze.return_value = []
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", True)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", True)
         monkeypatch.setattr("phi_scan.nlp_detector._create_analyzer_engine", lambda: mock_engine)
 
         detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
@@ -497,7 +498,7 @@ class TestDetectPhiWithNlp:
     ) -> None:
         mock_engine = MagicMock()
         mock_engine.analyze.return_value = []
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", True)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", True)
         monkeypatch.setattr("phi_scan.nlp_detector._create_analyzer_engine", lambda: mock_engine)
 
         detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
@@ -517,7 +518,7 @@ class TestDetectPhiWithNlp:
         mock_engine = MagicMock()
         mock_engine.analyze.return_value = [fake_result]
         custom_path = Path("workspace/records/patient.py")
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", True)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", True)
         monkeypatch.setattr("phi_scan.nlp_detector._create_analyzer_engine", lambda: mock_engine)
 
         findings = detect_phi_with_nlp(_SINGLE_LINE_CONTENT, custom_path)
@@ -530,7 +531,7 @@ class TestDetectPhiWithNlp:
         )
         mock_engine = MagicMock()
         mock_engine.analyze.return_value = [fake_result]
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", True)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", True)
         monkeypatch.setattr("phi_scan.nlp_detector._create_analyzer_engine", lambda: mock_engine)
 
         findings = detect_phi_with_nlp(_SINGLE_LINE_CONTENT, _FAKE_FILE_PATH)
@@ -555,7 +556,7 @@ class TestDetectPhiWithNlp:
         ]
         mock_engine = MagicMock()
         mock_engine.analyze.return_value = fake_results
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", True)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", True)
         monkeypatch.setattr("phi_scan.nlp_detector._create_analyzer_engine", lambda: mock_engine)
 
         findings = detect_phi_with_nlp(content, _FAKE_FILE_PATH)
@@ -573,7 +574,7 @@ class TestDetectPhiWithNlp:
         )
         mock_engine = MagicMock()
         mock_engine.analyze.return_value = [fake_result]
-        monkeypatch.setattr("phi_scan.nlp_detector._NLP_AVAILABLE", True)
+        monkeypatch.setattr("phi_scan.nlp_detector._IS_NLP_AVAILABLE", True)
         monkeypatch.setattr("phi_scan.nlp_detector._create_analyzer_engine", lambda: mock_engine)
 
         findings = detect_phi_with_nlp(content, _FAKE_FILE_PATH)
@@ -581,6 +582,6 @@ class TestDetectPhiWithNlp:
         assert findings[0].line_number == 2
 
     def test_nlp_available_flag_is_false_when_presidio_not_installed(self) -> None:
-        # _NLP_AVAILABLE reflects the import-time state.
-        # In the test environment presidio is not installed, so it must be False.
-        assert _NLP_AVAILABLE is False
+        # _IS_NLP_AVAILABLE reflects the import-time state.
+        # In the test environment the spaCy model is not installed, so it must be False.
+        assert _IS_NLP_AVAILABLE is False
