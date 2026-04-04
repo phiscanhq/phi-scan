@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+import yaml
 
 from phi_scan.ci_integration import (
     BaselineComparison,
@@ -1067,3 +1068,257 @@ def test_docker_scan_phi_file_exits_one(tmp_path: Path) -> None:
         timeout=120,
     )
     assert result.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# 6C.20 — CircleCI JUnit test summary (template structure tests)
+# ---------------------------------------------------------------------------
+
+_CIRCLECI_ORB_YML = Path(__file__).parent.parent / "ci-templates" / "circleci" / "orb.yml"
+_CIRCLECI_CONFIG_YML = Path(__file__).parent.parent / "ci-templates" / "circleci" / "config.yml"
+_BUILDSPEC_YML = Path(__file__).parent.parent / "ci-templates" / "aws-codebuild" / "buildspec.yml"
+
+# Named constants for template structure assertions — avoids magic string literals in logic
+_JUNIT_OUTPUT_FLAG: str = "--output junit"
+_STORE_TEST_RESULTS_STEP: str = "store_test_results"
+_SARIF_FILE_FORMAT: str = "file-format: SARIF"
+_EXIT_CODE_FILE_NAME: str = "phi-scan-exit-code"
+_EXIT_CODE_VAR_NAME: str = "phi_scan_exit_code"
+
+# YAML key names used in orb.yml structure tests
+_ORB_COMMANDS_KEY: str = "commands"
+_ORB_SCAN_COMMAND_KEY: str = "scan"
+_ORB_STORE_RESULTS_COMMAND_KEY: str = "store_results"
+_ORB_STEPS_KEY: str = "steps"
+_ORB_RUN_KEY: str = "run"
+_ORB_RUN_COMMAND_KEY: str = "command"
+
+# YAML key names used in buildspec.yml structure tests
+_BUILDSPEC_REPORTS_KEY: str = "reports"
+_BUILDSPEC_REPORT_GROUP_NAME: str = "phi-scan-findings"
+_BUILDSPEC_FILE_FORMAT_KEY: str = "file-format"
+_BUILDSPEC_SARIF_VALUE: str = "SARIF"
+_BUILDSPEC_BASE_DIRECTORY_KEY: str = "base-directory"
+_BUILDSPEC_OUTPUT_DIR_VAR: str = "PHI_SCAN_OUTPUT_DIR"
+
+
+def test_circleci_orb_scan_command_includes_junit_output() -> None:
+    """orb.yml scan command must include --output junit for CircleCI Test Summary."""
+    content = _CIRCLECI_ORB_YML.read_text()
+    assert _JUNIT_OUTPUT_FLAG in content, (
+        f"orb.yml scan command is missing '{_JUNIT_OUTPUT_FLAG}' required for CircleCI Test Summary"
+    )
+
+
+def test_circleci_orb_store_test_results_present() -> None:
+    """orb.yml store_results command must include store_test_results step."""
+    content = _CIRCLECI_ORB_YML.read_text()
+    assert _STORE_TEST_RESULTS_STEP in content, (
+        f"orb.yml store_results command is missing '{_STORE_TEST_RESULTS_STEP}' step"
+    )
+
+
+def test_circleci_config_scan_command_includes_junit_output() -> None:
+    """config.yml scan step must include --output junit for CircleCI Test Summary."""
+    content = _CIRCLECI_CONFIG_YML.read_text()
+    assert _JUNIT_OUTPUT_FLAG in content, (
+        f"config.yml is missing '{_JUNIT_OUTPUT_FLAG}' required for CircleCI Test Summary"
+    )
+
+
+def test_circleci_config_store_test_results_present() -> None:
+    """config.yml must include store_test_results step for CircleCI Test Summary tab."""
+    content = _CIRCLECI_CONFIG_YML.read_text()
+    assert _STORE_TEST_RESULTS_STEP in content, (
+        f"config.yml is missing '{_STORE_TEST_RESULTS_STEP}' step "
+        "required for CircleCI Test Summary"
+    )
+
+
+def test_circleci_orb_junit_report_path_consistent_with_store_test_results() -> None:
+    """The JUnit report-path and store_test_results path must point to the same directory."""
+    orb_yaml_spec = yaml.safe_load(_CIRCLECI_ORB_YML.read_text())
+    commands = orb_yaml_spec.get(_ORB_COMMANDS_KEY, {})
+    scan_cmd = commands.get(_ORB_SCAN_COMMAND_KEY, {})
+    scan_steps = scan_cmd.get(_ORB_STEPS_KEY, [])
+
+    # Find the run step that calls phi-scan
+    scan_run_step = next(
+        (
+            step[_ORB_RUN_KEY][_ORB_RUN_COMMAND_KEY]
+            for step in scan_steps
+            if isinstance(step, dict) and _ORB_RUN_KEY in step
+        ),
+        None,
+    )
+    assert scan_run_step is not None, "orb.yml scan command step not found"
+    assert _JUNIT_OUTPUT_FLAG in scan_run_step
+
+    store_cmd = commands.get(_ORB_STORE_RESULTS_COMMAND_KEY, {})
+    store_steps = store_cmd.get(_ORB_STEPS_KEY, [])
+    store_step = next(
+        (
+            step
+            for step in store_steps
+            if isinstance(step, dict) and _STORE_TEST_RESULTS_STEP in step
+        ),
+        None,
+    )
+    assert store_step is not None, (
+        f"'{_STORE_TEST_RESULTS_STEP}' step not found in store_results command"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 6C.26 — AWS CodeBuild report group (template structure tests)
+# ---------------------------------------------------------------------------
+
+
+def test_codebuild_buildspec_reports_section_uses_sarif() -> None:
+    """buildspec.yml reports section must specify SARIF format for CodeBuild Reports tab."""
+    content = _BUILDSPEC_YML.read_text()
+    assert _SARIF_FILE_FORMAT in content, (
+        f"buildspec.yml reports section is missing '{_SARIF_FILE_FORMAT}'"
+    )
+
+
+def test_codebuild_buildspec_build_phase_captures_exit_code() -> None:
+    """buildspec.yml build phase must use set +e and capture phi-scan exit code."""
+    content = _BUILDSPEC_YML.read_text()
+    assert "set +e" in content, (
+        "buildspec.yml build phase must use 'set +e' so phi-scan exit 1 "
+        "does not abort the phase before the SARIF file is written"
+    )
+    assert _EXIT_CODE_FILE_NAME in content, (
+        f"buildspec.yml must write phi-scan exit code to '{_EXIT_CODE_FILE_NAME}' "
+        "for deferred failure"
+    )
+
+
+def test_codebuild_buildspec_post_build_reads_exit_code_file() -> None:
+    """buildspec.yml post_build must read the exit code file written in the build phase."""
+    content = _BUILDSPEC_YML.read_text()
+    assert _EXIT_CODE_FILE_NAME in content
+    # post_build must propagate the phi-scan exit code
+    assert _EXIT_CODE_VAR_NAME in content
+
+
+def test_codebuild_buildspec_parsed_structure() -> None:
+    """buildspec.yml must parse as valid YAML with report group using SARIF format."""
+    buildspec_yaml_spec = yaml.safe_load(_BUILDSPEC_YML.read_text())
+    assert buildspec_yaml_spec.get("version") == 0.2
+
+    reports = buildspec_yaml_spec.get(_BUILDSPEC_REPORTS_KEY, {})
+    assert _BUILDSPEC_REPORT_GROUP_NAME in reports, (
+        f"reports section must contain '{_BUILDSPEC_REPORT_GROUP_NAME}'"
+    )
+    report_group = reports[_BUILDSPEC_REPORT_GROUP_NAME]
+    assert report_group.get(_BUILDSPEC_FILE_FORMAT_KEY) == _BUILDSPEC_SARIF_VALUE
+    base_dir = report_group.get(_BUILDSPEC_BASE_DIRECTORY_KEY)
+    assert base_dir, (
+        f"reports.{_BUILDSPEC_REPORT_GROUP_NAME} must specify {_BUILDSPEC_BASE_DIRECTORY_KEY}"
+    )
+
+    # The env variable PHI_SCAN_OUTPUT_DIR must equal the reports base-directory so that
+    # the SARIF file written via --report-path "$PHI_SCAN_OUTPUT_DIR/phi-scan.sarif" lands
+    # in the directory CodeBuild watches for the report group upload.
+    output_dir_value = (
+        buildspec_yaml_spec.get("env", {}).get("variables", {}).get(_BUILDSPEC_OUTPUT_DIR_VAR)
+    )
+    assert output_dir_value == base_dir, (
+        f"env.variables.{_BUILDSPEC_OUTPUT_DIR_VAR} ('{output_dir_value}') must match "
+        f"reports {_BUILDSPEC_BASE_DIRECTORY_KEY} ('{base_dir}')"
+    )
+
+    # Build commands must reference PHI_SCAN_OUTPUT_DIR for the SARIF --report-path
+    build_commands = " ".join(
+        cmd
+        for phase in buildspec_yaml_spec.get("phases", {}).values()
+        for cmd in phase.get("commands", [])
+        if isinstance(cmd, str)
+    )
+    assert _BUILDSPEC_OUTPUT_DIR_VAR in build_commands, (
+        f"build phase must use ${_BUILDSPEC_OUTPUT_DIR_VAR} in the phi-scan --report-path argument"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 6D.6 — Docker ARM image works on Apple Silicon
+# ---------------------------------------------------------------------------
+
+
+def _detect_arm_buildx_support() -> bool:
+    """Return True if Docker buildx reports linux/arm64 support on this machine."""
+    try:
+        result = subprocess.run(
+            ["docker", "buildx", "inspect", "--bootstrap"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        return result.returncode == 0 and "linux/arm64" in result.stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+_BUILDX_ARM_AVAILABLE: bool = _detect_arm_buildx_support() if _DOCKER_AVAILABLE else False
+
+_ARM_IMAGE_TAG: str = "phi-scan-test-arm64:ci"
+
+
+@pytest.fixture(scope="session")
+def provide_arm_docker_image() -> str:
+    """Build the phi-scan Docker image for linux/arm64 once per test session.
+
+    Skips when Docker or buildx linux/arm64 is unavailable (e.g., standard CI hosts).
+    Active on Apple Silicon and any QEMU-equipped host with linux/arm64 support.
+    Returns the image tag so tests can reference it without module-level mutable state.
+    """
+    if not _DOCKER_AVAILABLE:
+        pytest.skip("Docker not available in this environment")
+    if not _BUILDX_ARM_AVAILABLE:
+        pytest.skip("Docker buildx linux/arm64 not available")
+    dockerfile_dir = Path(__file__).parent.parent / "docker"
+    result = subprocess.run(
+        [
+            "docker",
+            "buildx",
+            "build",
+            "--platform",
+            "linux/arm64",
+            "--load",
+            "-t",
+            _ARM_IMAGE_TAG,
+            str(dockerfile_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=600,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"ARM Docker build failed: {result.stderr[:200]}")
+    return _ARM_IMAGE_TAG
+
+
+def test_docker_arm_image_runs_phi_scan_help(provide_arm_docker_image: str) -> None:
+    """phi-scan Docker image built for linux/arm64 runs phi-scan --help and exits 0."""
+    result = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--platform",
+            "linux/arm64",
+            provide_arm_docker_image,
+            "--help",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode == 0, f"phi-scan --help failed on linux/arm64 image:\n{result.stderr}"
+    output = result.stdout + result.stderr
+    assert "phi-scan" in output.lower(), "Expected 'phi-scan' in --help output from ARM image"

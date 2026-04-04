@@ -1752,7 +1752,7 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
   - Post comment via GitHub API or Bitbucket API depending on VCS provider
   - Comment includes: findings table, severity breakdown, remediation hints
   - Uses `GITHUB_TOKEN` or `BITBUCKET_TOKEN` depending on VCS
-- [ ] **6C.20** CircleCI test summary integration:
+- [x] **6C.20** CircleCI test summary integration:
   - Generate JUnit XML output (`--output junit`) — each finding becomes a test failure
   - CircleCI Test Summary tab shows findings with file, line, entity type
   - Trend tracking across builds via CircleCI Insights
@@ -1785,7 +1785,7 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
   - Auto-detect PR from `CODEBUILD_WEBHOOK_TRIGGER` (e.g., `pr/123`)
   - Post comment via GitHub API or Bitbucket API depending on source provider
   - Uses `GITHUB_TOKEN` or Bitbucket app credentials from Secrets Manager / SSM
-- [ ] **6C.26** AWS CodeBuild report group integration:
+- [x] **6C.26** AWS CodeBuild report group integration:
   - Create report group `phi-scan-findings` with SARIF format
   - Findings surfaced in AWS CodeBuild Console → Reports tab
   - Trend tracking across builds via CodeBuild report history
@@ -1809,7 +1809,7 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
 - [x] **6D.3** GitHub PR comment posted correctly via `gh` CLI
 - [x] **6D.4** Pipeline blocks merge when `fail_on_violation: true` (all seven platforms)
 - [x] **6D.5** SARIF upload produces inline annotations on correct lines in GitHub PR
-- [ ] **6D.6** Docker ARM image works on Apple Silicon
+- [x] **6D.6** Docker ARM image works on Apple Silicon
 - [x] **6D.7** GitLab MR note posted correctly via GitLab API (mock `CI_JOB_TOKEN`)
 - [x] **6D.8** GitLab Code Quality JSON (`gl-code-quality-report.json`) validates against GitLab schema
 - [x] **6D.9** GitLab SAST JSON (`gl-sast-report.json`) validates against GitLab SAST schema v15+

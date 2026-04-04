@@ -60,34 +60,51 @@ phases:
     commands:
       - source /tmp/phi-scan-env.sh
       - echo "Running phi-scan..."
+      # Use set +e so a non-zero exit (violations found) does not abort the phase.
+      # The exit code is written to a file and read in post_build — this ensures the
+      # SARIF file is fully written before CodeBuild uploads it to the report group.
       - |
+        set +e
         phi-scan scan . \
           $DIFF_FLAG \
           --output sarif  --report-path "$PHI_SCAN_OUTPUT_DIR/phi-scan.sarif" \
           --output json   --report-path "$PHI_SCAN_OUTPUT_DIR/phi-scan.json"  \
           $COMMENT_FLAGS
-      - echo "phi-scan exit code: $?"
+        echo $? > /tmp/phi-scan-exit-code
+        set -e
+      - echo "phi-scan exit code: $(cat /tmp/phi-scan-exit-code)"
 
   post_build:
     commands:
       # Upload model cache to S3 (optional — remove if not using S3 cache)
       # - aws s3 sync ~/.phi-scanner/ s3://$PHI_SCAN_CACHE_BUCKET/.phi-scanner/ --quiet || true
       - echo "phi-scan scan complete."
-      # Surface violations as CodeBuild log annotations
+      # Read the canonical exit code captured in the build phase and propagate it.
+      # post_build always runs even when build fails — this guarantees the SARIF
+      # report group upload completes before the build is marked failed.
       - |
-        python3 -c "
+        exit_code_file="/tmp/phi-scan-exit-code"
+        if [ ! -f "$exit_code_file" ]; then
+          echo "phi-scan: exit code file not found — scan may have failed." >&2
+          exit 1
+        fi
+        phi_scan_exit_code=$(cat "$exit_code_file")
+        if [ "$phi_scan_exit_code" -ne 0 ]; then
+          python3 -c "
         import json, sys
         try:
-            data = json.load(open('$PHI_SCAN_OUTPUT_DIR/phi-scan.json'))
-            if not data.get('is_clean', True):
-                count = data.get('findings', 0)
-                print(f'PHI/PII violations found: {count}')
-                sys.exit(1)
-            print('No PHI/PII violations found.')
+            with open('$PHI_SCAN_OUTPUT_DIR/phi-scan.json') as fh:
+                scan_report = json.load(fh)
+            count = len(scan_report.get('findings', []))
+            high = scan_report.get('severity_counts', {}).get('HIGH', 0)
+            print(f'PHI/PII violations found: {count} ({high} HIGH)')
         except Exception as exc:
-            print(f'Could not read phi-scan results: {exc}')
+            print(f'Could not read phi-scan results: {exc}', file=sys.stderr)
             sys.exit(1)
-        "
+          "
+          exit "$phi_scan_exit_code"
+        fi
+        echo "phi-scan: no violations found."
 
 reports:
   # CodeBuild report group — findings visible in AWS Console → CodeBuild → Reports
