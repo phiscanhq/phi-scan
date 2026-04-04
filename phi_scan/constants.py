@@ -75,7 +75,20 @@ __all__ = [
     "SSN_EXCLUDED_AREA_NUMBERS",
     "SUD_FIELD_NAME_PATTERNS",
     "VIN_CHARACTER_COUNT",
+    "WebhookType",
     "ZIP_CODE_SAFE_HARBOR_POPULATION_MIN",
+    "AUDIT_KEY_FILENAME",
+    "AUDIT_KEY_DIR",
+    "AUDIT_ENCRYPTION_PREFIX",
+    "AUDIT_GENESIS_CHAIN_HASH",
+    "SMTP_DEFAULT_PORT",
+    "SMTP_DEFAULT_TLS_PORT",
+    "WEBHOOK_DEFAULT_RETRY_COUNT",
+    "WEBHOOK_DEFAULT_TIMEOUT_SECONDS",
+    "NOTIFICATION_SUBJECT_FORMAT",
+    "ACTION_TAKEN_PASS",
+    "ACTION_TAKEN_FAIL",
+    "ACTION_TAKEN_WARN",
 ]
 
 # ---------------------------------------------------------------------------
@@ -443,11 +456,56 @@ SUD_FIELD_NAME_PATTERNS: frozenset[str] = frozenset(
 )
 
 # ---------------------------------------------------------------------------
+# Notification constants
+# ---------------------------------------------------------------------------
+
+# Default SMTP port for STARTTLS connections.
+SMTP_DEFAULT_PORT: int = 587
+# Default SMTP port for SMTPS (implicit TLS, port 465).
+SMTP_DEFAULT_TLS_PORT: int = 465
+
+# Default number of retry attempts for a failed webhook POST before giving up.
+WEBHOOK_DEFAULT_RETRY_COUNT: int = 3
+# Seconds to wait for a webhook HTTP response before timing out.
+WEBHOOK_DEFAULT_TIMEOUT_SECONDS: int = 10
+
+# Subject template for PHI alert email notifications.
+# Formatted with: risk_level, findings_count, repo, branch.
+NOTIFICATION_SUBJECT_FORMAT: str = (
+    "[PHI ALERT] {risk_level} — {findings_count} findings in {repo}/{branch}"
+)
+
+# Audit action_taken values — recorded after each scan.
+ACTION_TAKEN_PASS: str = "pass"
+ACTION_TAKEN_FAIL: str = "fail"
+ACTION_TAKEN_WARN: str = "warn"
+
+# ---------------------------------------------------------------------------
+# Audit encryption and hash chain constants
+# ---------------------------------------------------------------------------
+
+# Directory under the user's home that stores the audit key and database.
+# Mirrored in DEFAULT_DATABASE_PATH — never hardcode "~/.phi-scanner/" in logic.
+AUDIT_KEY_DIR: str = "~/.phi-scanner"
+# File name of the AES-256-GCM encryption key for audit findings_json.
+AUDIT_KEY_FILENAME: str = "audit.key"
+# Prefix written into encrypted findings_json to distinguish ciphertext from
+# plaintext JSON. Old rows without this prefix are treated as unencrypted.
+AUDIT_ENCRYPTION_PREFIX: str = "enc:"
+# Constant genesis hash used as the prev_chain_hash for the very first row.
+# Fixed string rather than zeros to make accidental collision with a real row hash
+# practically impossible. Never change this value — doing so invalidates all
+# existing hash chains.
+AUDIT_GENESIS_CHAIN_HASH: str = "phi-scan-genesis-v1"
+
+# ---------------------------------------------------------------------------
 # Database schema versions
 # ---------------------------------------------------------------------------
 
 # Increment when the audit SQLite schema changes; triggers migration logic.
-AUDIT_SCHEMA_VERSION: int = 1
+# v1 → v2 (Phase 5): added event_type, committer_name_hash, committer_email_hash,
+# pr_number, pipeline, action_taken, notifications_sent, row_chain_hash columns.
+AUDIT_SCHEMA_VERSION: int = 2
 
 # Increment when the scan-cache SQLite schema changes; triggers migration logic.
 CACHE_SCHEMA_VERSION: int = 1
@@ -556,6 +614,14 @@ class DetectionLayer(StrEnum):
     HL7 = "hl7"
     AI = "ai"
     COMBINATION = "combination"
+
+
+class WebhookType(StrEnum):
+    """Webhook delivery target types supported by the notifier."""
+
+    SLACK = "slack"
+    TEAMS = "teams"
+    GENERIC = "generic"
 
 
 class RiskLevel(StrEnum):

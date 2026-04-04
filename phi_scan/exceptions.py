@@ -9,11 +9,13 @@ narrowly when they need to distinguish error types.
 from __future__ import annotations
 
 __all__ = [
+    "AuditKeyMissingError",
     "AuditLogError",
     "BaselineError",
     "ConfigurationError",
     "FileReadError",
     "MissingOptionalDependencyError",
+    "NotificationError",
     "PhiDetectionError",
     "PhiScanError",
     "PhiScanLoggingError",
@@ -89,6 +91,19 @@ class AuditLogError(PhiScanError):
     """
 
 
+class AuditKeyMissingError(AuditLogError):
+    """Raised when the audit encryption key file cannot be found.
+
+    This is the expected state for a newly installed instance that has not
+    yet had ``phi-scan setup`` run. Callers can catch this subclass to treat
+    the missing-key case differently from other audit failures (e.g. log at
+    DEBUG rather than WARNING).
+
+    Args:
+        message: Description including the expected key path.
+    """
+
+
 class PhiDetectionError(PhiScanError):
     """Raised when a detection layer produces an internally inconsistent finding.
 
@@ -123,6 +138,20 @@ class PhiScanLoggingError(PhiScanError):
     Args:
         message: Description of the unsafe configuration including the path
             and the reason it was rejected.
+    """
+
+
+class NotificationError(PhiScanError):
+    """Raised when an email or webhook notification cannot be delivered.
+
+    Notification failures are always best-effort — a ``NotificationError``
+    must never prevent a scan result from being reported or an audit record
+    from being written. Callers must catch this and log a warning rather than
+    re-raising.
+
+    Args:
+        message: Description of the delivery failure including the channel
+            (email/webhook), the destination, and the underlying cause.
     """
 
 

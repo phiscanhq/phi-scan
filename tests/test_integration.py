@@ -1,3 +1,4 @@
+# phi-scan:ignore-file
 """End-to-end integration tests for PhiScan — tasks 1F.9 and 2G.14.
 
 Covers the full pipeline from CLI invocation through scanner → audit → output.
@@ -17,7 +18,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from phi_scan.audit import get_last_scan
+from phi_scan.audit import generate_audit_key, get_last_scan
 from phi_scan.cli import app
 from phi_scan.config import create_default_config
 from phi_scan.constants import EXIT_CODE_CLEAN, EXIT_CODE_VIOLATION
@@ -148,6 +149,7 @@ def test_scan_empty_directory_exits_clean(tmp_path: Path, runner: CliRunner) -> 
 def test_scan_empty_directory_writes_audit_record(tmp_path: Path, runner: CliRunner) -> None:
     database_path = tmp_path / "audit.db"
     configuration_path = _write_test_configuration(tmp_path, database_path)
+    generate_audit_key(database_path)
     scan_root = _create_scan_root_directory(tmp_path)
 
     runner.invoke(
@@ -327,6 +329,7 @@ def test_scan_file_with_phi_writes_audit_record_with_findings(
     """Scanning a file with PHI writes an audit record with a non-zero findings count."""
     database_path = tmp_path / "audit.db"
     configuration_path = _write_test_configuration(tmp_path, database_path)
+    generate_audit_key(database_path)
     scan_root, _ = _create_phi_scan_root(tmp_path)
 
     runner.invoke(

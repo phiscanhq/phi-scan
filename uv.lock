@@ -1156,9 +1156,10 @@ wheels = [
 
 [[package]]
 name = "phi-scan"
-version = "0.3.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "fpdf2" },
     { name = "httpx" },
     { name = "jinja2" },
@@ -1212,6 +1213,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=42.0" },
     { name = "fhir-resources", marker = "extra == 'fhir'", specifier = ">=7.0" },
     { name = "fpdf2", specifier = ">=2.7" },
     { name = "fpdf2", marker = "extra == 'reports'", specifier = ">=2.7" },

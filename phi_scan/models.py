@@ -18,16 +18,20 @@ from phi_scan.constants import (
     DEFAULT_DATABASE_PATH,
     MAX_FILE_SIZE_MB,
     SHA256_HEX_DIGEST_LENGTH,
+    SMTP_DEFAULT_PORT,
+    WEBHOOK_DEFAULT_RETRY_COUNT,
     DetectionLayer,
     OutputFormat,
     PhiCategory,
     RiskLevel,
     SeverityLevel,
+    WebhookType,
 )
 from phi_scan.exceptions import ConfigurationError, PhiDetectionError
 
 __all__ = [
     "Hl7ScanContext",
+    "NotificationConfig",
     "ScanConfig",
     "ScanFinding",
     "ScanResult",
@@ -107,6 +111,7 @@ class _ConfigField(StrEnum):
     INCLUDE_EXTENSIONS = "include_extensions"
     OUTPUT_FORMAT = "output_format"
     DATABASE_PATH = "database_path"
+    NOTIFICATION_CONFIG = "notification_config"
 
 
 # Build the pattern string explicitly — avoids the non-obvious triple-brace
@@ -336,6 +341,47 @@ def _reject_non_clean_flag_with_clean_risk_level(result: ScanResult) -> None:
         )
 
 
+@dataclass(frozen=True)
+class NotificationConfig:
+    """Configuration for email and webhook notifications triggered on PHI detection.
+
+    All fields default to disabled/empty so callers that do not configure
+    notifications get no side effects. Enable the email channel by setting
+    ``is_email_enabled=True`` and supplying smtp_host, smtp_from, and at least
+    one entry in smtp_recipients. Enable webhooks by setting
+    ``is_webhook_enabled=True`` and supplying webhook_url.
+
+    Args:
+        is_email_enabled: When True, send email on scan completion (subject to
+            notify_on_violation_only).
+        smtp_host: SMTP server hostname. Required when is_email_enabled is True.
+        smtp_port: SMTP port. Defaults to 587 (STARTTLS).
+        smtp_from: Sender address. Required when is_email_enabled is True.
+        smtp_recipients: One or more recipient email addresses.
+        smtp_use_tls: Whether to require TLS. Always True — plaintext SMTP is
+            rejected at delivery time. Field exposed for documentation completeness.
+        is_webhook_enabled: When True, POST a findings payload on scan completion.
+        webhook_url: The webhook endpoint URL. Required when is_webhook_enabled is True.
+        webhook_type: Payload format — "slack", "teams", or "generic".
+        webhook_retry_count: Maximum delivery attempts before giving up.
+        notify_on_violation_only: When True (default), notifications are only
+            sent when the scan produced at least one finding. When False, a
+            notification is sent for every scan regardless of result.
+    """
+
+    is_email_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = SMTP_DEFAULT_PORT
+    smtp_from: str = ""
+    smtp_recipients: tuple[str, ...] = ()
+    smtp_use_tls: bool = True
+    is_webhook_enabled: bool = False
+    webhook_url: str = ""
+    webhook_type: WebhookType = WebhookType.GENERIC
+    webhook_retry_count: int = WEBHOOK_DEFAULT_RETRY_COUNT
+    notify_on_violation_only: bool = True
+
+
 @final
 @dataclass
 class ScanConfig:
@@ -372,6 +418,7 @@ class ScanConfig:
     include_extensions: list[str] | None = None
     output_format: OutputFormat = OutputFormat.TABLE
     database_path: Path = field(default_factory=lambda: Path(DEFAULT_DATABASE_PATH).expanduser())
+    notification_config: NotificationConfig = field(default_factory=NotificationConfig)
 
     def __post_init__(self) -> None:
         # __init__ already validated both list fields via __setattr__; make
@@ -498,6 +545,21 @@ def _validate_database_path(database_path: object) -> None:
         raise ConfigurationError(_INVALID_DATABASE_PATH_FIELD_ERROR.format(value=database_path))
 
 
+def _validate_notification_config(notification_config: object) -> None:
+    """Raise ConfigurationError if notification_config is not a NotificationConfig instance.
+
+    Args:
+        notification_config: The value to validate.
+
+    Raises:
+        ConfigurationError: If notification_config is not a NotificationConfig.
+    """
+    if not isinstance(notification_config, NotificationConfig):
+        raise ConfigurationError(
+            f"notification_config must be a NotificationConfig, got {notification_config!r}"
+        )
+
+
 # Dispatch table for ScanConfig.__setattr__ — maps each field name to its validator.
 # Defined after all _validate_* functions so the references are valid at module load.
 # __setattr__ resolves this name at call time (not at class definition time), so the
@@ -516,6 +578,7 @@ _FIELD_VALIDATORS: dict[str, Callable[[object], None]] = {
     _ConfigField.INCLUDE_EXTENSIONS: _validate_include_extensions,
     _ConfigField.OUTPUT_FORMAT: _validate_output_format,
     _ConfigField.DATABASE_PATH: _validate_database_path,
+    _ConfigField.NOTIFICATION_CONFIG: _validate_notification_config,
 }
 
 

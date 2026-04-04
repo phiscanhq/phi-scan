@@ -16,11 +16,14 @@ from phi_scan.constants import (
     DEFAULT_DATABASE_PATH,
     IMPLEMENTED_OUTPUT_FORMATS,
     MAX_FILE_SIZE_MB,
+    SMTP_DEFAULT_PORT,
+    WEBHOOK_DEFAULT_RETRY_COUNT,
     OutputFormat,
     SeverityLevel,
+    WebhookType,
 )
 from phi_scan.exceptions import ConfigurationError
-from phi_scan.models import ScanConfig
+from phi_scan.models import NotificationConfig, ScanConfig
 
 __all__ = ["create_default_config", "load_config"]
 
@@ -40,6 +43,17 @@ _YAML_KEY_INCLUDE_EXTENSIONS: str = "include_extensions"
 _YAML_KEY_EXCLUDE_PATHS: str = "exclude_paths"
 _YAML_KEY_OUTPUT_FORMAT: str = "format"
 _YAML_KEY_DATABASE_PATH: str = "database_path"
+_YAML_SECTION_NOTIFICATIONS: str = "notifications"
+_YAML_KEY_EMAIL_ENABLED: str = "email_enabled"
+_YAML_KEY_SMTP_HOST: str = "smtp_host"
+_YAML_KEY_SMTP_PORT: str = "smtp_port"
+_YAML_KEY_SMTP_FROM: str = "smtp_from"
+_YAML_KEY_SMTP_RECIPIENTS: str = "smtp_recipients"
+_YAML_KEY_WEBHOOK_ENABLED: str = "webhook_enabled"
+_YAML_KEY_WEBHOOK_URL: str = "webhook_url"
+_YAML_KEY_WEBHOOK_TYPE: str = "webhook_type"
+_YAML_KEY_WEBHOOK_RETRY_COUNT: str = "webhook_retry_count"
+_YAML_KEY_NOTIFY_ON_VIOLATION_ONLY: str = "notify_on_violation_only"
 
 # ---------------------------------------------------------------------------
 # Config defaults and constraints
@@ -76,6 +90,16 @@ _CONFIDENCE_THRESHOLD_RANGE_ERROR: str = (
     "scan.confidence_threshold {value!r} is outside the valid range [{minimum}, {maximum}]"
 )
 _INVALID_MAX_FILE_SIZE_MB_ERROR: str = "scan.max_file_size_mb {value!r} must be an integer"
+_INVALID_SMTP_PORT_ERROR: str = "notifications.smtp_port {value!r} must be an integer"
+_INVALID_WEBHOOK_RETRY_COUNT_ERROR: str = (
+    "notifications.webhook_retry_count {value!r} must be an integer"
+)
+_INVALID_WEBHOOK_TYPE_ERROR: str = (
+    "notifications.webhook_type {value!r} is not valid. Accepted values: {valid}"
+)
+_INVALID_SMTP_RECIPIENTS_ERROR: str = (
+    "notifications.smtp_recipients must be a list of strings, got {value!r}"
+)
 
 # ---------------------------------------------------------------------------
 # Default config template — written by create_default_config
@@ -130,6 +154,24 @@ audit:
   # HIPAA 45 CFR §164.530(j): minimum 6-year retention = {retention_days} days.
   retention_days: {retention_days}
 
+notifications:
+  # Email notifications (requires SMTP server access).
+  # Set PHI_SCAN_SMTP_USER and PHI_SCAN_SMTP_PASSWORD env vars for authentication.
+  email_enabled: false
+  smtp_host: ""
+  smtp_port: {smtp_port}
+  smtp_from: ""
+  smtp_recipients: []
+
+  # Webhook notifications (Slack, Teams, or generic HTTP POST).
+  webhook_enabled: false
+  webhook_url: ""
+  webhook_type: "generic"  # "slack", "teams", or "generic"
+  webhook_retry_count: {webhook_retry_count}
+
+  # When true (default), only notify when scan finds violations.
+  notify_on_violation_only: true
+
 ai:
   # Disabled by default — all scanning is local. See CLAUDE.md before enabling.
   enable_claude_review: false
@@ -159,6 +201,7 @@ def load_config(config_path: Path) -> ScanConfig:
     scan_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_SCAN, {})
     output_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_OUTPUT, {})
     audit_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_AUDIT, {})
+    notifications_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_NOTIFICATIONS, {})
     # The ai: section (enable_claude_review) is intentionally not read here —
     # AI integration is deferred to Phase 7 (optional). Unknown top-level keys
     # such as ai: are silently ignored by design; adding strict key validation
@@ -166,7 +209,8 @@ def load_config(config_path: Path) -> ScanConfig:
     _reject_follow_symlinks_enabled(scan_section)
     output_format = _parse_output_format(output_section)
     database_path = _parse_database_path(audit_section)
-    return _build_scan_config(scan_section, output_format, database_path)
+    notification_config = _parse_notification_config(notifications_section)
+    return _build_scan_config(scan_section, output_format, database_path, notification_config)
 
 
 def create_default_config(output_path: Path) -> None:
@@ -184,6 +228,8 @@ def create_default_config(output_path: Path) -> None:
         max_file_size_mb=MAX_FILE_SIZE_MB,
         default_db=DEFAULT_DATABASE_PATH,
         retention_days=AUDIT_RETENTION_DAYS,
+        smtp_port=SMTP_DEFAULT_PORT,
+        webhook_retry_count=WEBHOOK_DEFAULT_RETRY_COUNT,
     )
     try:
         output_path.write_text(content, encoding=_CONFIG_FILE_ENCODING)
@@ -382,10 +428,70 @@ def _parse_max_file_size_mb(scan_section: dict[str, Any]) -> int:
         ) from error
 
 
+def _parse_notification_config(notifications_section: dict[str, Any]) -> NotificationConfig:
+    """Parse and validate the notifications section into a NotificationConfig.
+
+    All fields are optional — an empty section yields a default disabled config.
+
+    Args:
+        notifications_section: The notifications: section of the parsed config.
+
+    Returns:
+        A populated NotificationConfig instance.
+
+    Raises:
+        ConfigurationError: If any field value is invalid.
+    """
+    raw_smtp_port = notifications_section.get(_YAML_KEY_SMTP_PORT, SMTP_DEFAULT_PORT)
+    try:
+        smtp_port = int(raw_smtp_port)
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(_INVALID_SMTP_PORT_ERROR.format(value=raw_smtp_port)) from error
+
+    raw_retry_count = notifications_section.get(
+        _YAML_KEY_WEBHOOK_RETRY_COUNT, WEBHOOK_DEFAULT_RETRY_COUNT
+    )
+    try:
+        webhook_retry_count = int(raw_retry_count)
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(
+            _INVALID_WEBHOOK_RETRY_COUNT_ERROR.format(value=raw_retry_count)
+        ) from error
+
+    raw_webhook_type = notifications_section.get(_YAML_KEY_WEBHOOK_TYPE, WebhookType.GENERIC.value)
+    try:
+        webhook_type = WebhookType(raw_webhook_type)
+    except ValueError as error:
+        valid = ", ".join(member.value for member in WebhookType)
+        raise ConfigurationError(
+            _INVALID_WEBHOOK_TYPE_ERROR.format(value=raw_webhook_type, valid=valid)
+        ) from error
+
+    raw_recipients = notifications_section.get(_YAML_KEY_SMTP_RECIPIENTS, [])
+    if not isinstance(raw_recipients, list) or not all(isinstance(r, str) for r in raw_recipients):
+        raise ConfigurationError(_INVALID_SMTP_RECIPIENTS_ERROR.format(value=raw_recipients))
+
+    return NotificationConfig(
+        is_email_enabled=bool(notifications_section.get(_YAML_KEY_EMAIL_ENABLED, False)),
+        smtp_host=str(notifications_section.get(_YAML_KEY_SMTP_HOST, "")),
+        smtp_port=smtp_port,
+        smtp_from=str(notifications_section.get(_YAML_KEY_SMTP_FROM, "")),
+        smtp_recipients=tuple(raw_recipients),
+        is_webhook_enabled=bool(notifications_section.get(_YAML_KEY_WEBHOOK_ENABLED, False)),
+        webhook_url=str(notifications_section.get(_YAML_KEY_WEBHOOK_URL, "")),
+        webhook_type=webhook_type,
+        webhook_retry_count=webhook_retry_count,
+        notify_on_violation_only=bool(
+            notifications_section.get(_YAML_KEY_NOTIFY_ON_VIOLATION_ONLY, True)
+        ),
+    )
+
+
 def _build_scan_config(
     scan_section: dict[str, Any],
     output_format: OutputFormat,
     database_path: Path,
+    notification_config: NotificationConfig | None = None,
 ) -> ScanConfig:
     """Build a ScanConfig from all parsed config sections.
 
@@ -412,4 +518,7 @@ def _build_scan_config(
         exclude_paths=list(scan_section.get(_YAML_KEY_EXCLUDE_PATHS, [])),
         output_format=output_format,
         database_path=database_path,
+        notification_config=notification_config
+        if notification_config is not None
+        else NotificationConfig(),
     )
