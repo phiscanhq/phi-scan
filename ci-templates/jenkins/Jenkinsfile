@@ -110,11 +110,11 @@ pipeline {
                     // 6C.14: Set build description to scan summary for quick
                     //   at-a-glance status in the Jenkins build history.
                     // -------------------------------------------------------
-                    def phi_scan_report_filename = "phi-scan.json"
-                    def phi_scan_json_path = "${PHI_SCAN_OUTPUT_DIR}/${phi_scan_report_filename}"
+                    def phiScanReportFilename = "phi-scan.json"
+                    def phiScanJsonPath = "${PHI_SCAN_OUTPUT_DIR}/${phiScanReportFilename}"
                     def buildDescription = "PhiScan: unknown"
                     try {
-                        def jsonText = readFile(phi_scan_json_path)
+                        def jsonText = readFile(phiScanJsonPath)
                         def scanResult = readJSON(text: jsonText)
                         if (scanResult.is_clean) {
                             buildDescription = "PhiScan: Clean"

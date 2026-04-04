@@ -171,8 +171,9 @@ _AZURE_TAG_CLEAN: str = "phi-scan:clean"
 _AZURE_TAG_VIOLATIONS: str = "phi-scan:violations-found"
 
 # Azure Boards work-item API
+_AZURE_WORKITEM_TYPE: str = "Task"
 _AZURE_WORKITEMS_PATH: str = (
-    "{collection_uri}{team_project}/_apis/wit/workitems/$Task?api-version={api_version}"
+    "{collection_uri}{team_project}/_apis/wit/workitems/${work_item_type}?api-version={api_version}"
 )
 _AZURE_WORKITEM_TITLE_FORMAT: str = (
     "phi-scan: {count} HIGH severity PHI/PII violation(s) in PR #{pull_request_number}"
@@ -182,11 +183,13 @@ _AZURE_WORKITEM_TITLE_FORMAT: str = (
 _AWS_SECURITY_HUB_PRODUCT_ARN_FORMAT: str = (
     "arn:aws:securityhub:{region}:{account_id}:product/{account_id}/default"
 )
+# ASFF uses "INFORMATIONAL" for INFO-level findings — different from SeverityLevel.INFO.value
+_ASFF_INFO_SEVERITY_LABEL: str = "INFORMATIONAL"
 _AMAZON_SECURITY_FINDING_FORMAT_SEVERITY_MAP: dict[SeverityLevel, str] = {
-    SeverityLevel.HIGH: "HIGH",
-    SeverityLevel.MEDIUM: "MEDIUM",
-    SeverityLevel.LOW: "LOW",
-    SeverityLevel.INFO: "INFORMATIONAL",
+    SeverityLevel.HIGH: SeverityLevel.HIGH.value.upper(),
+    SeverityLevel.MEDIUM: SeverityLevel.MEDIUM.value.upper(),
+    SeverityLevel.LOW: SeverityLevel.LOW.value.upper(),
+    SeverityLevel.INFO: _ASFF_INFO_SEVERITY_LABEL,
 }
 
 # Bitbucket Code Insights API
@@ -197,11 +200,13 @@ _BITBUCKET_ANNOTATIONS_PATH: str = (
     "/repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_id}/annotations"
 )
 _BITBUCKET_REPORT_ID: str = "phi-scan"
+# Bitbucket Code Insights does not have an INFO severity level — INFO findings map to LOW
+_BITBUCKET_INFO_MAPPED_SEVERITY: str = SeverityLevel.LOW.value.upper()
 _BITBUCKET_ANNOTATION_SEVERITY_MAP: dict[SeverityLevel, str] = {
-    SeverityLevel.HIGH: "HIGH",
-    SeverityLevel.MEDIUM: "MEDIUM",
-    SeverityLevel.LOW: "LOW",
-    SeverityLevel.INFO: "LOW",
+    SeverityLevel.HIGH: SeverityLevel.HIGH.value.upper(),
+    SeverityLevel.MEDIUM: SeverityLevel.MEDIUM.value.upper(),
+    SeverityLevel.LOW: SeverityLevel.LOW.value.upper(),
+    SeverityLevel.INFO: _BITBUCKET_INFO_MAPPED_SEVERITY,
 }
 
 
@@ -610,7 +615,7 @@ def _assert_sarif_contains_no_code_snippets(sarif_content: str) -> None:
         CIIntegrationError: When any result location contains a ``snippet`` or
             ``contextRegion`` field that could expose raw source content.
     """
-    sarif_doc: dict = json.loads(sarif_content)
+    sarif_doc: dict[str, Any] = json.loads(sarif_content)
     for sarif_run in sarif_doc.get("runs", []):
         for sarif_result in sarif_run.get("results", []):
             for location in sarif_result.get("locations", []):
@@ -1025,6 +1030,7 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
     url = _AZURE_WORKITEMS_PATH.format(
         collection_uri=collection_uri,
         team_project=team_project,
+        work_item_type=_AZURE_WORKITEM_TYPE,
         api_version=_AZURE_API_VERSION,
     )
     # Azure DevOps work-item PATCH format

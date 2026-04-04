@@ -68,10 +68,10 @@ def call(Map config = [:]) {
 
     // 6C.14: Build description for at-a-glance status in build history
     try {
-        def phi_scan_report_filename = "phi-scan.json"
-        def phi_scan_json_path = "${outputDir}/${phi_scan_report_filename}"
-        if (fileExists(phi_scan_json_path)) {
-            def scanResult = readJSON(file: phi_scan_json_path)
+        def phiScanReportFilename = "phi-scan.json"
+        def phiScanJsonPath = "${outputDir}/${phiScanReportFilename}"
+        if (fileExists(phiScanJsonPath)) {
+            def scanResult = readJSON(file: phiScanJsonPath)
             currentBuild.description = scanResult.is_clean
                 ? 'PhiScan: Clean'
                 : "PhiScan: ${scanResult.findings?.size()} findings (${scanResult.severity_counts?.HIGH ?: 0} HIGH)"
