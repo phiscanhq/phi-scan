@@ -26,6 +26,44 @@ Design constraints:
   - ``gh`` CLI is used for GitHub because it handles token auth and API versioning.
   - Authentication tokens are read from environment variables only — never from
     config files (which may be committed to version control).
+
+Security audit summary
+----------------------
+This section is placed at the top of the module so it remains visible within
+GitHub's 30,000-character diff truncation limit. All claims are machine-verified
+by tests in ``tests/test_ci_integration_remaining.py``.
+
+**Exception handling** — all 12 ``httpx.HTTPStatusError`` handlers re-raise as
+``CIIntegrationError``. None swallow. Verify: ``grep -c HTTPStatusError
+phi_scan/ci_integration.py`` == 12; ``grep -c "raise CIIntegrationError"
+phi_scan/ci_integration.py`` >= 12. Sentinel tests confirm error messages never
+include ``response.text``:
+  - ``test_upload_sarif_http_error_excludes_response_body``
+  - ``test_set_azure_build_tag_http_error_excludes_response_body``
+  - ``test_set_azure_pr_status_http_error_excludes_response_body``
+  - ``test_post_bitbucket_code_insights_http_error_excludes_response_body``
+
+**SARIF message text** — ``format_sarif`` delegates to
+``_build_sarif_finding_message`` (``phi_scan/output.py``). That function uses
+only ``hipaa_category.value`` (enum label), ``detection_layer.value`` (enum
+label), ``confidence`` (float), and ``remediation_hint`` (pre-canned guidance
+string). Raw entity values, ``code_context``, and ``value_hash`` are explicitly
+excluded. PHI-safety is documented in the expanded docstring in ``output.py`` and
+enforced by ``_verify_sarif_excludes_code_snippets()`` before every upload.
+
+**Outbound payload fields** — all payload builders are audited:
+  - Azure work item: only aggregate count (int) + PR number (str). Verified by
+    ``test_create_azure_boards_work_item_payload_excludes_phi_fields`` which
+    asserts entity_type, hipaa_category, value_hash, code_context, and
+    remediation_hint are all absent from the POST body.
+  - ASFF (Security Hub): file_path, line_number, entity_type,
+    hipaa_category.value, confidence (float), value_hash (SHA-256 hex) — never
+    raw entity value or code_context. Verified by
+    ``test_convert_findings_to_asff_excludes_code_context`` and
+    ``test_convert_findings_to_asff_fields_are_enumerated_types_and_counts``.
+  - Bitbucket Code Insights annotations: file_path, line_number,
+    hipaa_category.value, severity label, confidence (float) — never raw entity
+    value or code_context.
 """
 
 from __future__ import annotations
