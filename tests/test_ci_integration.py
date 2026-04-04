@@ -133,9 +133,7 @@ def _make_violation_result() -> ScanResult:
     severity_counts = MappingProxyType(
         {**{level: 0 for level in SeverityLevel}, SeverityLevel.HIGH: 1}
     )
-    category_counts = MappingProxyType(
-        {**{cat: 0 for cat in PhiCategory}, PhiCategory.SSN: 1}
-    )
+    category_counts = MappingProxyType({**{cat: 0 for cat in PhiCategory}, PhiCategory.SSN: 1})
     return ScanResult(
         findings=(finding,),
         files_scanned=_TEST_FILES_SCANNED,
@@ -624,10 +622,7 @@ def test_post_pr_comment_bitbucket_posts_to_pr_comments_api(
     with patch("httpx.post", side_effect=fake_post):
         post_pr_comment(_make_clean_result(), bb_context)
 
-    assert any(
-        f"pullrequests/{_BITBUCKET_PR_ID}/comments" in url
-        for url in captured_urls
-    )
+    assert any(f"pullrequests/{_BITBUCKET_PR_ID}/comments" in url for url in captured_urls)
 
 
 # ---------------------------------------------------------------------------
@@ -887,7 +882,4 @@ def test_scan_with_post_comment_invokes_gh_cli_on_github_platform(
         )
 
     assert invocation.exit_code == EXIT_CODE_CLEAN
-    assert any(
-        isinstance(call, list) and "gh" in call
-        for call in captured_calls
-    )
+    assert any(isinstance(call, list) and "gh" in call for call in captured_calls)
