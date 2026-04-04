@@ -774,15 +774,23 @@ def test_import_findings_to_security_hub_raises_when_aws_cli_missing(
 # 6B.6 — Docker end-to-end test (skipped when Docker is unavailable)
 # ---------------------------------------------------------------------------
 
-_DOCKER_AVAILABLE: bool = (
-    subprocess.run(
-        ["docker", "info"],
-        capture_output=True,
-        check=False,
-        timeout=10,
-    ).returncode
-    == 0
-)
+
+def _check_docker_available() -> bool:
+    try:
+        return (
+            subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                check=False,
+                timeout=10,
+            ).returncode
+            == 0
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+_DOCKER_AVAILABLE: bool = _check_docker_available()
 
 _DOCKER_IMAGE_BUILT: bool = False
 _DOCKER_IMAGE_TAG: str = "phi-scan-test:ci"
