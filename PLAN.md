@@ -1832,38 +1832,38 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
 
 ### Phase 6 Verification Checklist
 
-- [ ] GitHub Actions workflow runs and blocks PR on PHI detection
-- [ ] GitLab CI pipeline runs and blocks MR on PHI detection
-- [ ] Jenkins pipeline runs and blocks build on PHI detection
-- [ ] Azure DevOps pipeline runs and blocks PR on PHI detection
-- [ ] CircleCI job runs and blocks merge on PHI detection
-- [ ] Bitbucket Pipelines step runs and blocks PR on PHI detection
-- [ ] AWS CodeBuild build runs and blocks merge on PHI detection
-- [ ] Docker image builds for amd64 and arm64, scans, and exits correctly
-- [ ] GitHub PR comment appears with findings table via `gh` CLI
-- [ ] GitLab MR comment appears with findings table via GitLab API
-- [ ] Jenkins Warnings NG shows inline findings annotations
-- [ ] Azure DevOps PR thread comment appears with findings table
-- [ ] Azure DevOps PR status blocks completion when policy configured
-- [ ] CircleCI PR comment posted via detected VCS provider API
-- [ ] CircleCI JUnit test summary shows findings in Test Summary tab
-- [ ] CircleCI orb published and installable from Orb Registry
-- [ ] Bitbucket PR comment appears with findings table via Bitbucket API
-- [ ] Bitbucket Code Insights annotations appear inline in PR diff
-- [ ] Bitbucket build status blocks PR merge via merge check
-- [ ] AWS CodeBuild report group shows findings in AWS Console
-- [ ] AWS CodeBuild PR comment posted when source is GitHub/Bitbucket
-- [ ] AWS Security Hub import validates when `aws_security_hub: true`
-- [ ] `--diff HEAD~1` scans only changed files
-- [ ] Exit code 1 blocks pipeline merge (all seven platforms)
-- [ ] SARIF upload produces inline annotations in GitHub PR diff
-- [ ] GitLab Code Quality report shows inline MR annotations
-- [ ] GitLab SAST report appears in GitLab Security Dashboard
-- [ ] Jenkins SARIF consumed by Warnings NG with correct severity levels
-- [ ] Jenkins Checks API posts annotations on PR builds
-- [ ] Auto-detection correctly identifies all seven CI/CD platforms from env vars
-- [ ] `--output codequality` produces valid GitLab Code Quality JSON
-- [ ] `--output gitlab-sast` produces valid GitLab SAST JSON
+- [x] GitHub Actions workflow runs and blocks PR on PHI detection
+- [x] GitLab CI pipeline runs and blocks MR on PHI detection
+- [x] Jenkins pipeline runs and blocks build on PHI detection
+- [x] Azure DevOps pipeline runs and blocks PR on PHI detection
+- [x] CircleCI job runs and blocks merge on PHI detection
+- [x] Bitbucket Pipelines step runs and blocks PR on PHI detection
+- [x] AWS CodeBuild build runs and blocks merge on PHI detection
+- [x] Docker image builds for amd64 and arm64, scans, and exits correctly
+- [x] GitHub PR comment appears with findings table via `gh` CLI
+- [x] GitLab MR comment appears with findings table via GitLab API
+- [x] Jenkins Warnings NG shows inline findings annotations
+- [x] Azure DevOps PR thread comment appears with findings table
+- [x] Azure DevOps PR status blocks completion when policy configured
+- [x] CircleCI PR comment posted via detected VCS provider API
+- [x] CircleCI JUnit test summary shows findings in Test Summary tab
+- [x] CircleCI orb published and installable from Orb Registry
+- [x] Bitbucket PR comment appears with findings table via Bitbucket API
+- [x] Bitbucket Code Insights annotations appear inline in PR diff
+- [x] Bitbucket build status blocks PR merge via merge check
+- [x] AWS CodeBuild report group shows findings in AWS Console
+- [x] AWS CodeBuild PR comment posted when source is GitHub/Bitbucket
+- [x] AWS Security Hub import validates when `aws_security_hub: true`
+- [x] `--diff HEAD~1` scans only changed files
+- [x] Exit code 1 blocks pipeline merge (all seven platforms)
+- [x] SARIF upload produces inline annotations in GitHub PR diff
+- [x] GitLab Code Quality report shows inline MR annotations
+- [x] GitLab SAST report appears in GitLab Security Dashboard
+- [x] Jenkins SARIF consumed by Warnings NG with correct severity levels
+- [x] Jenkins Checks API posts annotations on PR builds
+- [x] Auto-detection correctly identifies all seven CI/CD platforms from env vars
+- [x] `--output codequality` produces valid GitLab Code Quality JSON
+- [x] `--output gitlab-sast` produces valid GitLab SAST JSON
 
 ---
 

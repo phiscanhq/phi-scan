@@ -1322,3 +1322,137 @@ def test_docker_arm_image_runs_phi_scan_help(provide_arm_docker_image: str) -> N
     assert result.returncode == 0, f"phi-scan --help failed on linux/arm64 image:\n{result.stderr}"
     output = result.stdout + result.stderr
     assert "phi-scan" in output.lower(), "Expected 'phi-scan' in --help output from ARM image"
+
+
+# ---------------------------------------------------------------------------
+# 6D.11/12/13 — Jenkins Declarative pipeline template structure tests
+# ---------------------------------------------------------------------------
+
+_JENKINSFILE = Path(__file__).parent.parent / "ci-templates" / "jenkins" / "Jenkinsfile"
+_PHISCAN_GROOVY = (
+    Path(__file__).parent.parent / "ci-templates" / "jenkins" / "vars" / "phiScan.groovy"
+)
+
+# Named constants for Jenkins template structure assertions
+_JENKINS_RECORD_ISSUES: str = "recordIssues"
+_JENKINS_SARIF_TOOL: str = "sarif("
+_JENKINS_PUBLISH_CHECKS: str = "publishChecks"
+_JENKINS_CHANGE_ID_GUARD: str = "env.CHANGE_ID"
+_JENKINS_ABORT_EXCEPTION: str = "hudson.AbortException"
+_JENKINS_ERROR_CALL: str = "error("
+_JENKINS_SARIF_OUTPUT_FLAG: str = "--output sarif"
+_JENKINS_FAIL_ON_VIOLATION_PARAM: str = "failOnViolation"
+
+
+def test_jenkinsfile_scan_command_includes_sarif_output() -> None:
+    """Jenkinsfile scan command must include --output sarif for Warnings NG consumption."""
+    content = _JENKINSFILE.read_text()
+    assert _JENKINS_SARIF_OUTPUT_FLAG in content, (
+        f"Jenkinsfile is missing '{_JENKINS_SARIF_OUTPUT_FLAG}' required for Warnings NG"
+    )
+
+
+def test_jenkinsfile_record_issues_step_present() -> None:
+    """Jenkinsfile must call recordIssues to publish SARIF findings in Warnings NG."""
+    content = _JENKINSFILE.read_text()
+    assert _JENKINS_RECORD_ISSUES in content, (
+        f"Jenkinsfile is missing '{_JENKINS_RECORD_ISSUES}' required for Warnings NG tab"
+    )
+
+
+def test_jenkinsfile_record_issues_uses_sarif_tool() -> None:
+    """Jenkinsfile recordIssues must use sarif() tool for correct severity mapping."""
+    content = _JENKINSFILE.read_text()
+    assert _JENKINS_SARIF_TOOL in content, (
+        f"Jenkinsfile recordIssues must include '{_JENKINS_SARIF_TOOL}' for SARIF severity mapping"
+    )
+
+
+def test_jenkinsfile_publish_checks_present() -> None:
+    """Jenkinsfile must call publishChecks for Jenkins Checks API inline PR annotations."""
+    content = _JENKINSFILE.read_text()
+    assert _JENKINS_PUBLISH_CHECKS in content, (
+        f"Jenkinsfile is missing '{_JENKINS_PUBLISH_CHECKS}' required for Checks API annotations"
+    )
+
+
+def test_jenkinsfile_publish_checks_gated_on_change_id() -> None:
+    """publishChecks must be gated on env.CHANGE_ID so it only fires on PR builds."""
+    content = _JENKINSFILE.read_text()
+    assert _JENKINS_CHANGE_ID_GUARD in content, (
+        f"Jenkinsfile publishChecks block must be inside 'if ({_JENKINS_CHANGE_ID_GUARD})'"
+    )
+
+
+def test_jenkinsfile_publish_checks_catches_abort_exception() -> None:
+    """publishChecks must catch hudson.AbortException so a missing Checks API plugin
+    does not fail the build — annotations are optional, not required."""
+    content = _JENKINSFILE.read_text()
+    assert _JENKINS_ABORT_EXCEPTION in content, (
+        f"Jenkinsfile publishChecks must catch '{_JENKINS_ABORT_EXCEPTION}' "
+        "to tolerate missing Checks API plugin"
+    )
+
+
+def test_jenkinsfile_blocks_build_on_violation() -> None:
+    """Jenkinsfile must call error() to block the build when violations are detected."""
+    content = _JENKINSFILE.read_text()
+    assert _JENKINS_ERROR_CALL in content, (
+        f"Jenkinsfile must call '{_JENKINS_ERROR_CALL}' to fail the build on violations"
+    )
+
+
+def test_phiscan_groovy_scan_command_includes_sarif_output() -> None:
+    """phiScan.groovy shared library step must include --output sarif in scan flags."""
+    content = _PHISCAN_GROOVY.read_text()
+    assert _JENKINS_SARIF_OUTPUT_FLAG in content, (
+        f"phiScan.groovy is missing '{_JENKINS_SARIF_OUTPUT_FLAG}' required for Warnings NG"
+    )
+
+
+def test_phiscan_groovy_record_issues_present() -> None:
+    """phiScan.groovy must call recordIssues to publish SARIF findings in Warnings NG."""
+    content = _PHISCAN_GROOVY.read_text()
+    assert _JENKINS_RECORD_ISSUES in content, (
+        f"phiScan.groovy is missing '{_JENKINS_RECORD_ISSUES}' required for Warnings NG tab"
+    )
+
+
+def test_phiscan_groovy_record_issues_uses_sarif_tool() -> None:
+    """phiScan.groovy recordIssues must use sarif() tool for SARIF severity mapping."""
+    content = _PHISCAN_GROOVY.read_text()
+    assert _JENKINS_SARIF_TOOL in content, (
+        f"phiScan.groovy recordIssues must include '{_JENKINS_SARIF_TOOL}'"
+    )
+
+
+def test_phiscan_groovy_publish_checks_present() -> None:
+    """phiScan.groovy must call publishChecks for Jenkins Checks API inline annotations."""
+    content = _PHISCAN_GROOVY.read_text()
+    assert _JENKINS_PUBLISH_CHECKS in content, (
+        f"phiScan.groovy is missing '{_JENKINS_PUBLISH_CHECKS}'"
+    )
+
+
+def test_phiscan_groovy_publish_checks_catches_abort_exception() -> None:
+    """phiScan.groovy publishChecks must catch hudson.AbortException."""
+    content = _PHISCAN_GROOVY.read_text()
+    assert _JENKINS_ABORT_EXCEPTION in content, (
+        f"phiScan.groovy publishChecks must catch '{_JENKINS_ABORT_EXCEPTION}'"
+    )
+
+
+def test_phiscan_groovy_blocks_build_on_violation() -> None:
+    """phiScan.groovy must call error() when failOnViolation is true and violations found."""
+    content = _PHISCAN_GROOVY.read_text()
+    assert _JENKINS_ERROR_CALL in content, (
+        f"phiScan.groovy must call '{_JENKINS_ERROR_CALL}' to propagate violation failures"
+    )
+
+
+def test_phiscan_groovy_exposes_fail_on_violation_parameter() -> None:
+    """phiScan.groovy must expose a failOnViolation parameter so callers can suppress failure."""
+    content = _PHISCAN_GROOVY.read_text()
+    assert _JENKINS_FAIL_ON_VIOLATION_PARAM in content, (
+        f"phiScan.groovy must expose '{_JENKINS_FAIL_ON_VIOLATION_PARAM}' parameter"
+    )
