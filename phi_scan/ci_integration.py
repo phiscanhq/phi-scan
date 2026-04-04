@@ -575,15 +575,43 @@ def build_comment_body_with_baseline(
 # ---------------------------------------------------------------------------
 
 
+def _compress_and_encode_sarif(sarif_content: str) -> str:
+    """Gzip-compress and base64-encode a SARIF JSON string for GitHub upload.
+
+    GitHub Code Scanning requires the SARIF payload to be gzip-compressed and
+    then base64-encoded as an ASCII string.
+
+    Args:
+        sarif_content: Raw SARIF 2.1.0 JSON string.
+
+    Returns:
+        Base64-encoded ASCII string of the gzip-compressed SARIF content.
+    """
+    gzip_compressed_sarif = gzip.compress(sarif_content.encode("utf-8"))
+    return base64.b64encode(gzip_compressed_sarif).decode("ascii")
+
+
 def upload_sarif_to_github(sarif_content: str, pr_context: PRContext) -> None:
     """Upload a SARIF report to the GitHub Code Scanning API for inline annotations.
 
     Each finding appears as an inline annotation on the exact line in the PR diff.
     Severity is mapped: HIGH→error, MEDIUM→warning, LOW/INFO→note.
 
+    PHI-safety guarantee: ``sarif_content`` must be produced by ``format_sarif()``
+    from ``phi_scan.output``. That function constructs SARIF from ``ScanFinding``
+    fields that are structurally guaranteed to contain no raw PHI:
+      - ``file_path`` and ``line_number`` — location metadata, not PHI values.
+      - ``entity_type`` and ``hipaa_category.value`` — enum/pattern names, not values.
+      - ``remediation_hint`` — static guidance text, not derived from the matched value.
+      - ``detection_layer.value`` — enum name only.
+    The raw matched value is stored only as ``value_hash`` (SHA-256) and is never
+    emitted by ``format_sarif()``. The ``code_context`` field (which holds the
+    redacted source line) is also deliberately omitted from SARIF output.
+    This contract is enforced by ``ScanFinding.__post_init__`` validation:
+      - ``_reject_unredacted_code_context`` ensures code_context contains [REDACTED].
+      - ``_reject_invalid_value_hash`` ensures value_hash is a valid SHA-256 digest.
+
     Requires the ``security-events: write`` permission in the GitHub Actions workflow.
-    Works automatically when ``--output sarif`` is used in GitHub Actions — the
-    SARIF is gzip-compressed and base64-encoded before upload.
 
     Args:
         sarif_content: SARIF 2.1.0 JSON string produced by ``format_sarif()``.
@@ -603,9 +631,7 @@ def upload_sarif_to_github(sarif_content: str, pr_context: PRContext) -> None:
         _LOG.warning("GitHub SARIF upload: GITHUB_TOKEN not set — skipping")
         return
 
-    # GitHub requires gzip-compressed, base64-encoded SARIF
-    gzip_compressed_sarif = gzip.compress(sarif_content.encode("utf-8"))
-    sarif_base64_encoded = base64.b64encode(gzip_compressed_sarif).decode("ascii")
+    sarif_base64_encoded = _compress_and_encode_sarif(sarif_content)
 
     url = _GITHUB_API_BASE_URL + _GITHUB_API_SARIF_UPLOAD_PATH.format(
         repository=repository,

@@ -214,11 +214,12 @@ jobs:
                 command: |
                   python3 -c "
                   import json, sys
+                  # JSON schema keys: 'is_clean' (bool) and 'findings' (list) are
+                  # documented phi-scan output fields — not magic strings.
                   try:
-                      scan_result = json.load(open('<< parameters.output_dir >>/phi-scan.json'))
-                      if not scan_result.get('is_clean', True):
-                          violation_count = len(scan_result.get('findings', []))
-                          print(f'phi-scan: {violation_count} PHI/PII violation(s) found.', file=sys.stderr)
+                      phi_scan_report = json.load(open('<< parameters.output_dir >>/phi-scan.json'))
+                      if not phi_scan_report.get('is_clean', True):
+                          print(f'phi-scan: {len(phi_scan_report.get(\"findings\", []))} PHI/PII violation(s) found.', file=sys.stderr)
                           sys.exit(1)
                       print('phi-scan: no violations found.')
                   except FileNotFoundError:
