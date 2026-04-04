@@ -19,6 +19,9 @@ the caller (CLI scan command) can decide whether to fail the build or continue.
 Design constraints:
   - No PHI leaves the process — comment bodies contain only counts, file names,
     and line numbers. Raw entity values are never included.
+  - HTTP error messages include only the status code and reason phrase, never the
+    response body — API error responses for comment endpoints could echo back
+    request content containing finding metadata (HIPAA categories, file paths).
   - All HTTP calls use ``httpx`` (already a project dependency).
   - ``gh`` CLI is used for GitHub because it handles token auth and API versioning.
   - Authentication tokens are read from environment variables only — never from
@@ -745,8 +748,8 @@ def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> No
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"GitHub SARIF upload failed (HTTP {status_error.response.status_code}): "
-            f"{status_error.response.text[:_MAX_ERROR_RESPONSE_LOG_LENGTH]}"
+            f"GitHub SARIF upload failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -1384,7 +1387,8 @@ def _post_github_pr_comment(comment_body: str, pr_context: PRContext) -> None:
             )
         if result.returncode != 0:
             raise CIIntegrationError(
-                f"gh pr comment failed (exit {result.returncode}): {result.stderr.strip()}"
+                f"gh pr comment failed (exit {result.returncode}): "
+                f"{result.stderr.strip()[:_MAX_ERROR_RESPONSE_LOG_LENGTH]}"
             )
     except FileNotFoundError as not_found_error:
         raise CIIntegrationError(
@@ -1436,8 +1440,8 @@ def _post_gitlab_mr_comment(comment_body: str, pr_context: PRContext) -> None:
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"GitLab MR comment failed (HTTP {status_error.response.status_code}): "
-            f"{status_error.response.text[:_MAX_ERROR_RESPONSE_LOG_LENGTH]}"
+            f"GitLab MR comment failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -1499,8 +1503,8 @@ def _post_azure_pr_comment(comment_body: str, pr_context: PRContext) -> None:
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"Azure DevOps PR comment failed (HTTP {status_error.response.status_code}): "
-            f"{status_error.response.text[:_MAX_ERROR_RESPONSE_LOG_LENGTH]}"
+            f"Azure DevOps PR comment failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -1551,8 +1555,8 @@ def _post_bitbucket_pr_comment(comment_body: str, pr_context: PRContext) -> None
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"Bitbucket PR comment failed (HTTP {status_error.response.status_code}): "
-            f"{status_error.response.text[:_MAX_ERROR_RESPONSE_LOG_LENGTH]}"
+            f"Bitbucket PR comment failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -1730,8 +1734,8 @@ def _set_github_commit_status(scan_result: ScanResult, pr_context: PRContext) ->
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"GitHub commit status failed (HTTP {status_error.response.status_code}): "
-            f"{status_error.response.text[:_MAX_ERROR_RESPONSE_LOG_LENGTH]}"
+            f"GitHub commit status failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(

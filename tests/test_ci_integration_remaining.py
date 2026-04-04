@@ -271,7 +271,7 @@ def test_upload_sarif_raises_ci_integration_error_on_http_failure(
     def fake_post(url: str, **kwargs: object) -> MagicMock:
         mock_response = MagicMock()
         mock_response.status_code = 422
-        mock_response.text = "Unprocessable Entity"
+        mock_response.reason_phrase = "Unprocessable Entity"
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "422", request=MagicMock(), response=mock_response
         )
@@ -280,6 +280,29 @@ def test_upload_sarif_raises_ci_integration_error_on_http_failure(
     with patch("httpx.post", side_effect=fake_post):
         with pytest.raises(CIIntegrationError, match="GitHub SARIF upload failed"):
             upload_sarif_to_github(_make_violation_result(), _github_context())
+
+
+def test_upload_sarif_http_error_excludes_response_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CIIntegrationError must not embed response body — API errors could echo request content."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+    sentinel_body = "SENTINEL_RESPONSE_BODY_MUST_NOT_APPEAR"
+
+    def fake_post(url: str, **kwargs: object) -> MagicMock:
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.reason_phrase = "Unprocessable Entity"
+        mock_response.text = sentinel_body
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "422", request=MagicMock(), response=mock_response
+        )
+        return mock_response
+
+    with patch("httpx.post", side_effect=fake_post):
+        with pytest.raises(CIIntegrationError) as exc_info:
+            upload_sarif_to_github(_make_violation_result(), _github_context())
+    assert sentinel_body not in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
