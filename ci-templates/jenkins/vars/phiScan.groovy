@@ -61,7 +61,10 @@ def call(Map config = [:]) {
                 conclusion: exitCode == 0 ? 'SUCCESS' : 'FAILURE',
                 detailsURL: env.BUILD_URL ?: ''
             )
-        } catch (Exception checksException) {
+        } catch (hudson.AbortException checksException) {
+            // Narrowed catch: hudson.AbortException is thrown when a Jenkins plugin step
+            // (publishChecks) is unavailable. Inline annotations are optional — this must
+            // not fail the build when the Checks API plugin is not installed.
             echo "WARNING: Checks API plugin unavailable — inline annotations skipped: ${checksException.message}"
         }
     }
@@ -79,10 +82,11 @@ def call(Map config = [:]) {
                 ? 'PhiScan: Clean'
                 : "PhiScan: ${scanResult.findings?.size()} findings (${scanResult.severity_counts?.HIGH ?: 0} HIGH)"
         }
-    } catch (Exception jsonException) {
-        // Intentional: build description is cosmetic — a JSON parse failure
-        // must not propagate as a build error. The scan result is already
-        // reported via exit code, SARIF artifacts, and Warnings NG.
+    } catch (java.io.IOException | groovy.json.JsonException jsonException) {
+        // Narrowed catch: only IO failures (readJSON file access) and JSON parse errors
+        // are expected here. Build description is cosmetic — these failures must not
+        // propagate as a build error. The scan result is already reported via exit code,
+        // SARIF artifacts, and Warnings NG.
         echo "WARNING: phi-scan JSON summary unavailable — ${jsonException.message}"
     }
 
