@@ -1235,9 +1235,7 @@ def convert_findings_to_asff(
         # derivatives (truncations, prefixes). No PHI-derived data leaves this process.
         asff_finding: dict[str, Any] = {
             "SchemaVersion": "2018-10-08",
-            "Id": (
-                f"{repository}/{finding.file_path}/{finding.line_number}/{finding.entity_type}"
-            ),
+            "Id": (f"{repository}/{finding.file_path}/{finding.line_number}/{finding.entity_type}"),
             "ProductArn": product_arn,
             "GeneratorId": f"phi-scan/{finding.entity_type}",
             "AwsAccountId": aws_account_id,
