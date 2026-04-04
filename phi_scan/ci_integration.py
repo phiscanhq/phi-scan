@@ -197,12 +197,17 @@ _AZURE_WORKITEM_TITLE_FORMAT: str = (
 _AWS_SECURITY_HUB_PRODUCT_ARN_FORMAT: str = (
     "arn:aws:securityhub:{region}:{account_id}:product/{account_id}/default"
 )
-# ASFF uses "INFORMATIONAL" for INFO-level findings — different from SeverityLevel.INFO.value
+# Explicit ASFF severity label constants — must not derive from enum internals at
+# runtime because the ASFF API contract is independent of SeverityLevel enum values.
+_ASFF_HIGH_SEVERITY_LABEL: str = "HIGH"
+_ASFF_MEDIUM_SEVERITY_LABEL: str = "MEDIUM"
+_ASFF_LOW_SEVERITY_LABEL: str = "LOW"
+# ASFF uses "INFORMATIONAL" for INFO-level findings — no SeverityLevel enum equivalent.
 _ASFF_INFO_SEVERITY_LABEL: str = "INFORMATIONAL"
 _AWS_SECURITY_HUB_SEVERITY_MAP: dict[SeverityLevel, str] = {
-    SeverityLevel.HIGH: SeverityLevel.HIGH.value.upper(),
-    SeverityLevel.MEDIUM: SeverityLevel.MEDIUM.value.upper(),
-    SeverityLevel.LOW: SeverityLevel.LOW.value.upper(),
+    SeverityLevel.HIGH: _ASFF_HIGH_SEVERITY_LABEL,
+    SeverityLevel.MEDIUM: _ASFF_MEDIUM_SEVERITY_LABEL,
+    SeverityLevel.LOW: _ASFF_LOW_SEVERITY_LABEL,
     SeverityLevel.INFO: _ASFF_INFO_SEVERITY_LABEL,
 }
 
@@ -214,12 +219,17 @@ _BITBUCKET_ANNOTATIONS_PATH: str = (
     "/repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_id}/annotations"
 )
 _BITBUCKET_REPORT_ID: str = "phi-scan"
-# Bitbucket Code Insights does not have an INFO severity level — INFO findings map to LOW
-_BITBUCKET_INFO_MAPPED_SEVERITY: str = SeverityLevel.LOW.value.upper()
+# Explicit Bitbucket annotation severity label constants — must not derive from enum
+# internals at runtime because the Bitbucket API contract is independent of SeverityLevel.
+_BITBUCKET_HIGH_SEVERITY_LABEL: str = "HIGH"
+_BITBUCKET_MEDIUM_SEVERITY_LABEL: str = "MEDIUM"
+_BITBUCKET_LOW_SEVERITY_LABEL: str = "LOW"
+# Bitbucket Code Insights does not have an INFO severity level — INFO findings map to LOW.
+_BITBUCKET_INFO_MAPPED_SEVERITY: str = _BITBUCKET_LOW_SEVERITY_LABEL
 _BITBUCKET_ANNOTATION_SEVERITY_MAP: dict[SeverityLevel, str] = {
-    SeverityLevel.HIGH: SeverityLevel.HIGH.value.upper(),
-    SeverityLevel.MEDIUM: SeverityLevel.MEDIUM.value.upper(),
-    SeverityLevel.LOW: SeverityLevel.LOW.value.upper(),
+    SeverityLevel.HIGH: _BITBUCKET_HIGH_SEVERITY_LABEL,
+    SeverityLevel.MEDIUM: _BITBUCKET_MEDIUM_SEVERITY_LABEL,
+    SeverityLevel.LOW: _BITBUCKET_LOW_SEVERITY_LABEL,
     SeverityLevel.INFO: _BITBUCKET_INFO_MAPPED_SEVERITY,
 }
 
@@ -828,7 +838,8 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"Bitbucket Code Insights report failed (HTTP {status_error.response.status_code})"
+            f"Bitbucket Code Insights report failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -870,7 +881,9 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"Bitbucket Code Insights annotations failed (HTTP {status_error.response.status_code})"
+            f"Bitbucket Code Insights annotations failed "
+            f"(HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -934,7 +947,8 @@ def set_azure_build_tag(scan_result: ScanResult, pr_context: PRContext) -> None:
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"Azure DevOps build tag failed (HTTP {status_error.response.status_code})"
+            f"Azure DevOps build tag failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -1004,7 +1018,8 @@ def set_azure_pr_status(scan_result: ScanResult, pr_context: PRContext) -> None:
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"Azure DevOps PR status failed (HTTP {status_error.response.status_code})"
+            f"Azure DevOps PR status failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -1097,7 +1112,8 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"Azure Boards work item failed (HTTP {status_error.response.status_code})"
+            f"Azure Boards work item failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -1811,7 +1827,8 @@ def _set_gitlab_commit_status(scan_result: ScanResult, pr_context: PRContext) ->
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"GitLab commit status failed (HTTP {status_error.response.status_code})"
+            f"GitLab commit status failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
@@ -1870,7 +1887,8 @@ def _set_bitbucket_commit_status(scan_result: ScanResult, pr_context: PRContext)
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"Bitbucket commit status failed (HTTP {status_error.response.status_code})"
+            f"Bitbucket commit status failed (HTTP {status_error.response.status_code} "
+            f"{status_error.response.reason_phrase})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
