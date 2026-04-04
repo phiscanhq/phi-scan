@@ -313,8 +313,9 @@ def scan_file(file_path: Path, config: ScanConfig) -> list[ScanFinding]:
 def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
     """Scan every file in scan_targets and return the aggregated ScanResult.
 
-    Responsibility: run the scan loop. Result construction is delegated to
-    build_scan_result so this function is describable in one sentence.
+    Runs all local detection layers first, then applies the optional AI
+    confidence review layer to medium-confidence findings before building
+    the final result.
 
     Args:
         scan_targets: Ordered list of files to scan, as returned by
@@ -325,13 +326,16 @@ def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
         A ScanResult aggregating all findings, file counts, timing, and
         risk classification.
     """
+    from phi_scan.ai_review import apply_ai_review_to_findings
+
     scan_start = time.monotonic()
     all_findings: list[ScanFinding] = []
     for file_path in scan_targets:
         file_findings = scan_file(file_path, config)
         all_findings.extend(file_findings)
+    reviewed_findings = apply_ai_review_to_findings(all_findings, config.ai_review_config)
     scan_duration = time.monotonic() - scan_start
-    return build_scan_result(tuple(all_findings), len(scan_targets), scan_duration)
+    return build_scan_result(tuple(reviewed_findings), len(scan_targets), scan_duration)
 
 
 # ---------------------------------------------------------------------------

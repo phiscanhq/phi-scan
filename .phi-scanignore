@@ -108,6 +108,12 @@ tests/test_cli.py
 # ComplianceControl constants whose combinations trigger the quasi-identifier
 # combination detector when scanned as application source.
 tests/test_compliance_4b.py
+# AI review unit test file — contains a synthetic SSN value (`'123-45-6789'`) used
+# to verify that ScanFinding rejects unredacted code_context at construction time.
+# The value is intentionally fictional (555-01-0000 style) but triggers the SSN
+# detector. Also imports PhiCategory and AIReviewConfig constants that combine to
+# produce quasi-identifier false positives when scanned as application source.
+tests/test_ai_review.py
 
 # PhiScan project-level documentation and CI configuration.
 # These files are excluded to suppress false positives when phi-scan scans its

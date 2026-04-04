@@ -9,6 +9,8 @@ narrowly when they need to distinguish error types.
 from __future__ import annotations
 
 __all__ = [
+    "AIConfigurationError",
+    "AIReviewError",
     "AuditKeyMissingError",
     "AuditLogError",
     "BaselineError",
@@ -161,4 +163,30 @@ class SchemaMigrationError(PhiScanError):
     Args:
         message: Description of the migration failure including the source
             version, the target version, and the reason it could not complete.
+    """
+
+
+class AIConfigurationError(PhiScanError):
+    """Raised when the AI review layer cannot be initialised due to missing
+    or invalid configuration.
+
+    Examples include a missing API key when ``ai.enable_claude_review: true``
+    is set, or the ``anthropic`` package not being installed.
+
+    Args:
+        message: Description of the configuration failure including the
+            setting name and the resolution (e.g. env var to set).
+    """
+
+
+class AIReviewError(PhiScanError):
+    """Raised when a Claude API call for confidence review fails.
+
+    This is a transient failure — callers must catch it and fall back to the
+    local confidence score rather than crashing the scan. Never silence it
+    with a bare except or pass clause.
+
+    Args:
+        message: Description of the API failure including the finding context
+            and the underlying cause (API error type, parse error, etc.).
     """

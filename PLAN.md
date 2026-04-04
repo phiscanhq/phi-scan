@@ -1881,38 +1881,45 @@ PHI to any external API.**
 Only code structure with redacted values sent to Claude. High-confidence and regex
 matches bypass Claude entirely.
 
-### 7A — Claude API Integration
+### 7A — Claude API Integration (BYOAK)
 
-- [ ] **7A.1** Integrate Anthropic SDK (already installed, v0.84.0)
-- [ ] **7A.2** Build redaction layer — replace all detected PHI values with `[REDACTED]` before API call
-- [ ] **7A.3** Send only redacted code context to Claude for confidence scoring
-- [ ] **7A.4** Claude model: `claude-sonnet-4-6` — best balance of speed and accuracy
-- [ ] **7A.5** Only call Claude for medium-confidence findings (confidence < 0.8 threshold)
-- [ ] **7A.6** Parse Claude response: `{ "is_phi_risk": bool, "confidence": float, "reasoning": str }`
-- [ ] **7A.7** Cost control — skip Claude for high-confidence regex matches entirely
-- [ ] **7A.8** Config: `ai.enable_claude_review: false` by default in `.phi-scanner.yml`
+- [x] **7A.1** Integrate Anthropic SDK (already installed, v0.84.0)
+- [x] **7A.2** Build redaction layer — replace all detected PHI values with `[REDACTED]` before API call
+- [x] **7A.3** Send only redacted code context to Claude for confidence scoring
+- [x] **7A.4** Claude model: `claude-sonnet-4-6` — best balance of speed and accuracy
+- [x] **7A.5** Only call Claude for medium-confidence findings (0.5 ≤ confidence < 0.8 threshold)
+- [x] **7A.6** Parse Claude response: `{ "is_phi_risk": bool, "confidence": float, "reasoning": str }`
+- [x] **7A.7** Cost control — skip Claude for high-confidence (≥ 0.8) and regex-only matches entirely
+- [x] **7A.8** Config: `ai.enable_claude_review: false` by default in `.phi-scanner.yml`
+- [x] **7A.9** BYOAK — read API key from `ANTHROPIC_API_KEY` env var OR `ai.anthropic_api_key` in config; clear error if AI enabled but no key found
+- [ ] **7A.10** Token usage logging — log input/output tokens and estimated cost per scan to audit log
 
-### 7B — spaCy Fine-Tuning
+### 7B — GitHub Action
 
-- [ ] **7B.1** Generate synthetic training data — FHIR resources + annotated code with PHI
-- [ ] **7B.2** Fine-tune spaCy NER (tok2vec + NER pipeline) on healthcare domain
-- [ ] **7B.3** Target ~15-25% improvement over generic `en_core_web_lg` for healthcare entities
-- [ ] **7B.4** Evaluate on held-out test set — precision, recall, F1
+- [ ] **7B.1** Create `phi-scan/phi-scan-action` repository with `action.yml` composite action
+- [ ] **7B.2** Inputs: `severity_threshold`, `fail_on_violation`, `output_format`, `diff_ref`, `anthropic_api_key` (optional)
+- [ ] **7B.3** Steps: install phi-scan, run scan, upload SARIF to GitHub Code Scanning, post PR comment
+- [ ] **7B.4** Use phi-scan's own CI as the first real-world test of the Action
+- [ ] **7B.5** Publish to GitHub Marketplace as a verified action
 
 ### 7C — AI Testing
 
-- [ ] **7C.1** Verify no raw PHI values appear in any API request (packet-level test)
-- [ ] **7C.2** A/B test: scanner with vs without AI — measure false positive reduction
-- [ ] **7C.3** Test Claude API failure gracefully falls back to local-only scoring
-- [ ] **7C.4** Test cost tracking — log token usage per scan
+- [x] **7C.1** Verify no raw PHI values appear in any API request — sentinel test asserts `[REDACTED]` in all outbound payloads
+- [ ] **7C.2** A/B comparison: scan with AI enabled vs disabled — log false positive delta
+- [x] **7C.3** Test Claude API failure falls back gracefully to local-only confidence score
+- [x] **7C.4** Test missing API key with `ai.enable_claude_review: true` raises clear `AIConfigurationError`
+- [ ] **7C.5** Test token cost logging writes to audit log correctly
 
 ### Phase 7 Verification Checklist
 
 - [ ] `[REDACTED]` appears in every Claude API request — zero raw PHI leaks
-- [ ] False positive rate reduced measurably with AI enabled
-- [ ] Claude failures don't crash the scanner — graceful fallback
-- [ ] `ai.enable_claude_review: false` disables all API calls
-- [ ] Fine-tuned spaCy model improves healthcare entity recall
+- [ ] False positive rate reduced measurably with AI enabled vs disabled
+- [ ] Claude API failure falls back to local score — scanner does not crash
+- [ ] `ai.enable_claude_review: false` (default) produces zero API calls
+- [ ] Missing API key with AI enabled raises `AIConfigurationError` with clear message
+- [ ] Token usage logged per scan in audit database
+- [ ] GitHub Action installs, scans, and posts PR comment in one step
+- [ ] Action published to GitHub Marketplace
 
 ---
 
@@ -2126,6 +2133,32 @@ _(Core community files — CODE_OF_CONDUCT, issue templates, PR template, Discus
 - [ ] CODE*OF_CONDUCT.md merged *(ships in Phase 3E)\_
 - [ ] 10+ issues labeled `good first issue`
 - [ ] Plugin developer guide published in docs
+
+---
+
+## Future Roadmap — Custom Model (Post v1.0)
+
+**Goal:** Replace Claude API confidence scoring with a locally-trained healthcare-specific
+model. Zero external API calls, zero per-scan cost, stronger PHI detection for domain-specific
+patterns that general LLMs underweight.
+
+**Dependencies:** Phase 9 complete. Requires real-world scan data from production usage
+to build a meaningful training corpus.
+
+### FM.1 — Training Data Pipeline
+- Generate synthetic FHIR resources + annotated code with PHI labels
+- Collect and anonymize false positives/negatives from production scans (opt-in telemetry)
+- Build held-out evaluation set: precision, recall, F1 per entity type
+
+### FM.2 — spaCy Fine-Tuning
+- Fine-tune spaCy NER (tok2vec + NER pipeline) on healthcare domain corpus
+- Target 15-25% improvement over `en_core_web_lg` for healthcare entities
+- Evaluate on held-out test set before replacing production model
+
+### FM.3 — PyTorch/TensorFlow Custom Model
+- Train domain-specific sequence classifier for ambiguous PHI patterns
+- Local inference — model bundled with `pip install phi-scan[ai]`
+- Replaces Claude API confidence layer entirely — works fully offline
 
 ---
 

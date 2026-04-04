@@ -8,7 +8,10 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import final
+from typing import TYPE_CHECKING, final
+
+if TYPE_CHECKING:
+    from phi_scan.ai_review import AIReviewConfig
 
 from phi_scan.constants import (
     CODE_CONTEXT_REDACTED_VALUE,
@@ -112,6 +115,7 @@ class _ConfigField(StrEnum):
     OUTPUT_FORMAT = "output_format"
     DATABASE_PATH = "database_path"
     NOTIFICATION_CONFIG = "notification_config"
+    AI_REVIEW_CONFIG = "ai_review_config"
 
 
 # Build the pattern string explicitly — avoids the non-obvious triple-brace
@@ -419,6 +423,7 @@ class ScanConfig:
     output_format: OutputFormat = OutputFormat.TABLE
     database_path: Path = field(default_factory=lambda: Path(DEFAULT_DATABASE_PATH).expanduser())
     notification_config: NotificationConfig = field(default_factory=NotificationConfig)
+    ai_review_config: AIReviewConfig = field(default_factory=lambda: _default_ai_review_config())
 
     def __post_init__(self) -> None:
         # __init__ already validated both list fields via __setattr__; make
@@ -560,6 +565,23 @@ def _validate_notification_config(notification_config: object) -> None:
         )
 
 
+def _validate_ai_review_config(ai_review_config: object) -> None:
+    """Raise ConfigurationError if ai_review_config is not an AIReviewConfig instance."""
+    from phi_scan.ai_review import AIReviewConfig
+
+    if not isinstance(ai_review_config, AIReviewConfig):
+        raise ConfigurationError(
+            f"ai_review_config must be an AIReviewConfig, got {ai_review_config!r}"
+        )
+
+
+def _default_ai_review_config() -> AIReviewConfig:
+    """Return a disabled AIReviewConfig — AI review is opt-in, off by default."""
+    from phi_scan.ai_review import AIReviewConfig
+
+    return AIReviewConfig(is_enabled=False)
+
+
 # Dispatch table for ScanConfig.__setattr__ — maps each field name to its validator.
 # Defined after all _validate_* functions so the references are valid at module load.
 # __setattr__ resolves this name at call time (not at class definition time), so the
@@ -579,6 +601,7 @@ _FIELD_VALIDATORS: dict[str, Callable[[object], None]] = {
     _ConfigField.OUTPUT_FORMAT: _validate_output_format,
     _ConfigField.DATABASE_PATH: _validate_database_path,
     _ConfigField.NOTIFICATION_CONFIG: _validate_notification_config,
+    _ConfigField.AI_REVIEW_CONFIG: _validate_ai_review_config,
 }
 
 

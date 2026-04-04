@@ -230,6 +230,41 @@ CONFIDENCE_STRUCTURED_MAX: float = 0.95
 AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX: float = 0.15
 
 # ---------------------------------------------------------------------------
+# AI confidence review band (Phase 7A)
+# ---------------------------------------------------------------------------
+
+# Findings with confidence in [AI_CONFIDENCE_REVIEW_LOWER_BOUND,
+# AI_CONFIDENCE_REVIEW_UPPER_BOUND) are sent to Claude for re-scoring.
+# High-confidence findings (≥ upper bound) bypass AI review entirely —
+# they are already definitive and the API call adds no value.
+# Low-confidence findings (< lower bound) are below the scan threshold
+# and are never reported regardless of AI review.
+AI_CONFIDENCE_REVIEW_LOWER_BOUND: float = 0.50
+AI_CONFIDENCE_REVIEW_UPPER_BOUND: float = 0.80
+
+# Claude model used for confidence review.
+AI_MODEL_NAME: str = "claude-sonnet-4-6"
+
+# Maximum tokens in Claude's response — the JSON answer is short.
+AI_RESPONSE_MAX_TOKENS: int = 256
+
+# Placeholder that replaces matched PHI values in code context before any
+# API call. Must appear in every outbound payload — verified by sentinel tests.
+AI_REVIEW_REDACTED_PLACEHOLDER: str = "[REDACTED]"
+
+# System prompt for Claude confidence review calls.
+AI_REVIEW_SYSTEM_PROMPT: str = (
+    "You are a HIPAA compliance expert reviewing code for PHI/PII risk. "
+    "You will be shown code context where the matched value has been replaced "
+    "with [REDACTED]. Based only on the code structure, variable names, and "
+    "surrounding context, determine whether this is a genuine PHI risk in "
+    "production code or a false positive (test data, example values, config "
+    "templates, comments, etc.). "
+    "Respond ONLY with valid JSON in this exact format: "
+    '{"is_phi_risk": true, "confidence": 0.85, "reasoning": "brief explanation"}'
+)
+
+# ---------------------------------------------------------------------------
 # File size limit
 # ---------------------------------------------------------------------------
 

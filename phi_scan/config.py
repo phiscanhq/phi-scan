@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from phi_scan.ai_review import AIReviewConfig
 from phi_scan.constants import (
     AUDIT_RETENTION_DAYS,
     CONFIDENCE_SCORE_MAXIMUM,
@@ -54,6 +55,9 @@ _YAML_KEY_WEBHOOK_URL: str = "webhook_url"
 _YAML_KEY_WEBHOOK_TYPE: str = "webhook_type"
 _YAML_KEY_WEBHOOK_RETRY_COUNT: str = "webhook_retry_count"
 _YAML_KEY_NOTIFY_ON_VIOLATION_ONLY: str = "notify_on_violation_only"
+_YAML_SECTION_AI: str = "ai"
+_YAML_KEY_ENABLE_CLAUDE_REVIEW: str = "enable_claude_review"
+_YAML_KEY_ANTHROPIC_API_KEY: str = "anthropic_api_key"
 
 # ---------------------------------------------------------------------------
 # Config defaults and constraints
@@ -173,8 +177,11 @@ notifications:
   notify_on_violation_only: true
 
 ai:
-  # Disabled by default — all scanning is local. See CLAUDE.md before enabling.
+  # Set true to send medium-confidence findings to Claude for re-scoring.
+  # Requires the 'anthropic' package: pip install phi-scan[ai]
+  # API key resolved from ANTHROPIC_API_KEY env var first, then this field.
   enable_claude_review: false
+  # anthropic_api_key: ""  # Optional — prefer the env var for security
 """
 
 
@@ -202,15 +209,19 @@ def load_config(config_path: Path) -> ScanConfig:
     output_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_OUTPUT, {})
     audit_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_AUDIT, {})
     notifications_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_NOTIFICATIONS, {})
-    # The ai: section (enable_claude_review) is intentionally not read here —
-    # AI integration is deferred to Phase 7 (optional). Unknown top-level keys
-    # such as ai: are silently ignored by design; adding strict key validation
-    # is a Phase 7 concern when the ai: section is wired through.
+    ai_section: dict[str, Any] = parsed_yaml.get(_YAML_SECTION_AI, {})
     _reject_follow_symlinks_enabled(scan_section)
     output_format = _parse_output_format(output_section)
     database_path = _parse_database_path(audit_section)
     notification_config = _parse_notification_config(notifications_section)
-    return _build_scan_config(scan_section, output_format, database_path, notification_config)
+    ai_review_config = _parse_ai_review_config(ai_section)
+    return _build_scan_config(
+        scan_section,
+        output_format,
+        database_path,
+        notification_config,
+        ai_review_config,
+    )
 
 
 def create_default_config(output_path: Path) -> None:
@@ -487,11 +498,30 @@ def _parse_notification_config(notifications_section: dict[str, Any]) -> Notific
     )
 
 
+def _parse_ai_review_config(ai_section: dict[str, Any]) -> AIReviewConfig:
+    """Parse the ai: section into an AIReviewConfig.
+
+    An empty or absent ai: section yields a disabled AIReviewConfig. The API
+    key is optional here — if omitted it will be resolved from the environment
+    variable at review time.
+
+    Args:
+        ai_section: The ai: section of the parsed config (may be empty).
+
+    Returns:
+        An AIReviewConfig with is_enabled and optional api_key populated.
+    """
+    is_enabled = bool(ai_section.get(_YAML_KEY_ENABLE_CLAUDE_REVIEW, False))
+    api_key = str(ai_section.get(_YAML_KEY_ANTHROPIC_API_KEY, ""))
+    return AIReviewConfig(is_enabled=is_enabled, api_key=api_key)
+
+
 def _build_scan_config(
     scan_section: dict[str, Any],
     output_format: OutputFormat,
     database_path: Path,
     notification_config: NotificationConfig | None = None,
+    ai_review_config: AIReviewConfig | None = None,
 ) -> ScanConfig:
     """Build a ScanConfig from all parsed config sections.
 
@@ -499,6 +529,8 @@ def _build_scan_config(
         scan_section: The scan: section dict. Missing keys fall back to ScanConfig defaults.
         output_format: The validated output format parsed from the output: section.
         database_path: The validated and tilde-expanded database path from the audit: section.
+        notification_config: Parsed notification config, or None for defaults.
+        ai_review_config: Parsed AI review config, or None for disabled defaults.
 
     Returns:
         A validated ScanConfig instance.
@@ -521,4 +553,5 @@ def _build_scan_config(
         notification_config=notification_config
         if notification_config is not None
         else NotificationConfig(),
+        ai_review_config=ai_review_config if ai_review_config is not None else AIReviewConfig(),
     )
