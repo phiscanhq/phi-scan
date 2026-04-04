@@ -21,6 +21,7 @@ import httpx
 import pytest
 
 from phi_scan.ci_integration import (
+    BaselineComparison,
     CIIntegrationError,
     CIPlatform,
     PRContext,
@@ -297,9 +298,7 @@ def test_build_comment_body_with_baseline_contains_new_findings_count() -> None:
     """Baseline comment includes the new findings count."""
     comment = build_comment_body_with_baseline(
         _make_violation_result(),
-        new_findings_count=3,
-        baselined_count=7,
-        resolved_count=2,
+        BaselineComparison(new_findings_count=3, baselined_count=7, resolved_count=2),
     )
     assert "3 new" in comment
 
@@ -308,9 +307,7 @@ def test_build_comment_body_with_baseline_contains_baselined_count() -> None:
     """Baseline comment includes the baselined findings count."""
     comment = build_comment_body_with_baseline(
         _make_violation_result(),
-        new_findings_count=3,
-        baselined_count=7,
-        resolved_count=2,
+        BaselineComparison(new_findings_count=3, baselined_count=7, resolved_count=2),
     )
     assert "7 baselined" in comment
 
@@ -319,9 +316,7 @@ def test_build_comment_body_with_baseline_contains_resolved_count() -> None:
     """Baseline comment includes the resolved findings count."""
     comment = build_comment_body_with_baseline(
         _make_violation_result(),
-        new_findings_count=3,
-        baselined_count=7,
-        resolved_count=2,
+        BaselineComparison(new_findings_count=3, baselined_count=7, resolved_count=2),
     )
     assert "2 resolved" in comment
 

@@ -217,7 +217,7 @@ jobs:
                   try:
                       scan_result = json.load(open('<< parameters.output_dir >>/phi-scan.json'))
                       if not scan_result.get('is_clean', True):
-                          violation_count = scan_result.get('findings', 0)
+                          violation_count = len(scan_result.get('findings', []))
                           print(f'phi-scan: {violation_count} PHI/PII violation(s) found.', file=sys.stderr)
                           sys.exit(1)
                       print('phi-scan: no violations found.')

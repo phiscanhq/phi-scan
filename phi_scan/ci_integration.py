@@ -39,6 +39,7 @@ from typing import Any
 
 import httpx
 
+from phi_scan.constants import SeverityLevel
 from phi_scan.exceptions import PhiScanError
 from phi_scan.models import ScanResult
 
@@ -148,6 +149,8 @@ _HTTP_TIMEOUT_SECONDS: float = 15.0
 _MAX_COMMENT_LENGTH: int = 60_000
 _MAX_ERROR_RESPONSE_LOG_LENGTH: int = 200
 _DEFAULT_GIT_REF: str = "refs/heads/main"
+_COMMENT_HEADER_SPLIT_COUNT: int = 2
+_MINIMUM_COMMENT_LINES_FOR_BASELINE_INSERT: int = 2
 
 # GitHub Code Scanning SARIF upload API
 _GITHUB_API_SARIF_UPLOAD_PATH: str = "/repos/{repository}/code-scanning/sarifs"
@@ -170,18 +173,18 @@ _AZURE_WORKITEMS_PATH: str = (
     "{collection_uri}{team_project}/_apis/wit/workitems/$Task?api-version={api_version}"
 )
 _AZURE_WORKITEM_TITLE_FORMAT: str = (
-    "phi-scan: {count} HIGH severity PHI/PII violation(s) in PR #{pr}"
+    "phi-scan: {count} HIGH severity PHI/PII violation(s) in PR #{pull_request_number}"
 )
 
 # AWS Security Hub ASFF (Amazon Security Finding Format)
 _AWS_SECURITY_HUB_PRODUCT_ARN_FORMAT: str = (
     "arn:aws:securityhub:{region}:{account_id}:product/{account_id}/default"
 )
-_ASFF_SEVERITY_MAP: dict[str, str] = {
-    "high": "HIGH",
-    "medium": "MEDIUM",
-    "low": "LOW",
-    "info": "INFORMATIONAL",
+_ASFF_SEVERITY_MAP: dict[SeverityLevel, str] = {
+    SeverityLevel.HIGH: "HIGH",
+    SeverityLevel.MEDIUM: "MEDIUM",
+    SeverityLevel.LOW: "LOW",
+    SeverityLevel.INFO: "INFORMATIONAL",
 }
 
 # Bitbucket Code Insights API
@@ -192,11 +195,11 @@ _BITBUCKET_ANNOTATIONS_PATH: str = (
     "/repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_id}/annotations"
 )
 _BITBUCKET_REPORT_ID: str = "phi-scan"
-_BITBUCKET_ANNOTATION_SEVERITY_MAP: dict[str, str] = {
-    "high": "HIGH",
-    "medium": "MEDIUM",
-    "low": "LOW",
-    "info": "LOW",
+_BITBUCKET_ANNOTATION_SEVERITY_MAP: dict[SeverityLevel, str] = {
+    SeverityLevel.HIGH: "HIGH",
+    SeverityLevel.MEDIUM: "MEDIUM",
+    SeverityLevel.LOW: "LOW",
+    SeverityLevel.INFO: "LOW",
 }
 
 
@@ -238,6 +241,19 @@ class PRContext:
 
 class CIIntegrationError(PhiScanError):
     """Raised when a CI/CD platform API call fails."""
+
+
+@dataclass(frozen=True)
+class BaselineComparison:
+    """Counts from a baseline comparison to include in PR/MR comment context.
+
+    Wraps the three integer counts produced by comparing the current scan
+    against an accepted findings baseline.
+    """
+
+    new_findings_count: int
+    baselined_count: int
+    resolved_count: int
 
 
 # ---------------------------------------------------------------------------
@@ -527,9 +543,7 @@ def build_comment_body(scan_result: ScanResult) -> str:
 
 def build_comment_body_with_baseline(
     scan_result: ScanResult,
-    new_findings_count: int,
-    baselined_count: int,
-    resolved_count: int,
+    baseline_comparison: BaselineComparison,
 ) -> str:
     """Build a PR/MR comment body that includes baseline comparison context.
 
@@ -537,23 +551,21 @@ def build_comment_body_with_baseline(
     "N new findings | M baselined | K resolved since last scan"
 
     Args:
-        scan_result:        The completed scan result (all findings, pre-baseline filtering).
-        new_findings_count: Number of findings not present in the accepted baseline.
-        baselined_count:    Number of findings accepted in the baseline (suppressed).
-        resolved_count:     Number of findings in the baseline that no longer appear.
+        scan_result:          The completed scan result (all findings, pre-baseline filtering).
+        baseline_comparison:  Counts from comparing the scan against an accepted baseline.
 
     Returns:
         Markdown string with baseline context prepended to the standard comment body.
     """
     baseline_line = (
-        f"**{new_findings_count} new** | "
-        f"{baselined_count} baselined | "
-        f"{resolved_count} resolved since last scan"
+        f"**{baseline_comparison.new_findings_count} new** | "
+        f"{baseline_comparison.baselined_count} baselined | "
+        f"{baseline_comparison.resolved_count} resolved since last scan"
     )
     standard_body = build_comment_body(scan_result)
     # Insert baseline context after the badge line
-    lines = standard_body.split("\n", 2)
-    if len(lines) >= 2:
+    lines = standard_body.split("\n", _COMMENT_HEADER_SPLIT_COUNT)
+    if len(lines) >= _MINIMUM_COMMENT_LINES_FOR_BASELINE_INSERT:
         return "\n".join([lines[0], "", baseline_line, "", *lines[1:]])
     return baseline_line + "\n\n" + standard_body
 
@@ -592,23 +604,23 @@ def upload_sarif_to_github(sarif_content: str, pr_context: PRContext) -> None:
         return
 
     # GitHub requires gzip-compressed, base64-encoded SARIF
-    compressed = gzip.compress(sarif_content.encode("utf-8"))
-    encoded = base64.b64encode(compressed).decode("ascii")
+    gzip_compressed_sarif = gzip.compress(sarif_content.encode("utf-8"))
+    sarif_base64_encoded = base64.b64encode(gzip_compressed_sarif).decode("ascii")
 
     url = _GITHUB_API_BASE_URL + _GITHUB_API_SARIF_UPLOAD_PATH.format(
         repository=repository,
     )
-    payload = {
+    sarif_upload_payload = {
         "commit_sha": sha,
         "ref": pr_context.branch or _DEFAULT_GIT_REF,
-        "sarif": encoded,
+        "sarif": sarif_base64_encoded,
         "tool_name": "phi-scan",
     }
 
     try:
         response = httpx.post(
             url,
-            json=payload,
+            json=sarif_upload_payload,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github+json",
@@ -726,9 +738,7 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
                 f"{finding.hipaa_category.value} detected "
                 f"({finding.severity.value}, {finding.confidence:.0%} confidence)"
             ),
-            "severity": _BITBUCKET_ANNOTATION_SEVERITY_MAP.get(
-                finding.severity.value.lower(), "MEDIUM"
-            ),
+            "severity": _BITBUCKET_ANNOTATION_SEVERITY_MAP.get(finding.severity, "MEDIUM"),
         }
         for idx, finding in enumerate(scan_result.findings[:1000])
     ]
@@ -928,7 +938,7 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
         _LOG.warning("Azure Boards: SYSTEM_ACCESSTOKEN not set — skipping")
         return
 
-    title = _AZURE_WORKITEM_TITLE_FORMAT.format(count=len(high_findings), pr=pr_id)
+    title = _AZURE_WORKITEM_TITLE_FORMAT.format(count=len(high_findings), pull_request_number=pr_id)
     url = _AZURE_WORKITEMS_PATH.format(
         collection_uri=collection_uri,
         team_project=team_project,
@@ -1012,7 +1022,7 @@ def convert_findings_to_asff(
 
     asff_findings = []
     for finding in scan_result.findings:
-        severity_label = _ASFF_SEVERITY_MAP.get(finding.severity.value.lower(), "MEDIUM")
+        severity_label = _ASFF_SEVERITY_MAP.get(finding.severity, "MEDIUM")
         # ASFF severity normalised score: HIGH=70, MEDIUM=40, LOW=10, INFO=0
         severity_score_map = {"HIGH": 70, "MEDIUM": 40, "LOW": 10, "INFORMATIONAL": 0}
         severity_score = severity_score_map.get(severity_label, 40)
