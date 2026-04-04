@@ -1085,6 +1085,22 @@ _SARIF_FILE_FORMAT: str = "file-format: SARIF"
 _EXIT_CODE_FILE_NAME: str = "phi-scan-exit-code"
 _EXIT_CODE_VAR_NAME: str = "phi_scan_exit_code"
 
+# YAML key names used in orb.yml structure tests
+_ORB_COMMANDS_KEY: str = "commands"
+_ORB_SCAN_COMMAND_KEY: str = "scan"
+_ORB_STORE_RESULTS_COMMAND_KEY: str = "store_results"
+_ORB_STEPS_KEY: str = "steps"
+_ORB_RUN_KEY: str = "run"
+_ORB_RUN_COMMAND_KEY: str = "command"
+
+# YAML key names used in buildspec.yml structure tests
+_BUILDSPEC_REPORTS_KEY: str = "reports"
+_BUILDSPEC_REPORT_GROUP_NAME: str = "phi-scan-findings"
+_BUILDSPEC_FILE_FORMAT_KEY: str = "file-format"
+_BUILDSPEC_SARIF_VALUE: str = "SARIF"
+_BUILDSPEC_BASE_DIRECTORY_KEY: str = "base-directory"
+_BUILDSPEC_OUTPUT_DIR_VAR: str = "PHI_SCAN_OUTPUT_DIR"
+
 
 def test_circleci_orb_scan_command_includes_junit_output() -> None:
     """orb.yml scan command must include --output junit for CircleCI Test Summary."""
@@ -1121,23 +1137,31 @@ def test_circleci_config_store_test_results_present() -> None:
 
 def test_circleci_orb_junit_report_path_consistent_with_store_test_results() -> None:
     """The JUnit report-path and store_test_results path must point to the same directory."""
-    spec = yaml.safe_load(_CIRCLECI_ORB_YML.read_text())
-    commands = spec.get("commands", {})
-    scan_cmd = commands.get("scan", {})
-    scan_steps = scan_cmd.get("steps", [])
+    orb_yaml_spec = yaml.safe_load(_CIRCLECI_ORB_YML.read_text())
+    commands = orb_yaml_spec.get(_ORB_COMMANDS_KEY, {})
+    scan_cmd = commands.get(_ORB_SCAN_COMMAND_KEY, {})
+    scan_steps = scan_cmd.get(_ORB_STEPS_KEY, [])
 
     # Find the run step that calls phi-scan
     scan_run_step = next(
-        (s["run"]["command"] for s in scan_steps if isinstance(s, dict) and "run" in s),
+        (
+            step[_ORB_RUN_KEY][_ORB_RUN_COMMAND_KEY]
+            for step in scan_steps
+            if isinstance(step, dict) and _ORB_RUN_KEY in step
+        ),
         None,
     )
     assert scan_run_step is not None, "orb.yml scan command step not found"
     assert _JUNIT_OUTPUT_FLAG in scan_run_step
 
-    store_cmd = commands.get("store_results", {})
-    store_steps = store_cmd.get("steps", [])
+    store_cmd = commands.get(_ORB_STORE_RESULTS_COMMAND_KEY, {})
+    store_steps = store_cmd.get(_ORB_STEPS_KEY, [])
     store_step = next(
-        (s for s in store_steps if isinstance(s, dict) and _STORE_TEST_RESULTS_STEP in s),
+        (
+            step
+            for step in store_steps
+            if isinstance(step, dict) and _STORE_TEST_RESULTS_STEP in step
+        ),
         None,
     )
     assert store_step is not None, (
@@ -1181,33 +1205,40 @@ def test_codebuild_buildspec_post_build_reads_exit_code_file() -> None:
 
 def test_codebuild_buildspec_parsed_structure() -> None:
     """buildspec.yml must parse as valid YAML with report group using SARIF format."""
-    spec = yaml.safe_load(_BUILDSPEC_YML.read_text())
-    assert spec.get("version") == 0.2
-    reports = spec.get("reports", {})
-    assert "phi-scan-findings" in reports, "reports section must contain 'phi-scan-findings'"
-    report_group = reports["phi-scan-findings"]
-    assert report_group.get("file-format") == "SARIF"
-    base_dir = report_group.get("base-directory")
-    assert base_dir, "reports.phi-scan-findings must specify base-directory"
+    buildspec_yaml_spec = yaml.safe_load(_BUILDSPEC_YML.read_text())
+    assert buildspec_yaml_spec.get("version") == 0.2
+
+    reports = buildspec_yaml_spec.get(_BUILDSPEC_REPORTS_KEY, {})
+    assert _BUILDSPEC_REPORT_GROUP_NAME in reports, (
+        f"reports section must contain '{_BUILDSPEC_REPORT_GROUP_NAME}'"
+    )
+    report_group = reports[_BUILDSPEC_REPORT_GROUP_NAME]
+    assert report_group.get(_BUILDSPEC_FILE_FORMAT_KEY) == _BUILDSPEC_SARIF_VALUE
+    base_dir = report_group.get(_BUILDSPEC_BASE_DIRECTORY_KEY)
+    assert base_dir, (
+        f"reports.{_BUILDSPEC_REPORT_GROUP_NAME} must specify {_BUILDSPEC_BASE_DIRECTORY_KEY}"
+    )
 
     # The env variable PHI_SCAN_OUTPUT_DIR must equal the reports base-directory so that
     # the SARIF file written via --report-path "$PHI_SCAN_OUTPUT_DIR/phi-scan.sarif" lands
     # in the directory CodeBuild watches for the report group upload.
-    output_dir_var = spec.get("env", {}).get("variables", {}).get("PHI_SCAN_OUTPUT_DIR")
-    assert output_dir_var == base_dir, (
-        f"env.variables.PHI_SCAN_OUTPUT_DIR ('{output_dir_var}') must match "
-        f"reports base-directory ('{base_dir}')"
+    output_dir_value = (
+        buildspec_yaml_spec.get("env", {}).get("variables", {}).get(_BUILDSPEC_OUTPUT_DIR_VAR)
+    )
+    assert output_dir_value == base_dir, (
+        f"env.variables.{_BUILDSPEC_OUTPUT_DIR_VAR} ('{output_dir_value}') must match "
+        f"reports {_BUILDSPEC_BASE_DIRECTORY_KEY} ('{base_dir}')"
     )
 
     # Build commands must reference PHI_SCAN_OUTPUT_DIR for the SARIF --report-path
     build_commands = " ".join(
         cmd
-        for phase in spec.get("phases", {}).values()
+        for phase in buildspec_yaml_spec.get("phases", {}).values()
         for cmd in phase.get("commands", [])
         if isinstance(cmd, str)
     )
-    assert "PHI_SCAN_OUTPUT_DIR" in build_commands, (
-        "build phase must use $PHI_SCAN_OUTPUT_DIR in the phi-scan --report-path argument"
+    assert _BUILDSPEC_OUTPUT_DIR_VAR in build_commands, (
+        f"build phase must use ${_BUILDSPEC_OUTPUT_DIR_VAR} in the phi-scan --report-path argument"
     )
 
 
@@ -1237,7 +1268,7 @@ _ARM_IMAGE_TAG: str = "phi-scan-test-arm64:ci"
 
 
 @pytest.fixture(scope="session")
-def arm_docker_image() -> str:
+def provide_arm_docker_image() -> str:
     """Build the phi-scan Docker image for linux/arm64 once per test session.
 
     Skips when Docker or buildx linux/arm64 is unavailable (e.g., standard CI hosts).
@@ -1271,7 +1302,7 @@ def arm_docker_image() -> str:
     return _ARM_IMAGE_TAG
 
 
-def test_docker_arm_image_runs_phi_scan_help(arm_docker_image: str) -> None:
+def test_docker_arm_image_runs_phi_scan_help(provide_arm_docker_image: str) -> None:
     """phi-scan Docker image built for linux/arm64 runs phi-scan --help and exits 0."""
     result = subprocess.run(
         [
@@ -1280,7 +1311,7 @@ def test_docker_arm_image_runs_phi_scan_help(arm_docker_image: str) -> None:
             "--rm",
             "--platform",
             "linux/arm64",
-            arm_docker_image,
+            provide_arm_docker_image,
             "--help",
         ],
         capture_output=True,
