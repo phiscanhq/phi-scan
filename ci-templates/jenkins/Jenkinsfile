@@ -106,15 +106,23 @@ pipeline {
                     // -------------------------------------------------------
                     if (env.CHANGE_ID) {
                         def checkStatus = (exitCode == 0) ? 'SUCCESS' : 'FAILURE'
-                        publishChecks(
-                            name: 'phi-scan',
-                            title: 'PHI/PII Scan',
-                            summary: (exitCode == 0)
-                                ? 'No PHI/PII violations found.'
-                                : "phi-scan detected violations. See Warnings NG for details.",
-                            conclusion: checkStatus,
-                            detailsURL: env.BUILD_URL
-                        )
+                        try {
+                            publishChecks(
+                                name: 'phi-scan',
+                                title: 'PHI/PII Scan',
+                                summary: (exitCode == 0)
+                                    ? 'No PHI/PII violations found.'
+                                    : "phi-scan detected violations. See Warnings NG for details.",
+                                conclusion: checkStatus,
+                                detailsURL: env.BUILD_URL
+                            )
+                        } catch (hudson.AbortException checksException) {
+                            // Narrowed catch: hudson.AbortException is thrown when a Jenkins
+                            // plugin step (publishChecks) is unavailable. Inline annotations
+                            // are optional — this must not fail the build when the Checks API
+                            // plugin is not installed.
+                            echo "WARNING: Checks API plugin unavailable — inline annotations skipped: ${checksException.message}"
+                        }
                     }
 
                     // -------------------------------------------------------
