@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 import time
@@ -257,6 +258,13 @@ _HISTORY_LAST_HELP: str = "Show scans from the last N days (e.g. 30d)."
 _HISTORY_VERIFY_HELP: str = (
     "Recompute HMAC-SHA256 hash chain and report PASS or FAIL. "
     "Exits with code 1 if the chain is broken (tamper detected)."
+)
+_HISTORY_REPO_HELP: str = (
+    "Filter by repository path (e.g. /home/user/my-repo). "
+    "The path is SHA-256 hashed before comparison against stored repository_hash values."
+)
+_HISTORY_VIOLATIONS_ONLY_HELP: str = (
+    "Show only scans where PHI findings were detected (is_clean=false)."
 )
 _DEFAULT_HISTORY_PERIOD: str = "30d"
 _DAYS_PERIOD_SUFFIX: str = "d"
@@ -1598,6 +1606,10 @@ def display_history(
     should_verify: Annotated[
         bool, typer.Option(_AUDIT_CHAIN_VERIFY_FLAG, help=_HISTORY_VERIFY_HELP)
     ] = False,
+    repository_path: Annotated[str | None, typer.Option("--repo", help=_HISTORY_REPO_HELP)] = None,
+    should_show_violations_only: Annotated[
+        bool, typer.Option("--violations-only", help=_HISTORY_VIOLATIONS_ONLY_HELP)
+    ] = False,
 ) -> None:
     """Query the audit log for recent scan history."""
     lookback_days = _parse_lookback_days(last)
@@ -1619,7 +1631,15 @@ def display_history(
         else:
             typer.echo(_AUDIT_CHAIN_FAIL_MESSAGE, err=True)
             raise typer.Exit(code=EXIT_CODE_VIOLATION)
-    scan_events = query_recent_scans(database_path, lookback_days)
+    repository_hash = (
+        hashlib.sha256(repository_path.encode("utf-8")).hexdigest() if repository_path else None
+    )
+    scan_events = query_recent_scans(
+        database_path,
+        lookback_days,
+        repository_hash=repository_hash,
+        should_show_violations_only=should_show_violations_only,
+    )
     _display_scan_history(scan_events)
 
 
