@@ -1,0 +1,226 @@
+# phi-scan:ignore-file
+# phi-scan CircleCI Orb definition
+#
+# This file defines the reusable CircleCI orb `phi-scan/phi-scan`.
+# Publish to the CircleCI Orb Registry with:
+#
+#   circleci orb pack ci-templates/circleci/orb.yml > orb-packed.yml
+#   circleci orb publish orb-packed.yml phi-scan/phi-scan@dev:first
+#   circleci orb publish promote phi-scan/phi-scan@dev:first patch
+#
+# Usage in a project's .circleci/config.yml:
+#
+#   version: "2.1"
+#   orbs:
+#     phi-scan: phi-scan/phi-scan@1
+#
+#   workflows:
+#     scan:
+#       jobs:
+#         - phi-scan/scan:
+#             severity_threshold: medium
+#             fail_on_violation: true
+#             post_comment: true
+
+version: 2.1
+
+description: |
+  Scan repositories for PHI/PII (Protected Health Information / Personally
+  Identifiable Information) using phi-scan. Designed for HIPAA-compliant
+  CI/CD pipelines. Supports GitHub and Bitbucket PR comment posting,
+  SARIF output for GitHub Code Scanning, and JUnit test summary integration.
+
+display:
+  home_url: https://github.com/your-org/phi-scan
+  source_url: https://github.com/your-org/phi-scan
+
+# ---------------------------------------------------------------------------
+# Executors
+# ---------------------------------------------------------------------------
+
+executors:
+  default:
+    description: "Python 3.12 executor for phi-scan"
+    parameters:
+      tag:
+        description: "Python Docker image tag"
+        type: string
+        default: "3.12"
+    docker:
+      - image: cimg/python:<< parameters.tag >>
+    resource_class: small
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+commands:
+  install:
+    description: "Install phi-scan and restore model cache"
+    parameters:
+      version:
+        description: "phi-scan version to install (empty = latest)"
+        type: string
+        default: ""
+    steps:
+      - restore_cache:
+          keys:
+            - phi-scanner-{{ arch }}-{{ checksum "pyproject.toml" }}
+            - phi-scanner-{{ arch }}-
+      - run:
+          name: Install phi-scan
+          command: |
+            if [ -n "<< parameters.version >>" ]; then
+              pip install "phi-scan==<< parameters.version >>"
+            else
+              pip install phi-scan
+            fi
+      - save_cache:
+          key: phi-scanner-{{ arch }}-{{ checksum "pyproject.toml" }}
+          paths:
+            - ~/.phi-scanner
+
+  scan:
+    description: "Run phi-scan on the repository and store artifacts"
+    parameters:
+      path:
+        description: "Directory to scan"
+        type: string
+        default: "."
+      output_dir:
+        description: "Directory for report artifacts"
+        type: string
+        default: "/tmp/phi-scan-results"
+      severity_threshold:
+        description: "Minimum severity to report: low, medium, high"
+        type: string
+        default: ""
+      post_comment:
+        description: "Post PR comment with findings"
+        type: boolean
+        default: false
+      set_status:
+        description: "Set commit status PASS/FAIL"
+        type: boolean
+        default: false
+    steps:
+      - run:
+          name: Run phi-scan
+          command: |
+            mkdir -p "<< parameters.output_dir >>"
+
+            SEVERITY_FLAG=""
+            if [ -n "<< parameters.severity_threshold >>" ]; then
+              SEVERITY_FLAG="--severity-threshold << parameters.severity_threshold >>"
+            fi
+
+            DIFF_FLAG=""
+            COMMENT_FLAGS=""
+            if [ -n "$CIRCLE_PULL_REQUEST" ]; then
+              DIFF_FLAG="--diff origin/${CIRCLE_BRANCH}"
+              if [ "<< parameters.post_comment >>" = "true" ]; then
+                COMMENT_FLAGS="${COMMENT_FLAGS:+$COMMENT_FLAGS }--post-comment"
+              fi
+              if [ "<< parameters.set_status >>" = "true" ]; then
+                COMMENT_FLAGS="${COMMENT_FLAGS:+$COMMENT_FLAGS }--set-status"
+              fi
+            fi
+
+            set +e
+            phi-scan scan "<< parameters.path >>" \
+              $DIFF_FLAG \
+              $SEVERITY_FLAG \
+              --output sarif  --report-path "<< parameters.output_dir >>/phi-scan.sarif" \
+              --output json   --report-path "<< parameters.output_dir >>/phi-scan.json"  \
+              --output junit  --report-path "<< parameters.output_dir >>/phi-scan-junit.xml" \
+              $COMMENT_FLAGS
+            # Canonical exit-code file — read by the "Fail on violations" step below
+            echo $? > "<< parameters.output_dir >>/phi-scan-exit-code"
+            set -e
+
+  store_results:
+    description: "Store phi-scan artifacts and JUnit test results"
+    parameters:
+      output_dir:
+        description: "Directory containing report artifacts"
+        type: string
+        default: "/tmp/phi-scan-results"
+      artifact_destination:
+        description: "Artifact destination path in CircleCI"
+        type: string
+        default: "phi-scan"
+    steps:
+      - store_artifacts:
+          path: << parameters.output_dir >>
+          destination: << parameters.artifact_destination >>
+      # JUnit results appear in the CircleCI Test Summary tab
+      - store_test_results:
+          path: << parameters.output_dir >>
+
+# ---------------------------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------------------------
+
+jobs:
+  scan:
+    description: "Full phi-scan job: install, scan, store artifacts"
+    executor: default
+    parameters:
+      path:
+        description: "Directory to scan"
+        type: string
+        default: "."
+      version:
+        description: "phi-scan version to install (empty = latest)"
+        type: string
+        default: ""
+      output_dir:
+        description: "Directory for report artifacts"
+        type: string
+        default: "/tmp/phi-scan-results"
+      severity_threshold:
+        description: "Minimum severity: low, medium, high"
+        type: string
+        default: ""
+      fail_on_violation:
+        description: "Fail the job when violations are found"
+        type: boolean
+        default: true
+      post_comment:
+        description: "Post PR comment with findings"
+        type: boolean
+        default: false
+      set_status:
+        description: "Set commit status PASS/FAIL"
+        type: boolean
+        default: false
+    steps:
+      - checkout
+      - install:
+          version: << parameters.version >>
+      - scan:
+          path: << parameters.path >>
+          output_dir: << parameters.output_dir >>
+          severity_threshold: << parameters.severity_threshold >>
+          post_comment: << parameters.post_comment >>
+          set_status: << parameters.set_status >>
+      - store_results:
+          output_dir: << parameters.output_dir >>
+      - when:
+          condition: << parameters.fail_on_violation >>
+          steps:
+            - run:
+                name: Fail on violations
+                command: |
+                  # Canonical exit-code file — written by the "Run phi-scan" step above
+                  exit_code_file="<< parameters.output_dir >>/phi-scan-exit-code"
+                  if [ ! -f "$exit_code_file" ]; then
+                    echo "phi-scan: exit code file not found — scan may have failed." >&2
+                    exit 1
+                  fi
+                  phi_scan_exit_code=$(cat "$exit_code_file")
+                  if [ "$phi_scan_exit_code" -ne 0 ]; then
+                    echo "phi-scan: PHI/PII violations detected (exit code ${phi_scan_exit_code})." >&2
+                    exit "$phi_scan_exit_code"
+                  fi
+                  echo "phi-scan: no violations found."

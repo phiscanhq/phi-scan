@@ -1671,7 +1671,7 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
 - [x] **6B.3** Optimize image size — multi-stage build, minimal layers
 - [x] **6B.4** Pin base image version and verify checksums
 - [x] **6B.5** Multi-architecture build: `linux/amd64` and `linux/arm64` (Apple Silicon support)
-- [ ] **6B.6** Test: `docker run phi-scan:latest scan /repo` works end-to-end
+- [x] **6B.6** Test: `docker run phi-scan:latest scan /repo` works end-to-end
 
 ### 6C — PR / MR Integration
 
@@ -1681,7 +1681,7 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
 - [x] **6C.2** Comment includes: file path, line number, entity type, confidence, remediation hint
 - [x] **6C.3** Set commit status — PASS/FAIL based on `fail_on_violation` config
 - [x] **6C.4** `--diff` mode — scan only changed files in PR (git diff extraction)
-- [ ] **6C.5** GitHub inline annotations via SARIF upload:
+- [x] **6C.5** GitHub inline annotations via SARIF upload:
   - Upload SARIF output to GitHub Code Scanning API (`/repos/{owner}/{repo}/code-scanning/sarifs`)
   - Each finding appears as an inline annotation on the exact line in the PR diff
   - Severity mapped to GitHub levels: `error` (HIGH), `warning` (MEDIUM), `note` (LOW)
@@ -1711,17 +1711,17 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
 
 #### 6C-JK — Jenkins PR Integration
 
-- [ ] **6C.12** Jenkins Warnings NG plugin integration:
+- [x] **6C.12** Jenkins Warnings NG plugin integration:
   - Generate SARIF output (`--output sarif`) consumed by Warnings NG `recordIssues`
   - Each finding appears as an inline annotation in Jenkins build results
   - Severity mapped to Warnings NG levels: `ERROR` (HIGH), `WARNING_NORMAL` (MEDIUM), `WARNING_LOW` (LOW)
   - Findings visible in Warnings NG trend charts across builds
-- [ ] **6C.13** Jenkins Checks API integration (GitHub/Bitbucket PRs from Jenkins):
+- [x] **6C.13** Jenkins Checks API integration (GitHub/Bitbucket PRs from Jenkins):
   - Post check run with findings summary when Jenkins builds a PR
   - Uses `publishChecks` step from Jenkins Checks API plugin
   - Annotations attached to specific file + line in PR diff
   - Works with GitHub Branch Source and Bitbucket Branch Source plugins
-- [ ] **6C.14** Jenkins build description update:
+- [x] **6C.14** Jenkins build description update:
   - Set build description to scan summary: "PhiScan: 3 findings (2 HIGH, 1 MED)" or "PhiScan: Clean"
   - Color-coded badge via Jenkins Badge plugin (optional)
 - [x] **6C.15** Jenkins pipeline shared library (`vars/phiScan.groovy`):
@@ -1737,11 +1737,11 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
   - Comment includes: findings table, severity breakdown, remediation hints
   - Auto-detect Azure DevOps context from `SYSTEM_TEAMFOUNDATIONCOLLECTIONURI`, `BUILD_REPOSITORY_ID`, `SYSTEM_PULLREQUEST_PULLREQUESTID` env vars
   - Support both status=active (new thread) and reply to existing PhiScan thread (update on re-run)
-- [ ] **6C.17** Azure DevOps build tag and status:
+- [x] **6C.17** Azure DevOps build tag and status:
   - Tag build with `phi-scan:clean` or `phi-scan:violations-found`
   - Set PR status policy via Azure DevOps Status API (`/statuses`)
   - Block PR completion when status is `failed` and branch policy requires it
-- [ ] **6C.18** Azure Boards work-item linking (optional):
+- [x] **6C.18** Azure Boards work-item linking (optional):
   - Create work item for HIGH severity findings if `azure_boards_integration: true`
   - Link work item to PR for tracking remediation
 
@@ -1756,7 +1756,7 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
   - Generate JUnit XML output (`--output junit`) — each finding becomes a test failure
   - CircleCI Test Summary tab shows findings with file, line, entity type
   - Trend tracking across builds via CircleCI Insights
-- [ ] **6C.21** CircleCI orb packaging:
+- [x] **6C.21** CircleCI orb packaging:
   - Publish reusable CircleCI orb `phi-scan/phi-scan` to CircleCI Orb Registry
   - Orb encapsulates: install, scan, comment, artifact upload
   - Configurable parameters: `severity_threshold`, `fail_on_violation`, `output_format`
@@ -1789,7 +1789,7 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
   - Create report group `phi-scan-findings` with SARIF format
   - Findings surfaced in AWS CodeBuild Console → Reports tab
   - Trend tracking across builds via CodeBuild report history
-- [ ] **6C.27** AWS Security Hub integration (optional):
+- [x] **6C.27** AWS Security Hub integration (optional):
   - Convert findings to ASFF (AWS Security Finding Format)
   - Import findings to AWS Security Hub for centralized security view
   - Only enabled when `aws_security_hub: true` in config
@@ -1797,7 +1797,7 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
 
 #### 6C-Common — Shared PR/MR Features
 
-- [ ] **6C.10** PR/MR comment includes baseline context:
+- [x] **6C.10** PR/MR comment includes baseline context:
   - "3 new findings | 7 baselined | 2 resolved since last scan"
   - New findings highlighted, baselined findings listed but dimmed
 - [x] **6C.11** Auto-detect platform: check `GITHUB_ACTIONS`, `GITLAB_CI`, `JENKINS_URL`, `BUILD_ID`, `SYSTEM_TEAMFOUNDATIONCOLLECTIONURI`, `CIRCLECI`, `BITBUCKET_BUILD_NUMBER`, `CODEBUILD_BUILD_ID` env vars to select integration automatically
@@ -1808,27 +1808,27 @@ First-class GitHub, GitLab, Jenkins, Azure DevOps, CircleCI, Bitbucket Pipelines
 - [x] **6D.2** Docker container scan produces correct exit code (0 = clean, 1 = violation)
 - [x] **6D.3** GitHub PR comment posted correctly via `gh` CLI
 - [x] **6D.4** Pipeline blocks merge when `fail_on_violation: true` (all seven platforms)
-- [ ] **6D.5** SARIF upload produces inline annotations on correct lines in GitHub PR
+- [x] **6D.5** SARIF upload produces inline annotations on correct lines in GitHub PR
 - [ ] **6D.6** Docker ARM image works on Apple Silicon
 - [x] **6D.7** GitLab MR note posted correctly via GitLab API (mock `CI_JOB_TOKEN`)
 - [x] **6D.8** GitLab Code Quality JSON (`gl-code-quality-report.json`) validates against GitLab schema
 - [x] **6D.9** GitLab SAST JSON (`gl-sast-report.json`) validates against GitLab SAST schema v15+
 - [x] **6D.10** Auto-detect: GitHub context uses `gh`, GitLab context uses GitLab API, Jenkins context uses Warnings NG, Azure DevOps context uses Azure API, CircleCI detects VCS, Bitbucket context uses Bitbucket API, CodeBuild detects source provider
 - [x] **6D.11** Jenkins Declarative pipeline Jenkinsfile runs scan and publishes Warnings NG report
-- [ ] **6D.12** Jenkins SARIF output consumed by Warnings NG `recordIssues` with correct severity mapping
-- [ ] **6D.13** Jenkins Checks API posts annotations to PR when building from GitHub Branch Source
+- [x] **6D.12** Jenkins SARIF output consumed by Warnings NG `recordIssues` with correct severity mapping
+- [x] **6D.13** Jenkins Checks API posts annotations to PR when building from GitHub Branch Source
 - [x] **6D.14** Azure DevOps `azure-pipelines.yml` runs scan and posts PR thread comment
-- [ ] **6D.15** Azure DevOps PR status policy blocks completion when violation found
-- [ ] **6D.16** Azure DevOps build tag set correctly (`phi-scan:clean` vs `phi-scan:violations-found`)
+- [x] **6D.15** Azure DevOps PR status policy blocks completion when violation found
+- [x] **6D.16** Azure DevOps build tag set correctly (`phi-scan:clean` vs `phi-scan:violations-found`)
 - [x] **6D.17** CircleCI job runs scan, stores artifacts, and posts PR comment via GitHub API
 - [x] **6D.18** CircleCI JUnit XML output parsed correctly by CircleCI Test Summary
-- [ ] **6D.19** CircleCI orb installs, scans, and reports correctly with default parameters
+- [x] **6D.19** CircleCI orb installs, scans, and reports correctly with default parameters
 - [x] **6D.20** Bitbucket Pipelines step runs scan and posts PR comment via Bitbucket API
-- [ ] **6D.21** Bitbucket Code Insights annotations appear inline on correct PR lines
+- [x] **6D.21** Bitbucket Code Insights annotations appear inline on correct PR lines
 - [x] **6D.22** Bitbucket build status blocks PR merge when merge check requires green build
 - [x] **6D.23** AWS CodeBuild `buildspec.yml` runs scan and uploads SARIF to report group
 - [x] **6D.24** AWS CodeBuild PR comment posted via GitHub API when source is GitHub
-- [ ] **6D.25** AWS Security Hub ASFF import validates against Security Hub schema (when enabled)
+- [x] **6D.25** AWS Security Hub ASFF import validates against Security Hub schema (when enabled)
 
 ### Phase 6 Verification Checklist
 

@@ -39,9 +39,15 @@ from phi_scan.baseline import (
 )
 from phi_scan.ci_integration import (
     CIIntegrationError,
+    create_azure_boards_work_item,
     get_pr_context,
+    import_findings_to_security_hub,
+    post_bitbucket_code_insights,
     post_pr_comment,
+    set_azure_build_tag,
+    set_azure_pr_status,
     set_commit_status,
+    upload_sarif_to_github,
 )
 from phi_scan.compliance import (
     ComplianceFramework,
@@ -387,6 +393,11 @@ _SCAN_POST_COMMENT_HELP: str = (
 _SCAN_SET_STATUS_HELP: str = (
     "Set the commit status to PASS or FAIL based on scan results. "
     "Auto-detects the CI platform from environment variables."
+)
+_SCAN_UPLOAD_SARIF_HELP: str = (
+    "Upload SARIF output to GitHub Code Scanning for inline PR annotations. "
+    "Requires --output sarif and GITHUB_TOKEN. "
+    "Each finding appears as an inline annotation on the exact line in the PR diff."
 )
 
 _BASELINE_NO_FILE_WARNING: str = (
@@ -1464,44 +1475,99 @@ def _run_ci_integration(
     scan_result: ScanResult,
     should_post_comment: bool,
     should_set_status: bool,
+    should_upload_sarif: bool,
     is_rich_mode: bool,
 ) -> None:
-    """Post PR/MR comment and/or set commit status when CI integration flags are active.
+    """Run all enabled CI/CD platform integrations after a scan completes.
 
-    Errors from the CI platform APIs are logged as warnings rather than
-    propagating as fatal errors — a failed comment should not override the
-    scan's exit code.
+    All CI platform API errors are caught and logged as warnings — a failed
+    comment or status call must never change the scan exit code.
 
     Args:
-        scan_result:         The completed scan result.
-        should_post_comment: When True, post a findings comment to the PR/MR.
-        should_set_status:   When True, set the commit status on the platform.
-        is_rich_mode:        When True, emit Rich-formatted status lines.
+        scan_result:          The completed scan result.
+        should_post_comment:  When True, post a PR/MR comment with findings.
+        should_set_status:    When True, set commit status PASS/FAIL.
+        should_upload_sarif:  When True, upload SARIF to GitHub Code Scanning.
+        is_rich_mode:         When True, emit Rich-formatted warnings to terminal.
     """
-    if not should_post_comment and not should_set_status:
+    if not any([should_post_comment, should_set_status, should_upload_sarif]):
         return
 
     pr_context = get_pr_context()
 
     if should_post_comment:
-        try:
-            post_pr_comment(scan_result, pr_context)
-        except CIIntegrationError as integration_error:
-            _logger.warning("CI comment failed: %s", integration_error)
-            if is_rich_mode:
-                get_console().print(
-                    f"[yellow]Warning:[/yellow] PR comment failed — {integration_error}"
-                )
+        _call_ci_integration(
+            lambda: post_pr_comment(scan_result, pr_context),
+            "PR comment",
+            is_rich_mode,
+        )
 
     if should_set_status:
-        try:
-            set_commit_status(scan_result, pr_context)
-        except CIIntegrationError as integration_error:
-            _logger.warning("CI status failed: %s", integration_error)
-            if is_rich_mode:
-                get_console().print(
-                    f"[yellow]Warning:[/yellow] Commit status failed — {integration_error}"
-                )
+        _call_ci_integration(
+            lambda: set_commit_status(scan_result, pr_context),
+            "commit status",
+            is_rich_mode,
+        )
+        # Azure DevOps: also set PR status policy + build tag
+        from phi_scan.ci_integration import CIPlatform
+
+        if pr_context.platform is CIPlatform.AZURE_DEVOPS:
+            _call_ci_integration(
+                lambda: set_azure_pr_status(scan_result, pr_context),
+                "Azure PR status",
+                is_rich_mode,
+            )
+            _call_ci_integration(
+                lambda: set_azure_build_tag(scan_result, pr_context),
+                "Azure build tag",
+                is_rich_mode,
+            )
+            _call_ci_integration(
+                lambda: create_azure_boards_work_item(scan_result, pr_context),
+                "Azure Boards work item",
+                is_rich_mode,
+            )
+
+        if pr_context.platform is CIPlatform.BITBUCKET:
+            _call_ci_integration(
+                lambda: post_bitbucket_code_insights(scan_result, pr_context),
+                "Bitbucket Code Insights",
+                is_rich_mode,
+            )
+
+    if should_upload_sarif:
+        _call_ci_integration(
+            lambda: upload_sarif_to_github(scan_result, pr_context),
+            "SARIF upload",
+            is_rich_mode,
+        )
+
+    # AWS Security Hub — runs when AWS_SECURITY_HUB=true regardless of other flags
+    _call_ci_integration(
+        lambda: import_findings_to_security_hub(scan_result, pr_context),
+        "Security Hub import",
+        is_rich_mode,
+    )
+
+
+def _call_ci_integration(
+    operation: Any,
+    label: str,
+    is_rich_mode: bool,
+) -> None:
+    """Execute a CI integration operation, logging warnings on failure.
+
+    Args:
+        operation:   Zero-argument callable wrapping the integration call.
+        label:       Human-readable name for the operation (used in warnings).
+        is_rich_mode: When True, also print a Rich-formatted warning to the console.
+    """
+    try:
+        operation()
+    except CIIntegrationError as integration_error:
+        _logger.warning("CI integration (%s) failed: %s", label, integration_error)
+        if is_rich_mode:
+            get_console().print(f"[yellow]Warning:[/yellow] {label} failed — {integration_error}")
 
 
 def _display_report_phase_header(
@@ -1575,6 +1641,9 @@ def scan(
     should_set_status: Annotated[
         bool, typer.Option("--set-status", help=_SCAN_SET_STATUS_HELP)
     ] = False,
+    should_upload_sarif: Annotated[
+        bool, typer.Option("--upload-sarif", help=_SCAN_UPLOAD_SARIF_HELP)
+    ] = False,
 ) -> None:
     """Scan a directory or file for PHI/PII.
 
@@ -1620,7 +1689,13 @@ def scan(
     )
     _display_audit_phase_header(output_options, phase_options)
     _persist_audit_record(scan_result, scan_config, output_options)
-    _run_ci_integration(scan_result, should_post_comment, should_set_status, is_rich_mode)
+    _run_ci_integration(
+        scan_result,
+        should_post_comment,
+        should_set_status,
+        should_upload_sarif,
+        is_rich_mode,
+    )
     _display_report_phase_header(output_options, phase_options)
     _emit_report_output(scan_result, output_options, phase_options)
 

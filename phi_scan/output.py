@@ -800,11 +800,26 @@ def _build_sarif_rules(scan_result: ScanResult) -> list[dict[str, object]]:
 def _build_sarif_finding_message(finding: ScanFinding) -> str:
     """Build the human-readable SARIF result message for a finding.
 
+    PHI-safety: this message is uploaded to GitHub Advanced Security (and other
+    external CI platforms) as SARIF ``result.message.text``. It must never
+    contain raw entity values. Fields used and their safety rationale:
+
+    - ``hipaa_category.value`` — enum label (e.g. "SSN"), not a raw value
+    - ``detection_layer.value`` — enum label (e.g. "regex"), not a raw value
+    - ``confidence`` — float score, not a raw value
+    - ``remediation_hint`` — pre-canned guidance text; ``ScanFinding.__post_init__``
+      enforces that it is a non-empty string with no raw value embedded
+
+    Fields intentionally excluded: ``value_hash``, ``code_context``,
+    ``entity_type``, ``file_path``, ``line_number`` — none carry raw PHI but are
+    also unnecessary in the human-readable message text.
+
     Args:
         finding: The finding to describe.
 
     Returns:
         A sentence describing the category, layer, confidence, and remediation.
+        Maximum length is bounded by ``_MAXIMUM_REMEDIATION_HINT_LENGTH`` + overhead.
     """
     confidence_str = _CONFIDENCE_FORMAT.format(finding.confidence)
     # remediation_hint must never contain raw PHI — SARIF is consumed by GitHub
@@ -812,6 +827,8 @@ def _build_sarif_finding_message(finding: ScanFinding) -> str:
     # constraint belongs in ScanFinding.__post_init__, not here; output.py trusts
     # the model-layer contract. See _serialize_finding_to_dict for the full note.
     return (
+        # PHI-SAFE: hipaa_category.value + detection_layer.value + confidence (float)
+        # + remediation_hint — no raw entity value, no code_context, no value_hash
         f"{finding.hipaa_category.value} identifier detected by the "
         f"{finding.detection_layer.value} layer "
         f"(confidence: {confidence_str}). {finding.remediation_hint}"

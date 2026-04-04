@@ -13,6 +13,17 @@
 //   Set GITHUB_TOKEN (or GITLAB_TOKEN) as a Jenkins secret credential.
 //   ID: 'github-token'  (create in Jenkins → Credentials → System → Global)
 
+// ---------------------------------------------------------------------------
+// Named constants for phi-scan JSON summary and build description
+// NOTE: PHI_SCAN_REPORT_FILENAME is intentionally duplicated in
+// vars/phiScan.groovy — shared libraries cannot import constants from a
+// Jenkinsfile, so each file maintains its own copy.
+// ---------------------------------------------------------------------------
+def PHI_SCAN_REPORT_FILENAME   = "phi-scan.json"
+def PHI_SCAN_STATUS_CLEAN      = "PhiScan: Clean"
+def PHI_SCAN_STATUS_UNKNOWN    = "PhiScan: unknown"
+def PHI_SCAN_FINDINGS_FORMAT   = "PhiScan: %d findings (%d HIGH, %d MED, %d LOW)"
+
 pipeline {
     agent any
     // Docker agent variant — uncomment to use the official phi-scan container:
@@ -66,7 +77,15 @@ pipeline {
                     // Use returnStatus so Warnings NG can still publish before we fail
                     def exitCode = sh(script: scanCmd.trim(), returnStatus: true)
 
-                    // Publish Warnings NG report (inline PR annotations via SARIF)
+                    // -------------------------------------------------------
+                    // 6C.12: Publish Warnings NG report
+                    //   SARIF severity mapping to Warnings NG levels:
+                    //     error   (HIGH)   → red annotation in build results
+                    //     warning (MEDIUM) → yellow annotation
+                    //     note    (LOW)    → blue annotation
+                    //   Findings are visible in the Warnings NG trend charts
+                    //   across builds (Jenkins Build → Warnings tab).
+                    // -------------------------------------------------------
                     recordIssues(
                         enabledForFailure: true,
                         aggregatingResults: true,
@@ -78,6 +97,60 @@ pipeline {
                             )
                         ]
                     )
+
+                    // -------------------------------------------------------
+                    // 6C.13: Jenkins Checks API — post inline annotations to
+                    //   the GitHub/Bitbucket PR when building from GitHub Branch
+                    //   Source or Bitbucket Branch Source plugin.
+                    //   Requires: Checks API plugin + Branch Source plugin.
+                    // -------------------------------------------------------
+                    if (env.CHANGE_ID) {
+                        def checkStatus = (exitCode == 0) ? 'SUCCESS' : 'FAILURE'
+                        try {
+                            publishChecks(
+                                name: 'phi-scan',
+                                title: 'PHI/PII Scan',
+                                summary: (exitCode == 0)
+                                    ? 'No PHI/PII violations found.'
+                                    : "phi-scan detected violations. See Warnings NG for details.",
+                                conclusion: checkStatus,
+                                detailsURL: env.BUILD_URL
+                            )
+                        } catch (hudson.AbortException checksException) {
+                            // Narrowed catch: hudson.AbortException is thrown when a Jenkins
+                            // plugin step (publishChecks) is unavailable. Inline annotations
+                            // are optional — this must not fail the build when the Checks API
+                            // plugin is not installed.
+                            echo "WARNING: Checks API plugin unavailable — inline annotations skipped: ${checksException.message}"
+                        }
+                    }
+
+                    // -------------------------------------------------------
+                    // 6C.14: Set build description to scan summary for quick
+                    //   at-a-glance status in the Jenkins build history.
+                    // -------------------------------------------------------
+                    def phiScanJsonPath = "${PHI_SCAN_OUTPUT_DIR}/${PHI_SCAN_REPORT_FILENAME}"
+                    def buildDescription = PHI_SCAN_STATUS_UNKNOWN
+                    try {
+                        def jsonText = readFile(phiScanJsonPath)
+                        def scanResult = readJSON(text: jsonText)
+                        if (scanResult.is_clean) {
+                            buildDescription = PHI_SCAN_STATUS_CLEAN
+                        } else {
+                            def highCount   = scanResult.severity_counts?.HIGH   ?: 0
+                            def mediumCount = scanResult.severity_counts?.MEDIUM ?: 0
+                            def lowCount    = scanResult.severity_counts?.LOW    ?: 0
+                            buildDescription = String.format(PHI_SCAN_FINDINGS_FORMAT,
+                                scanResult.findings?.size(), highCount, mediumCount, lowCount)
+                        }
+                    } catch (java.io.IOException | groovy.json.JsonException jsonException) {
+                        // Narrowed catch: only IO failures (readFile) and JSON parse errors
+                        // (readJSON) are expected here. Build description is cosmetic — these
+                        // failures must not propagate as a build error. The scan result is
+                        // already reported via exit code, SARIF artifacts, and Warnings NG.
+                        echo "WARNING: phi-scan JSON summary unavailable — ${jsonException.message}"
+                    }
+                    currentBuild.description = buildDescription
 
                     // Archive artifacts before propagating failure
                     archiveArtifacts(
