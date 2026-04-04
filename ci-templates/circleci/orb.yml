@@ -138,6 +138,7 @@ commands:
               --output json   --report-path "<< parameters.output_dir >>/phi-scan.json"  \
               --output junit  --report-path "<< parameters.output_dir >>/phi-scan-junit.xml" \
               $COMMENT_FLAGS
+            # Canonical exit-code file — read by the "Fail on violations" step below
             echo $? > "<< parameters.output_dir >>/phi-scan-exit-code"
             set -e
 
@@ -215,6 +216,7 @@ jobs:
             - run:
                 name: Fail on violations
                 command: |
+                  # Canonical exit-code file — written by the "Run phi-scan" step above
                   exit_code_file="<< parameters.output_dir >>/phi-scan-exit-code"
                   if [ ! -f "$exit_code_file" ]; then
                     echo "phi-scan: exit code file not found — scan may have failed." >&2

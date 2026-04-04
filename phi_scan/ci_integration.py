@@ -151,8 +151,9 @@ _HTTP_TIMEOUT_SECONDS: float = 15.0
 _MAX_COMMENT_LENGTH: int = 60_000
 _MAX_ERROR_RESPONSE_LOG_LENGTH: int = 200
 _DEFAULT_GIT_REF: str = "refs/heads/main"
+# Used both as the split limit and the minimum line count for baseline insertion —
+# these are intentionally the same value and must remain coupled.
 _COMMENT_HEADER_SPLIT_COUNT: int = 2
-_MINIMUM_COMMENT_LINE_COUNT_FOR_HEADER_SPLIT: int = 2
 
 # GitHub Code Scanning SARIF upload API
 _GITHUB_API_SARIF_UPLOAD_PATH: str = "/repos/{repository}/code-scanning/sarifs"
@@ -185,7 +186,7 @@ _AWS_SECURITY_HUB_PRODUCT_ARN_FORMAT: str = (
 )
 # ASFF uses "INFORMATIONAL" for INFO-level findings — different from SeverityLevel.INFO.value
 _ASFF_INFO_SEVERITY_LABEL: str = "INFORMATIONAL"
-_AMAZON_SECURITY_FINDING_FORMAT_SEVERITY_MAP: dict[SeverityLevel, str] = {
+_AWS_SECURITY_HUB_SEVERITY_MAP: dict[SeverityLevel, str] = {
     SeverityLevel.HIGH: SeverityLevel.HIGH.value.upper(),
     SeverityLevel.MEDIUM: SeverityLevel.MEDIUM.value.upper(),
     SeverityLevel.LOW: SeverityLevel.LOW.value.upper(),
@@ -565,9 +566,10 @@ def _insert_baseline_context_into_comment(
         Comment body with the baseline line inserted after the first header line.
     """
     lines = comment_body.split("\n", _COMMENT_HEADER_SPLIT_COUNT)
-    if len(lines) >= _MINIMUM_COMMENT_LINE_COUNT_FOR_HEADER_SPLIT:
-        return "\n".join([lines[0], "", baseline_line, "", *lines[1:]])
-    return baseline_line + "\n\n" + comment_body
+    if len(lines) < _COMMENT_HEADER_SPLIT_COUNT:
+        # Comment body has no header/body split — prepend baseline line instead
+        return baseline_line + "\n\n" + comment_body
+    return "\n".join([lines[0], "", baseline_line, "", *lines[1:]])
 
 
 def build_comment_body_with_baseline(
@@ -599,14 +601,21 @@ def build_comment_body_with_baseline(
 # ---------------------------------------------------------------------------
 
 
-def _assert_sarif_contains_no_code_snippets(sarif_content: str) -> None:
-    """Assert the SARIF output contains no code snippets or context regions.
+def _verify_sarif_excludes_code_snippets(sarif_content: str) -> None:
+    """Verify the SARIF output contains no code snippet or contextRegion fields.
 
-    This is a hard PHI-safety guard at the network boundary. ``format_sarif()``
-    is designed to omit code snippets, but this function verifies that guarantee
-    has not been violated — for example, by a future change to the formatter that
-    adds richer context. If a snippet or contextRegion is found, the upload is
-    aborted before any data reaches the GitHub Code Scanning API.
+    This is a structural PHI-safety guard at the network boundary. It checks for
+    two specific SARIF fields that would expose raw source content:
+
+    - ``region.snippet``: inline code snippet of the matched line.
+    - ``physicalLocation.contextRegion``: surrounding context lines.
+
+    What this check does NOT cover: ``message.text`` content, file path strings,
+    rule descriptions, or any other free-text fields. Those are trusted to be safe
+    by the ``format_sarif()`` contract (which uses only PHI-safe ``ScanFinding``
+    fields) and by ``ScanFinding.__post_init__`` validation. This guard defends
+    against structural additions to the SARIF formatter (e.g. adding snippets),
+    not against PHI inadvertently embedded in text fields.
 
     Args:
         sarif_content: SARIF 2.1.0 JSON string to validate.
@@ -692,7 +701,7 @@ def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> No
         return
 
     sarif_content = format_sarif(scan_result)
-    _assert_sarif_contains_no_code_snippets(sarif_content)
+    _verify_sarif_excludes_code_snippets(sarif_content)
     sarif_base64_encoded = _base64_encode_bytes(_gzip_compress_sarif(sarif_content))
 
     url = _GITHUB_API_BASE_URL + _GITHUB_API_SARIF_UPLOAD_PATH.format(
@@ -1026,6 +1035,8 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
         _LOG.warning("Azure Boards: SYSTEM_ACCESSTOKEN not set — skipping")
         return
 
+    # PHI-safety: title and description contain only counts (int) and PR number (str) —
+    # no finding text, entity values, matched strings, or file paths are included.
     title = _AZURE_WORKITEM_TITLE_FORMAT.format(count=len(high_findings), pull_request_number=pr_id)
     url = _AZURE_WORKITEMS_PATH.format(
         collection_uri=collection_uri,
@@ -1111,9 +1122,7 @@ def convert_findings_to_asff(
 
     asff_findings = []
     for finding in scan_result.findings:
-        severity_label = _AMAZON_SECURITY_FINDING_FORMAT_SEVERITY_MAP.get(
-            finding.severity, "MEDIUM"
-        )
+        severity_label = _AWS_SECURITY_HUB_SEVERITY_MAP.get(finding.severity, "MEDIUM")
         # ASFF severity normalised score: HIGH=70, MEDIUM=40, LOW=10, INFO=0
         severity_score_map = {"HIGH": 70, "MEDIUM": 40, "LOW": 10, "INFORMATIONAL": 0}
         severity_score = severity_score_map.get(severity_label, 40)
