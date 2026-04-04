@@ -1,0 +1,116 @@
+# phi-scan:ignore-file
+# phi-scan GitHub Actions workflow template
+#
+# Drop this file into .github/workflows/ in your repository to run phi-scan
+# on every pull request and push to main.
+#
+# Required secrets:
+#   GITHUB_TOKEN  — provided automatically by GitHub Actions (no setup needed)
+#
+# Optional secrets:
+#   PHI_SCAN_CONFIG  — base64-encoded .phi-scanner.yml contents (overrides repo config)
+#
+# Usage:
+#   1. Copy this file to .github/workflows/phi-scan.yml
+#   2. Adjust inputs under `with:` to match your project
+#   3. Commit and push — phi-scan runs on the next PR
+
+name: PHI/PII Scan
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  security-events: write   # required for SARIF upload to Code Scanning
+  pull-requests: write     # required to post PR comments
+
+jobs:
+  phi-scan:
+    name: PHI/PII Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so --diff can compare against PR base
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache phi-scan models
+        uses: actions/cache@v4
+        with:
+          path: ~/.phi-scanner/
+          key: phi-scanner-${{ runner.os }}-${{ hashFiles('**/pyproject.toml', '**/requirements*.txt') }}
+          restore-keys: |
+            phi-scanner-${{ runner.os }}-
+
+      - name: Install phi-scan
+        run: pip install phi-scan
+
+      - name: Run phi-scan (PR diff mode)
+        if: github.event_name == 'pull_request'
+        id: phi_scan_pr
+        run: |
+          phi-scan scan . \
+            --diff origin/${{ github.base_ref }} \
+            --output sarif \
+            --report-path phi-scan-results.sarif \
+            --output json \
+            --report-path phi-scan-results.json \
+            --post-comment \
+            --set-status
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        continue-on-error: true
+
+      - name: Run phi-scan (full scan on push)
+        if: github.event_name == 'push'
+        id: phi_scan_push
+        run: |
+          phi-scan scan . \
+            --output sarif \
+            --report-path phi-scan-results.sarif \
+            --output json \
+            --report-path phi-scan-results.json
+        continue-on-error: true
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always() && hashFiles('phi-scan-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: phi-scan-results.sarif
+          category: phi-scan
+
+      - name: Upload scan artifacts
+        if: always() && hashFiles('phi-scan-results.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: phi-scan-results
+          path: |
+            phi-scan-results.sarif
+            phi-scan-results.json
+          retention-days: 30
+
+      - name: Fail if violations found
+        # Exit with the original phi-scan exit code so the workflow blocks the PR.
+        # phi-scan exits 1 on violation, 0 on clean.  Re-raise here so the
+        # continue-on-error above (which lets upload steps run) does not hide failures.
+        if: |
+          (steps.phi_scan_pr.outcome == 'failure' && github.event_name == 'pull_request') ||
+          (steps.phi_scan_push.outcome == 'failure' && github.event_name == 'push')
+        run: |
+          echo "phi-scan detected PHI/PII violations. Review the annotations above."
+          exit 1

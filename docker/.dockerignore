@@ -1,0 +1,58 @@
+# phi-scan:ignore-file
+# Docker build context exclusions
+# Keeps the build context small — only source needed to build the image is included.
+
+# Version control
+.git/
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Development tools
+.venv/
+venv/
+.uv/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+htmlcov/
+coverage.xml
+.coverage
+
+# CI/CD configs (not needed in image)
+.github/
+ci-templates/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Test files
+tests/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (never include these)
+.env
+*.key
+*.pem
+*.p12
+audit.db

@@ -1,0 +1,78 @@
+# phi-scan:ignore-file
+# phi-scan Bitbucket Pipelines template
+#
+# Copy this file to your repository root as bitbucket-pipelines.yml,
+# or merge the relevant sections into your existing pipeline.
+#
+# Required repository variables (Settings → Pipelines → Repository variables):
+#   BITBUCKET_TOKEN  — repository access token with pullrequest:write scope
+#                      (create in Settings → Access tokens)
+#
+# Works with:
+#   - Bitbucket Cloud (bitbucket.org)
+#   - Bitbucket Data Center / Server (REST API v1)
+#
+# Supports:
+#   - PR-triggered builds with diff mode and PR comment posting
+#   - Build status reporting via Bitbucket Commit Status API
+#   - Code Insights annotations (inline PR diff annotations)
+#   - SARIF and JSON artifact storage
+
+image: python:3.12-slim
+
+definitions:
+  caches:
+    phi-scanner: ~/.phi-scanner
+
+  steps:
+    - step: &phi-scan
+        name: PHI/PII Scan
+        caches:
+          - phi-scanner
+        script:
+          - pip install phi-scan
+          # PR diff mode on pull request builds
+          - |
+            if [ -n "$BITBUCKET_PR_ID" ]; then
+              git fetch origin "$BITBUCKET_PR_DESTINATION_BRANCH"
+              phi-scan scan . \
+                --diff "origin/$BITBUCKET_PR_DESTINATION_BRANCH" \
+                --output sarif  --report-path phi-scan.sarif \
+                --output json   --report-path phi-scan.json  \
+                --post-comment \
+                --set-status
+            else
+              phi-scan scan . \
+                --output sarif  --report-path phi-scan.sarif \
+                --output json   --report-path phi-scan.json
+            fi
+        artifacts:
+          - phi-scan.sarif
+          - phi-scan.json
+        # Fail the pipeline step on violations (exit code 1)
+        after-script:
+          - |
+            python3 -c "
+            import json, sys
+            try:
+                data = json.load(open('phi-scan.json'))
+                count = data.get('findings', 0)
+                clean = data.get('is_clean', True)
+                if not clean:
+                    print(f'phi-scan: {count} PHI/PII violations found. Review annotations above.')
+                else:
+                    print('phi-scan: no violations found.')
+            except Exception as exc:
+                print(f'phi-scan: could not read results — {exc}')
+            "
+
+pipelines:
+  default:
+    - step: *phi-scan
+
+  pull-requests:
+    "**":
+      - step:
+          <<: *phi-scan
+          name: PHI/PII Scan (PR)
+          deployment: phi-scan-pr

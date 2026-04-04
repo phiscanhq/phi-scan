@@ -1,0 +1,112 @@
+# phi-scan:ignore-file
+# phi-scan AWS CodeBuild buildspec template
+#
+# Use this buildspec.yml in your CodeBuild project to scan for PHI/PII.
+# Works with:
+#   - CodePipeline orchestration (pass/fail gate between pipeline stages)
+#   - GitHub and Bitbucket webhook-triggered builds
+#   - Self-triggered builds via `aws codebuild start-build`
+#
+# Required environment variables (set in CodeBuild project → Environment):
+#   GITHUB_TOKEN    — for GitHub PR comment posting (store in SSM or Secrets Manager)
+#   BITBUCKET_TOKEN — for Bitbucket PR comment posting (store in SSM or Secrets Manager)
+#
+# Recommended: store tokens in AWS Secrets Manager and reference them as:
+#   /CodeBuild/phi-scan/github-token  (SecretString)
+#
+# CodeBuild report group:
+#   Create a report group named "phi-scan-findings" in your AWS account.
+#   phi-scan uploads SARIF findings to this group — visible in CodeBuild Console → Reports.
+
+version: 0.2
+
+env:
+  variables:
+    PHI_SCAN_OUTPUT_DIR: "/tmp/phi-scan-results"
+  # Uncomment and configure to pull tokens from SSM Parameter Store:
+  # parameter-store:
+  #   GITHUB_TOKEN: "/CodeBuild/phi-scan/github-token"
+  #   BITBUCKET_TOKEN: "/CodeBuild/phi-scan/bitbucket-token"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - echo "Installing phi-scan..."
+      - pip install phi-scan
+      - mkdir -p "$PHI_SCAN_OUTPUT_DIR"
+      # Restore model cache from S3 (optional — remove if not using S3 cache)
+      # - aws s3 sync s3://$PHI_SCAN_CACHE_BUCKET/.phi-scanner/ ~/.phi-scanner/ --quiet || true
+
+  pre_build:
+    commands:
+      - echo "Detecting build context..."
+      # Detect PR context from CodeBuild webhook trigger
+      - |
+        DIFF_FLAG=""
+        COMMENT_FLAGS=""
+        if echo "$CODEBUILD_WEBHOOK_TRIGGER" | grep -qE "^pr/[0-9]+$"; then
+          PR_NUMBER=$(echo "$CODEBUILD_WEBHOOK_TRIGGER" | grep -oE '[0-9]+$')
+          echo "PR build detected: #${PR_NUMBER}"
+          DIFF_FLAG="--diff origin/${CODEBUILD_WEBHOOK_BASE_REF}"
+          COMMENT_FLAGS="--post-comment --set-status"
+        fi
+        echo "export DIFF_FLAG='$DIFF_FLAG'" >> /tmp/phi-scan-env.sh
+        echo "export COMMENT_FLAGS='$COMMENT_FLAGS'" >> /tmp/phi-scan-env.sh
+        echo "export PR_NUMBER='${PR_NUMBER:-}'" >> /tmp/phi-scan-env.sh
+
+  build:
+    commands:
+      - source /tmp/phi-scan-env.sh
+      - echo "Running phi-scan..."
+      - |
+        phi-scan scan . \
+          $DIFF_FLAG \
+          --output sarif  --report-path "$PHI_SCAN_OUTPUT_DIR/phi-scan.sarif" \
+          --output json   --report-path "$PHI_SCAN_OUTPUT_DIR/phi-scan.json"  \
+          $COMMENT_FLAGS
+      - echo "phi-scan exit code: $?"
+
+  post_build:
+    commands:
+      # Upload model cache to S3 (optional — remove if not using S3 cache)
+      # - aws s3 sync ~/.phi-scanner/ s3://$PHI_SCAN_CACHE_BUCKET/.phi-scanner/ --quiet || true
+      - echo "phi-scan scan complete."
+      # Surface violations as CodeBuild log annotations
+      - |
+        python3 -c "
+        import json, sys
+        try:
+            data = json.load(open('$PHI_SCAN_OUTPUT_DIR/phi-scan.json'))
+            if not data.get('is_clean', True):
+                count = data.get('findings', 0)
+                print(f'PHI/PII violations found: {count}')
+                sys.exit(1)
+            print('No PHI/PII violations found.')
+        except Exception as exc:
+            print(f'Could not read phi-scan results: {exc}')
+            sys.exit(1)
+        "
+
+reports:
+  # CodeBuild report group — findings visible in AWS Console → CodeBuild → Reports
+  phi-scan-findings:
+    files:
+      - "phi-scan.sarif"
+    base-directory: "/tmp/phi-scan-results"
+    file-format: SARIF
+    discard-paths: false
+
+artifacts:
+  files:
+    - "**/*"
+  base-directory: "/tmp/phi-scan-results"
+  name: phi-scan-results
+
+cache:
+  paths:
+    # Cache pip packages across builds
+    - "/root/.cache/pip/**/*"
+    # Cache phi-scan models (spaCy, etc.)
+    - "/root/.phi-scanner/**/*"

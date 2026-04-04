@@ -1,0 +1,54 @@
+# phi-scan:ignore-file
+# phi-scan docker-compose — local testing and development
+#
+# Usage:
+#   docker compose run --rm phi-scan scan /repo
+#   docker compose run --rm phi-scan scan /repo --output json
+#   docker compose run --rm phi-scan scan /repo --diff HEAD~1
+#   docker compose run --rm phi-scan history --last 30d
+#
+# Environment:
+#   Set PHI_SCAN_TARGET in your shell to override the default mount path:
+#     PHI_SCAN_TARGET=/path/to/project docker compose run --rm phi-scan scan /repo
+
+version: "3.9"
+
+services:
+  phi-scan:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        # Pin to a specific version for reproducible local builds.
+        # Leave empty to install the latest release.
+        PHI_SCAN_VERSION: ""
+    image: phi-scan:latest
+    # Mount the target directory to /repo inside the container.
+    # Default: current working directory. Override with PHI_SCAN_TARGET env var.
+    volumes:
+      - "${PHI_SCAN_TARGET:-.}:/repo:ro"
+      # Persist the model cache between runs so spaCy models are not re-downloaded
+      - phi-scan-cache:/home/phiscan/.phi-scanner
+      # Mount a local .phi-scanner.yml config if present
+      - "${PHI_SCAN_CONFIG_FILE:-./.phi-scanner.yml}:/repo/.phi-scanner.yml:ro"
+    working_dir: /repo
+    # Remove the container after each run
+    restart: "no"
+    # Pass through CI environment variables for platform detection and comment posting
+    environment:
+      - GITHUB_TOKEN
+      - GITLAB_TOKEN
+      - BITBUCKET_TOKEN
+      - GITHUB_REPOSITORY
+      - GITHUB_SHA
+      - GITHUB_REF
+      - CI_MERGE_REQUEST_IID
+      - CI_PROJECT_ID
+      - BITBUCKET_PR_ID
+      - BITBUCKET_REPO_SLUG
+      - BITBUCKET_WORKSPACE
+
+volumes:
+  phi-scan-cache:
+    # Named volume so the cache persists between `docker compose run` invocations
+    driver: local

@@ -1,0 +1,100 @@
+# phi-scan:ignore-file
+# phi-scan GitLab CI job template
+#
+# Include this snippet in your .gitlab-ci.yml to scan merge requests and pushes
+# for PHI/PII. Works with GitLab.com and self-hosted GitLab instances.
+#
+# Required CI/CD variables (set in Settings → CI/CD → Variables):
+#   PHI_SCAN_GITLAB_TOKEN  — project access token with api scope (for MR comments)
+#                            Tip: use $CI_JOB_TOKEN if your project has it enabled
+#
+# Usage — add to your .gitlab-ci.yml:
+#   include:
+#     - local: 'ci-templates/phi-scan.gitlab-ci.yml'
+#
+# Or copy the stages/job blocks below directly into your pipeline.
+
+stages:
+  - scan
+
+variables:
+  # Override in your project's CI/CD variables or .gitlab-ci.yml
+  PHI_SCAN_VERSION: "latest"
+  PHI_SCAN_OUTPUT: "sarif"
+  PHI_SCAN_SEVERITY_THRESHOLD: ""   # LOW, MEDIUM, HIGH, or empty (all)
+  PHI_SCAN_FAIL_ON_VIOLATION: "true"
+
+phi-scan:
+  stage: scan
+  image: python:3.12-slim
+
+  cache:
+    key: phi-scanner-$CI_RUNNER_ID
+    paths:
+      - .phi-scanner-cache/
+    when: always
+
+  variables:
+    # Redirect model cache into project dir so GitLab cache key works.
+    HOME_PHI_SCANNER: "$CI_PROJECT_DIR/.phi-scanner-cache"
+
+  before_script:
+    - pip install phi-scan==$PHI_SCAN_VERSION 2>/dev/null || pip install phi-scan
+    - mkdir -p "$HOME_PHI_SCANNER"
+
+  script:
+    # PR/MR diff mode — scan only changed files on merge requests
+    - |
+      if [ -n "$CI_MERGE_REQUEST_IID" ]; then
+        git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        phi-scan scan . \
+          --diff "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" \
+          --output sarif \
+          --report-path gl-phi-scan.sarif \
+          --output codequality \
+          --report-path gl-code-quality-report.json \
+          --output gitlab-sast \
+          --report-path gl-sast-report.json \
+          --post-comment \
+          --set-status
+      else
+        phi-scan scan . \
+          --output sarif \
+          --report-path gl-phi-scan.sarif \
+          --output codequality \
+          --report-path gl-code-quality-report.json \
+          --output gitlab-sast \
+          --report-path gl-sast-report.json
+      fi
+  after_script:
+    # Generate JSON summary for human review regardless of exit code
+    - phi-scan scan . --output json --report-path phi-scan-summary.json --quiet || true
+
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - gl-phi-scan.sarif
+      - gl-code-quality-report.json
+      - gl-sast-report.json
+      - phi-scan-summary.json
+    reports:
+      # Inline MR annotations (GitLab Code Quality)
+      codequality: gl-code-quality-report.json
+      # GitLab Security Dashboard integration
+      sast: gl-sast-report.json
+
+  rules:
+    # Run on all merge requests
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # Run on pushes to default branch
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    # Allow manual trigger from any branch
+    - when: manual
+      allow_failure: true
+
+  environment:
+    name: phi-scan
+    action: prepare
+
+  allow_failure: false

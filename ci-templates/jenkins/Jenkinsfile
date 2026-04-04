@@ -1,0 +1,113 @@
+// phi-scan:ignore-file
+// phi-scan Jenkins pipeline template
+//
+// Copy this Jenkinsfile (or include the relevant stages) into your project.
+// Supports both Declarative and Scripted pipeline syntax.
+// Works with Jenkins multibranch pipelines — auto-detects CHANGE_ID and CHANGE_TARGET.
+//
+// Required plugins:
+//   - Warnings Next Generation (warnings-ng) for inline SARIF annotations
+//   - Git plugin
+//
+// Credentials:
+//   Set GITHUB_TOKEN (or GITLAB_TOKEN) as a Jenkins secret credential.
+//   ID: 'github-token'  (create in Jenkins → Credentials → System → Global)
+
+pipeline {
+    agent any
+    // Docker agent variant — uncomment to use the official phi-scan container:
+    // agent { docker { image 'phi-scan:latest'; args '-v /tmp/.phi-scanner:/root/.phi-scanner' } }
+
+    environment {
+        PHI_SCAN_VERSION     = 'latest'
+        PHI_SCAN_OUTPUT_DIR  = "${WORKSPACE}/phi-scan-results"
+        // Bind GitHub token for PR comment posting
+        GITHUB_TOKEN         = credentials('github-token')
+    }
+
+    options {
+        timeout(time: 15, unit: 'MINUTES')
+        skipStagesAfterUnstable()
+    }
+
+    stages {
+        stage('Install phi-scan') {
+            steps {
+                sh '''
+                    python3 -m pip install --user phi-scan || pip install phi-scan
+                    mkdir -p "${PHI_SCAN_OUTPUT_DIR}"
+                '''
+            }
+        }
+
+        stage('PHI/PII Scan') {
+            steps {
+                script {
+                    // Detect PR/branch context
+                    def diffFlag = ''
+                    def commentFlags = ''
+
+                    if (env.CHANGE_ID) {
+                        // Multibranch pipeline — this is a PR/MR build
+                        diffFlag = "--diff origin/${env.CHANGE_TARGET}"
+                        commentFlags = '--post-comment --set-status'
+                    }
+
+                    def scanCmd = """
+                        phi-scan scan . \\
+                            ${diffFlag} \\
+                            --output sarif \\
+                            --report-path "${PHI_SCAN_OUTPUT_DIR}/phi-scan.sarif" \\
+                            --output json \\
+                            --report-path "${PHI_SCAN_OUTPUT_DIR}/phi-scan.json" \\
+                            ${commentFlags}
+                    """
+
+                    // Use returnStatus so Warnings NG can still publish before we fail
+                    def exitCode = sh(script: scanCmd.trim(), returnStatus: true)
+
+                    // Publish Warnings NG report (inline PR annotations via SARIF)
+                    recordIssues(
+                        enabledForFailure: true,
+                        aggregatingResults: true,
+                        tools: [
+                            sarif(
+                                pattern: "${PHI_SCAN_OUTPUT_DIR}/phi-scan.sarif",
+                                id: 'phi-scan',
+                                name: 'PHI/PII Scan'
+                            )
+                        ]
+                    )
+
+                    // Archive artifacts before propagating failure
+                    archiveArtifacts(
+                        artifacts: 'phi-scan-results/**',
+                        allowEmptyArchive: true,
+                        fingerprint: true
+                    )
+
+                    if (exitCode != 0) {
+                        error("phi-scan detected PHI/PII violations (exit code ${exitCode}). " +
+                              "Review the Warnings NG report for inline annotations.")
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Publish JSON summary as build artifact
+            archiveArtifacts(
+                artifacts: 'phi-scan-results/*.json',
+                allowEmptyArchive: true
+            )
+        }
+        failure {
+            echo 'phi-scan build failed — PHI/PII violations detected. Check the Warnings NG tab for details.'
+        }
+        success {
+            echo 'phi-scan: no PHI/PII violations detected.'
+        }
+    }
+}

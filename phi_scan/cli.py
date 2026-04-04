@@ -37,6 +37,12 @@ from phi_scan.baseline import (
     get_baseline_summary,
     load_baseline,
 )
+from phi_scan.ci_integration import (
+    CIIntegrationError,
+    get_pr_context,
+    post_pr_comment,
+    set_commit_status,
+)
 from phi_scan.compliance import (
     ComplianceFramework,
     InvalidFrameworkError,
@@ -373,6 +379,14 @@ _BASELINE_SCAN_PATH_HELP: str = "Directory to scan when creating or updating the
 _SCAN_BASELINE_HELP: str = (
     "Only report NEW findings not in the .phi-scanbaseline file. "
     "Exit code is based on new findings only."
+)
+_SCAN_POST_COMMENT_HELP: str = (
+    "Post scan findings as a PR/MR comment. "
+    "Auto-detects the CI platform from environment variables."
+)
+_SCAN_SET_STATUS_HELP: str = (
+    "Set the commit status to PASS or FAIL based on scan results. "
+    "Auto-detects the CI platform from environment variables."
 )
 
 _BASELINE_NO_FILE_WARNING: str = (
@@ -1446,6 +1460,50 @@ def _persist_audit_record(
         _write_audit_record(scan_result, scan_config.database_path, sent_channels)
 
 
+def _run_ci_integration(
+    scan_result: ScanResult,
+    should_post_comment: bool,
+    should_set_status: bool,
+    is_rich_mode: bool,
+) -> None:
+    """Post PR/MR comment and/or set commit status when CI integration flags are active.
+
+    Errors from the CI platform APIs are logged as warnings rather than
+    propagating as fatal errors — a failed comment should not override the
+    scan's exit code.
+
+    Args:
+        scan_result:         The completed scan result.
+        should_post_comment: When True, post a findings comment to the PR/MR.
+        should_set_status:   When True, set the commit status on the platform.
+        is_rich_mode:        When True, emit Rich-formatted status lines.
+    """
+    if not should_post_comment and not should_set_status:
+        return
+
+    pr_context = get_pr_context()
+
+    if should_post_comment:
+        try:
+            post_pr_comment(scan_result, pr_context)
+        except CIIntegrationError as integration_error:
+            _logger.warning("CI comment failed: %s", integration_error)
+            if is_rich_mode:
+                get_console().print(
+                    f"[yellow]Warning:[/yellow] PR comment failed — {integration_error}"
+                )
+
+    if should_set_status:
+        try:
+            set_commit_status(scan_result, pr_context)
+        except CIIntegrationError as integration_error:
+            _logger.warning("CI status failed: %s", integration_error)
+            if is_rich_mode:
+                get_console().print(
+                    f"[yellow]Warning:[/yellow] Commit status failed — {integration_error}"
+                )
+
+
 def _display_report_phase_header(
     output_options: _ScanOutputOptions,
     phase_options: _ScanPhaseOptions,
@@ -1511,6 +1569,12 @@ def scan(
     framework: Annotated[
         str | None, typer.Option(_FRAMEWORK_FLAG_NAME, help=_SCAN_FRAMEWORK_HELP)
     ] = None,
+    should_post_comment: Annotated[
+        bool, typer.Option("--post-comment", help=_SCAN_POST_COMMENT_HELP)
+    ] = False,
+    should_set_status: Annotated[
+        bool, typer.Option("--set-status", help=_SCAN_SET_STATUS_HELP)
+    ] = False,
 ) -> None:
     """Scan a directory or file for PHI/PII.
 
@@ -1556,6 +1620,7 @@ def scan(
     )
     _display_audit_phase_header(output_options, phase_options)
     _persist_audit_record(scan_result, scan_config, output_options)
+    _run_ci_integration(scan_result, should_post_comment, should_set_status, is_rich_mode)
     _display_report_phase_header(output_options, phase_options)
     _emit_report_output(scan_result, output_options, phase_options)
 

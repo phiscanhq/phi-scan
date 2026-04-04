@@ -1,0 +1,114 @@
+# phi-scan:ignore-file
+# phi-scan CircleCI config template
+#
+# Merge the relevant sections below into your .circleci/config.yml.
+# Alternatively, use the reusable phi-scan orb:
+#
+#   orbs:
+#     phi-scan: phi-scan/phi-scan@1
+#
+#   workflows:
+#     scan:
+#       jobs:
+#         - phi-scan/scan
+#
+# Required context variables (set in CircleCI Project Settings → Environment Variables):
+#   GITHUB_TOKEN    — for GitHub PR comment posting (if VCS is GitHub)
+#   BITBUCKET_TOKEN — for Bitbucket PR comment posting (if VCS is Bitbucket)
+#
+# Works with GitHub and Bitbucket — auto-detected from CIRCLE_PULL_REQUEST.
+
+version: "2.1"
+
+orbs:
+  python: circleci/python@2
+
+# ---------------------------------------------------------------------------
+# Reusable commands
+# ---------------------------------------------------------------------------
+
+commands:
+  install_phi_scan:
+    description: "Install phi-scan and restore model cache"
+    parameters:
+      version:
+        type: string
+        default: "latest"
+    steps:
+      - restore_cache:
+          keys:
+            - phi-scanner-{{ arch }}-{{ checksum "pyproject.toml" }}
+            - phi-scanner-{{ arch }}-
+      - run:
+          name: Install phi-scan
+          command: |
+            pip install phi-scan<<# parameters.version >>==<< parameters.version >><</ parameters.version >> 2>/dev/null || pip install phi-scan
+      - save_cache:
+          key: phi-scanner-{{ arch }}-{{ checksum "pyproject.toml" }}
+          paths:
+            - ~/.phi-scanner
+
+# ---------------------------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------------------------
+
+jobs:
+  phi-scan:
+    executor: python/default
+    resource_class: small
+    environment:
+      PHI_SCAN_OUTPUT_DIR: /tmp/phi-scan-results
+
+    steps:
+      - checkout
+      - install_phi_scan
+
+      - run:
+          name: Run phi-scan
+          command: |
+            mkdir -p "$PHI_SCAN_OUTPUT_DIR"
+
+            # Determine diff mode from PR context
+            DIFF_FLAG=""
+            COMMENT_FLAGS=""
+            if [ -n "$CIRCLE_PULL_REQUEST" ]; then
+              # Extract PR number from URL (e.g. https://github.com/org/repo/pull/42)
+              PR_NUMBER=$(echo "$CIRCLE_PULL_REQUEST" | grep -oE '[0-9]+$')
+              echo "PR build detected: #${PR_NUMBER}"
+              DIFF_FLAG="--diff origin/${CIRCLE_BRANCH}"
+              COMMENT_FLAGS="--post-comment --set-status"
+            fi
+
+            phi-scan scan . \
+              $DIFF_FLAG \
+              --output sarif  --report-path "$PHI_SCAN_OUTPUT_DIR/phi-scan.sarif" \
+              --output json   --report-path "$PHI_SCAN_OUTPUT_DIR/phi-scan.json"  \
+              --output junit  --report-path "$PHI_SCAN_OUTPUT_DIR/phi-scan-junit.xml" \
+              $COMMENT_FLAGS
+          environment:
+            CIRCLE_PULL_REQUEST: $CIRCLE_PULL_REQUEST
+            GITHUB_TOKEN: $GITHUB_TOKEN
+            BITBUCKET_TOKEN: $BITBUCKET_TOKEN
+
+      - store_artifacts:
+          path: /tmp/phi-scan-results
+          destination: phi-scan
+
+      # CircleCI Test Summary — findings appear as test failures in the Tests tab
+      - store_test_results:
+          path: /tmp/phi-scan-results
+
+# ---------------------------------------------------------------------------
+# Workflows
+# ---------------------------------------------------------------------------
+
+workflows:
+  phi_scan_workflow:
+    jobs:
+      - phi-scan:
+          context:
+            # Optional: store GITHUB_TOKEN / BITBUCKET_TOKEN in a shared context
+            - phi-scan-tokens
+          filters:
+            branches:
+              only: /.*/

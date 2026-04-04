@@ -1,0 +1,111 @@
+# phi-scan:ignore-file
+# phi-scan Azure DevOps pipeline template
+#
+# Copy this file into your repository root as azure-pipelines.yml, or include
+# the relevant steps in your existing pipeline.
+#
+# Required pipeline variables (set in Pipelines → Edit → Variables):
+#   GITHUB_TOKEN  — only needed if your source repo is GitHub (not Azure Repos)
+#
+# The pipeline uses $(System.AccessToken) for Azure Repos PR comment posting —
+# no additional setup needed for Azure Repos source repos.
+#
+# Works with:
+#   - Azure Repos (auto-detects PR context from System.PullRequest.* variables)
+#   - GitHub repos connected to Azure Pipelines (use GITHUB_TOKEN for comments)
+#   - Self-hosted and Microsoft-hosted agents
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+
+pr:
+  branches:
+    include:
+      - "*"
+  autoCancel: true
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  PHI_SCAN_VERSION: "latest"
+  PHI_SCAN_OUTPUT_DIR: "$(Build.ArtifactStagingDirectory)/phi-scan"
+  # System.AccessToken is automatically available for Azure Repos comment posting
+  SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+steps:
+  - checkout: self
+    fetchDepth: 0   # full history for --diff comparison
+
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: "3.12"
+    displayName: "Set up Python 3.12"
+
+  - task: Cache@2
+    inputs:
+      key: '"phi-scanner" | "$(Agent.OS)" | pyproject.toml'
+      restoreKeys: |
+        "phi-scanner" | "$(Agent.OS)"
+      path: $(HOME)/.phi-scanner
+    displayName: "Cache phi-scan models"
+
+  - script: |
+      pip install phi-scan==$(PHI_SCAN_VERSION) 2>/dev/null || pip install phi-scan
+      mkdir -p "$(PHI_SCAN_OUTPUT_DIR)"
+    displayName: "Install phi-scan"
+
+  - script: |
+      # PR diff mode — scan only changed files on pull requests
+      if [ -n "$(System.PullRequest.PullRequestId)" ]; then
+        git fetch origin "$(System.PullRequest.TargetBranch)"
+        phi-scan scan . \
+          --diff "origin/$(System.PullRequest.TargetBranch)" \
+          --output sarif \
+          --report-path "$(PHI_SCAN_OUTPUT_DIR)/phi-scan.sarif" \
+          --output json \
+          --report-path "$(PHI_SCAN_OUTPUT_DIR)/phi-scan.json" \
+          --post-comment \
+          --set-status
+      else
+        phi-scan scan . \
+          --output sarif \
+          --report-path "$(PHI_SCAN_OUTPUT_DIR)/phi-scan.sarif" \
+          --output json \
+          --report-path "$(PHI_SCAN_OUTPUT_DIR)/phi-scan.json"
+      fi
+    displayName: "Run phi-scan"
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: $(System.TeamFoundationCollectionUri)
+      SYSTEM_TEAMPROJECT: $(System.TeamProject)
+      BUILD_REPOSITORY_ID: $(Build.Repository.ID)
+      SYSTEM_PULLREQUEST_PULLREQUESTID: $(System.PullRequest.PullRequestId)
+      BUILD_BUILDID: $(Build.BuildId)
+    continueOnError: true
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      pathToPublish: "$(PHI_SCAN_OUTPUT_DIR)"
+      artifactName: phi-scan-results
+    displayName: "Publish phi-scan artifacts"
+
+  # Fail the pipeline after artifacts are published
+  - script: |
+      python3 -c "
+      import json, sys
+      results = open('$(PHI_SCAN_OUTPUT_DIR)/phi-scan.json').read()
+      data = json.loads(results)
+      if not data.get('is_clean', True):
+          count = data.get('findings', 0)
+          print(f'##vso[task.logissue type=error]phi-scan: {count} PHI/PII violations found.')
+          print('##vso[task.complete result=Failed;]phi-scan violations detected.')
+          sys.exit(1)
+      print('phi-scan: no violations found.')
+      "
+    condition: and(always(), eq(variables['Agent.JobStatus'], 'SucceededWithIssues'))
+    displayName: "Propagate phi-scan exit code"
