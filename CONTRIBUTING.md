@@ -258,8 +258,7 @@ history unilaterally — coordinate with the maintainer.
 
 - **Bug reports**: open a GitHub issue with reproduction steps, expected
   behaviour, actual behaviour, and output of `phi-scan --version`.
-- **Feature requests**: open a GitHub issue describing the use case. Check
-  `PLAN.md` first — the feature may already be planned.
+- **Feature requests**: open a GitHub issue describing the use case.
 - **False positives / false negatives**: open an issue with the entity type,
   the pattern that triggered (or didn't trigger), and a minimal reproduction.
   Do not include real PHI in issue reports.
