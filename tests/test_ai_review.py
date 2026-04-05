@@ -16,6 +16,7 @@ from phi_scan.ai_review import (
     AIReviewConfig,
     AIReviewResult,
     AIUsageSummary,
+    _redact_phi_from_context,  # noqa: PLC2701 — PHI safety sentinel requires direct access
     apply_ai_review_to_findings,
     resolve_api_key,
 )
@@ -135,16 +136,17 @@ class TestPhiSafety:
                 remediation_hint=_FINDING_REMEDIATION_HINT,
             )
 
-    def test_empty_code_context_not_in_allowlist_raises_ai_review_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Empty code_context must be rejected at the AI boundary for unlisted entity types.
+    def test_empty_code_context_not_in_allowlist_raises_ai_review_error(self) -> None:
+        """Empty code_context must be rejected at the outbound API boundary.
 
-        The ScanFinding model permits empty code_context, but the outbound API gate
-        requires the redaction marker (or explicit allowlist membership).  A finding
-        constructed with empty code_context and an entity_type not in
-        AI_REVIEW_PERMITTED_EMPTY_CONTEXT_ENTITY_TYPES must raise AIReviewError
-        before any prompt is assembled or transmitted.
+        The ScanFinding model permits empty code_context, but _redact_phi_from_context
+        enforces that only entity types in AI_REVIEW_PERMITTED_EMPTY_CONTEXT_ENTITY_TYPES
+        may bypass the redaction marker check.  Currently that allowlist is empty,
+        so any finding with empty code_context must raise AIReviewError at this gate —
+        before any prompt is assembled or transmitted to Claude.
+
+        We test this function directly because the check must fire independently of
+        whether the optional 'anthropic' package is installed (CI does not install it).
         """
         finding_empty_context = ScanFinding(
             file_path=_FINDING_FILE_PATH,
@@ -158,12 +160,8 @@ class TestPhiSafety:
             code_context="",
             remediation_hint=_FINDING_REMEDIATION_HINT,
         )
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
-        config = AIReviewConfig(is_enabled=True)
-        with patch("phi_scan.ai_review._call_claude_api") as mock_call:
-            result = apply_ai_review_to_findings([finding_empty_context], config)
-        mock_call.assert_not_called()
-        assert result == [finding_empty_context]
+        with pytest.raises(AIReviewError):
+            _redact_phi_from_context(finding_empty_context)
 
 
 # ---------------------------------------------------------------------------

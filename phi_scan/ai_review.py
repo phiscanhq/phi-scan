@@ -87,11 +87,16 @@ _EMPTY_CODE_CONTEXT_NOT_PERMITTED_ERROR: str = (
 
 
 class _AIResponsePayload(TypedDict):
-    """Typed structure of the JSON object Claude returns for confidence review."""
+    """Typed structure of the JSON Claude returns, containing only the fields we act on.
+
+    reasoning is intentionally excluded: Claude's explanation may paraphrase PHI
+    context and is discarded immediately after JSON parsing without ever being
+    assigned to a variable. Excluding it from this TypedDict ensures it cannot
+    be accidentally accessed or logged by any caller.
+    """
 
     is_phi_risk: bool
     confidence: float
-    reasoning: str
 
 
 @dataclass
@@ -417,10 +422,12 @@ def _parse_ai_response(response_text: str) -> _AIResponsePayload:
             f"AI response missing required keys {missing_keys!r} — "
             f"response: {response_text[:AI_RESPONSE_TRUNCATION_LENGTH]}"
         )
+    # reasoning is validated (required by AI_RESPONSE_REQUIRED_KEYS) but intentionally
+    # excluded from the returned payload — it may paraphrase PHI context and must
+    # never be stored, assigned, or logged.
     return _AIResponsePayload(
         is_phi_risk=bool(json_payload["is_phi_risk"]),
         confidence=float(json_payload["confidence"]),
-        reasoning=str(json_payload["reasoning"]),
     )
 
 
