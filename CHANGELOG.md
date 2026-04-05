@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Multi-provider AI support (7D):** AI confidence review now supports Anthropic, OpenAI, and
+- **Multi-provider AI support:** AI confidence review now supports Anthropic, OpenAI, and
   Google AI providers. Provider is inferred automatically from the model name:
   `claude-*` → Anthropic, `gpt-*`/`o1`/`o3`/`o4` → OpenAI, `gemini-*` → Google.
   Install the matching extra: `phi-scan[ai-anthropic]`, `phi-scan[ai-openai]`, or
@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ai.enable_claude_review`; new `ai.model` field selects the model and determines the provider.
   API keys are read from `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY` environment
   variables — storing keys in `.phi-scanner.yml` is explicitly rejected with a clear error.
+- **AI token usage in audit log:** Each scan that uses AI review records `prompt_tokens`,
+  `completion_tokens`, and `estimated_cost_usd` in the SQLite audit trail for cost tracking
+  and compliance reporting.
 
 ### Changed
 
@@ -109,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git diff file extraction (`--diff` mode)
 - `.phi-scanignore` exclusion pattern support (gitignore-style via pathspec)
 
-[Unreleased]: https://github.com/joeyessak/phi-scan/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/joeyessak/phi-scan/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/joeyessak/phi-scan/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/joeyessak/phi-scan/compare/v0.1.0...v0.3.0
 [0.1.0]: https://github.com/joeyessak/phi-scan/releases/tag/v0.1.0

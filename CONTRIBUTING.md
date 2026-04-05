@@ -211,8 +211,7 @@ docs/compliance-frameworks
    and `nlp_detector.py` are accepted; do not add new ones)
 3. `make test` — all tests pass
 4. `make scan` — `phi_scan/` itself is clean
-5. Update `PLAN.md` to check off completed tasks
-6. Update `docs/changelog.md` under `[Unreleased]`
+5. Update `CHANGELOG.md` under `[Unreleased]`
 
 ### Commit Message Style
 
