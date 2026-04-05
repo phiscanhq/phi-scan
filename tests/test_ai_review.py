@@ -1,30 +1,40 @@
-"""Tests for phi_scan.ai_review — AI confidence review layer (Phase 7A).
+"""Tests for phi_scan.ai_review — AI confidence review layer (Phase 7A/7D).
 
-PHI safety sentinels verify that no raw PHI value can reach the Claude API.
-Functional tests verify the review band, fallback behavior, and token logging.
+PHI safety sentinels verify that no raw PHI value can reach any AI provider.
+Functional tests verify the review band, provider routing, fallback behavior,
+and token logging. Provider adapters are tested with mocked SDKs so the test
+suite runs without any AI provider package installed.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from phi_scan.ai_review import (
+    AIProvider,
     AIReviewConfig,
     AIReviewResult,
     AIUsageSummary,
+    _build_review_prompt,  # noqa: PLC2701 — PHI safety sentinel requires direct access
     _redact_phi_from_context,  # noqa: PLC2701 — PHI safety sentinel requires direct access
+    _request_ai_confidence_review,  # noqa: PLC2701 — PHI safety sentinel requires direct access
     apply_ai_review_to_findings,
     resolve_api_key,
 )
 from phi_scan.constants import (
     AI_CONFIDENCE_REVIEW_LOWER_BOUND,
     AI_CONFIDENCE_REVIEW_UPPER_BOUND,
+    AI_DEFAULT_MODEL,
+    ANTHROPIC_API_KEY_ENV_VAR,
     CODE_CONTEXT_REDACTED_VALUE,
+    GOOGLE_API_KEY_ENV_VAR,
+    OPENAI_API_KEY_ENV_VAR,
     SHA256_HEX_DIGEST_LENGTH,
+    AIProviderName,
     DetectionLayer,
     PhiCategory,
     SeverityLevel,
@@ -52,8 +62,16 @@ _CONFIDENCE_AT_LOWER_BOUND: float = AI_CONFIDENCE_REVIEW_LOWER_BOUND
 _CONFIDENCE_AT_UPPER_BOUND: float = AI_CONFIDENCE_REVIEW_UPPER_BOUND
 _CONFIDENCE_ABOVE_BAND: float = AI_CONFIDENCE_REVIEW_UPPER_BOUND + 0.05
 
-_VALID_API_KEY: str = "sk-ant-test-key"
-_ENV_VAR_NAME: str = "ANTHROPIC_API_KEY"
+_VALID_ANTHROPIC_API_KEY: str = "sk-ant-test-key"
+_VALID_OPENAI_API_KEY: str = "sk-openai-test-key"
+_VALID_GOOGLE_API_KEY: str = "google-test-key"
+
+_ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+_OPENAI_GPT_MODEL: str = "gpt-4o"
+_OPENAI_O1_MODEL: str = "o1-mini"
+_OPENAI_O3_MODEL: str = "o3"
+_OPENAI_O4_MODEL: str = "o4-mini"
+_GOOGLE_MODEL: str = "gemini-1.5-flash"
 
 _AI_REVISED_CONFIDENCE: float = 0.72
 _AI_REVISED_CONFIDENCE_LOW: float = 0.20
@@ -82,22 +100,20 @@ def _build_finding(confidence: float = _CONFIDENCE_IN_BAND) -> ScanFinding:
     )
 
 
-def _build_mock_anthropic_response(
-    is_phi_risk: bool,
-    confidence: float,
-    reasoning: str,
+def _build_mock_ai_review_result(
+    is_phi_risk: bool = True,
+    confidence: float = _AI_REVISED_CONFIDENCE,
     input_tokens: int = _AI_INPUT_TOKENS,
     output_tokens: int = _AI_OUTPUT_TOKENS,
-) -> MagicMock:
-    """Build a mock Anthropic message response."""
-    response_body = json.dumps(
-        {"is_phi_risk": is_phi_risk, "confidence": confidence, "reasoning": reasoning}
+) -> AIReviewResult:
+    """Return a mock AIReviewResult for patching _request_ai_confidence_review."""
+    return AIReviewResult(
+        original_confidence=_CONFIDENCE_IN_BAND,
+        revised_confidence=confidence,
+        is_phi_risk=is_phi_risk,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
     )
-    mock_message = MagicMock()
-    mock_message.content = [MagicMock(text=response_body)]
-    mock_message.usage.input_tokens = input_tokens
-    mock_message.usage.output_tokens = output_tokens
-    return mock_message
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +122,7 @@ def _build_mock_anthropic_response(
 
 
 class TestPhiSafety:
-    """PHI safety invariants — no raw PHI must ever reach the AI layer."""
+    """PHI safety invariants — no raw PHI must ever reach any AI provider."""
 
     def test_code_context_is_redacted_at_construction(self) -> None:
         """ScanFinding enforces CODE_CONTEXT_REDACTED_VALUE before construction."""
@@ -136,6 +152,42 @@ class TestPhiSafety:
                 remediation_hint=_FINDING_REMEDIATION_HINT,
             )
 
+    def test_phi_redacted_in_outbound_prompt(self) -> None:
+        """[REDACTED] must appear in the prompt string passed to provider.call_review_api.
+
+        This is the outbound-boundary sentinel. It verifies that the prompt
+        assembled by _build_review_prompt contains CODE_CONTEXT_REDACTED_VALUE
+        and does not contain any raw PHI string that was never stored in the
+        finding in the first place. The raw value '123-45-6789' is used as the
+        canonical example because ScanFinding construction would have rejected
+        a code_context containing that string — so its absence here is provable.
+        """
+        finding = _build_finding()
+        prompt = _build_review_prompt(finding)
+        assert CODE_CONTEXT_REDACTED_VALUE in prompt
+        assert "123-45-6789" not in prompt
+
+    def test_phi_redacted_in_provider_call(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The prompt received by the provider adapter must contain [REDACTED].
+
+        Intercepts the call at the provider boundary to confirm no raw PHI
+        reaches the AI provider's call_review_api method.
+        """
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
+        finding = _build_finding()
+        captured_prompts: list[str] = []
+
+        class _CapturingProvider:
+            def call_review_api(self, prompt: str, model: str) -> tuple[str, int, int]:
+                captured_prompts.append(prompt)
+                payload = json.dumps({"is_phi_risk": True, "confidence": _AI_REVISED_CONFIDENCE})
+                return payload, _AI_INPUT_TOKENS, _AI_OUTPUT_TOKENS
+
+        _request_ai_confidence_review(finding, _CapturingProvider(), _ANTHROPIC_MODEL)
+        assert len(captured_prompts) == 1
+        assert CODE_CONTEXT_REDACTED_VALUE in captured_prompts[0]
+        assert "123-45-6789" not in captured_prompts[0]
+
     def test_empty_code_context_not_in_allowlist_raises_ai_review_error(self) -> None:
         """Empty code_context must be rejected at the outbound API boundary.
 
@@ -143,10 +195,7 @@ class TestPhiSafety:
         enforces that only entity types in AI_REVIEW_PERMITTED_EMPTY_CONTEXT_ENTITY_TYPES
         may bypass the redaction marker check.  Currently that allowlist is empty,
         so any finding with empty code_context must raise AIReviewError at this gate —
-        before any prompt is assembled or transmitted to Claude.
-
-        We test this function directly because the check must fire independently of
-        whether the optional 'anthropic' package is installed (CI does not install it).
+        before any prompt is assembled or transmitted to any AI provider.
         """
         finding_empty_context = ScanFinding(
             file_path=_FINDING_FILE_PATH,
@@ -165,30 +214,83 @@ class TestPhiSafety:
 
 
 # ---------------------------------------------------------------------------
-# resolve_api_key
+# Provider detection — 7D.5
+# ---------------------------------------------------------------------------
+
+
+class TestProviderDetection:
+    """_detect_provider_name routes model names to the correct provider."""
+
+    def test_claude_model_detects_anthropic(self) -> None:
+        from phi_scan.ai_review import _detect_provider_name
+
+        assert _detect_provider_name(_ANTHROPIC_MODEL) == AIProviderName.ANTHROPIC
+
+    def test_gpt_model_detects_openai(self) -> None:
+        from phi_scan.ai_review import _detect_provider_name
+
+        assert _detect_provider_name(_OPENAI_GPT_MODEL) == AIProviderName.OPENAI
+
+    def test_o1_model_detects_openai(self) -> None:
+        from phi_scan.ai_review import _detect_provider_name
+
+        assert _detect_provider_name(_OPENAI_O1_MODEL) == AIProviderName.OPENAI
+
+    def test_o3_bare_detects_openai(self) -> None:
+        from phi_scan.ai_review import _detect_provider_name
+
+        assert _detect_provider_name(_OPENAI_O3_MODEL) == AIProviderName.OPENAI
+
+    def test_o4_mini_detects_openai(self) -> None:
+        from phi_scan.ai_review import _detect_provider_name
+
+        assert _detect_provider_name(_OPENAI_O4_MODEL) == AIProviderName.OPENAI
+
+    def test_gemini_model_detects_google(self) -> None:
+        from phi_scan.ai_review import _detect_provider_name
+
+        assert _detect_provider_name(_GOOGLE_MODEL) == AIProviderName.GOOGLE
+
+    def test_unknown_model_raises_ai_configuration_error(self) -> None:
+        from phi_scan.ai_review import _detect_provider_name
+
+        with pytest.raises(AIConfigurationError, match="Cannot determine"):
+            _detect_provider_name("llama-3-70b")
+
+
+# ---------------------------------------------------------------------------
+# resolve_api_key — 7D.6
 # ---------------------------------------------------------------------------
 
 
 class TestResolveApiKey:
-    """API key resolution order: env var > config field > error."""
+    """API key resolved from the env var matching the model's provider."""
 
-    def test_env_var_takes_precedence_over_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
-        config = AIReviewConfig(is_enabled=True, api_key="config-key")
-        assert resolve_api_key(config) == _VALID_API_KEY
+    def test_anthropic_key_read_from_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
+        assert resolve_api_key(_ANTHROPIC_MODEL) == _VALID_ANTHROPIC_API_KEY
 
-    def test_config_key_used_when_env_var_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv(_ENV_VAR_NAME, raising=False)
-        config = AIReviewConfig(is_enabled=True, api_key=_VALID_API_KEY)
-        assert resolve_api_key(config) == _VALID_API_KEY
+    def test_openai_key_read_from_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(OPENAI_API_KEY_ENV_VAR, _VALID_OPENAI_API_KEY)
+        assert resolve_api_key(_OPENAI_GPT_MODEL) == _VALID_OPENAI_API_KEY
+
+    def test_google_key_read_from_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(GOOGLE_API_KEY_ENV_VAR, _VALID_GOOGLE_API_KEY)
+        assert resolve_api_key(_GOOGLE_MODEL) == _VALID_GOOGLE_API_KEY
 
     def test_missing_key_raises_ai_configuration_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv(_ENV_VAR_NAME, raising=False)
-        config = AIReviewConfig(is_enabled=True, api_key="")
-        with pytest.raises(AIConfigurationError):
-            resolve_api_key(config)
+        monkeypatch.delenv(ANTHROPIC_API_KEY_ENV_VAR, raising=False)
+        with pytest.raises(AIConfigurationError, match=ANTHROPIC_API_KEY_ENV_VAR):
+            resolve_api_key(_ANTHROPIC_MODEL)
+
+    def test_missing_openai_key_raises_ai_configuration_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv(OPENAI_API_KEY_ENV_VAR, raising=False)
+        with pytest.raises(AIConfigurationError, match=OPENAI_API_KEY_ENV_VAR):
+            resolve_api_key(_OPENAI_GPT_MODEL)
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +299,7 @@ class TestResolveApiKey:
 
 
 class TestReviewBandFiltering:
-    """Findings outside the band bypass Claude entirely."""
+    """Findings outside the band bypass the AI provider entirely."""
 
     def test_disabled_config_returns_findings_unchanged(self) -> None:
         findings = [_build_finding(_CONFIDENCE_IN_BAND)]
@@ -209,7 +311,7 @@ class TestReviewBandFiltering:
     def test_finding_below_lower_bound_bypasses_review(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_BELOW_BAND)
         config = AIReviewConfig(is_enabled=True)
         with patch("phi_scan.ai_review._request_ai_confidence_review") as mock_review:
@@ -218,7 +320,7 @@ class TestReviewBandFiltering:
         assert result_findings == [finding]
 
     def test_finding_at_upper_bound_bypasses_review(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_AT_UPPER_BOUND)
         config = AIReviewConfig(is_enabled=True)
         with patch("phi_scan.ai_review._request_ai_confidence_review") as mock_review:
@@ -229,7 +331,7 @@ class TestReviewBandFiltering:
     def test_finding_above_upper_bound_bypasses_review(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_ABOVE_BAND)
         config = AIReviewConfig(is_enabled=True)
         with patch("phi_scan.ai_review._request_ai_confidence_review") as mock_review:
@@ -238,15 +340,11 @@ class TestReviewBandFiltering:
         assert result_findings == [finding]
 
     def test_finding_at_lower_bound_enters_review(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_AT_LOWER_BOUND)
         config = AIReviewConfig(is_enabled=True)
-        review_result = AIReviewResult(
-            original_confidence=_CONFIDENCE_AT_LOWER_BOUND,
-            revised_confidence=_AI_REVISED_CONFIDENCE,
-            is_phi_risk=True,
-            input_tokens=_AI_INPUT_TOKENS,
-            output_tokens=_AI_OUTPUT_TOKENS,
+        review_result = _build_mock_ai_review_result(
+            is_phi_risk=True, confidence=_AI_REVISED_CONFIDENCE
         )
         with patch(
             "phi_scan.ai_review._request_ai_confidence_review", return_value=review_result
@@ -265,15 +363,11 @@ class TestConfidenceUpdateAndFalsePositive:
     """Confidence is updated when is_phi_risk=True; finding removed when False."""
 
     def test_confidence_updated_on_phi_risk_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_IN_BAND)
         config = AIReviewConfig(is_enabled=True)
-        review_result = AIReviewResult(
-            original_confidence=_CONFIDENCE_IN_BAND,
-            revised_confidence=_AI_REVISED_CONFIDENCE,
-            is_phi_risk=True,
-            input_tokens=_AI_INPUT_TOKENS,
-            output_tokens=_AI_OUTPUT_TOKENS,
+        review_result = _build_mock_ai_review_result(
+            is_phi_risk=True, confidence=_AI_REVISED_CONFIDENCE
         )
         with patch("phi_scan.ai_review._request_ai_confidence_review", return_value=review_result):
             result_findings, _ = apply_ai_review_to_findings([finding], config)
@@ -283,15 +377,11 @@ class TestConfidenceUpdateAndFalsePositive:
     def test_false_positive_eliminated_when_phi_risk_false(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_IN_BAND)
         config = AIReviewConfig(is_enabled=True)
-        review_result = AIReviewResult(
-            original_confidence=_CONFIDENCE_IN_BAND,
-            revised_confidence=_AI_REVISED_CONFIDENCE_LOW,
-            is_phi_risk=False,
-            input_tokens=_AI_INPUT_TOKENS,
-            output_tokens=_AI_OUTPUT_TOKENS,
+        review_result = _build_mock_ai_review_result(
+            is_phi_risk=False, confidence=_AI_REVISED_CONFIDENCE_LOW
         )
         with patch("phi_scan.ai_review._request_ai_confidence_review", return_value=review_result):
             result_findings, _ = apply_ai_review_to_findings([finding], config)
@@ -300,16 +390,12 @@ class TestConfidenceUpdateAndFalsePositive:
     def test_out_of_band_findings_preserved_alongside_reviewed_findings(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         high_confidence_finding = _build_finding(_CONFIDENCE_ABOVE_BAND)
         in_band_finding = _build_finding(_CONFIDENCE_IN_BAND)
         config = AIReviewConfig(is_enabled=True)
-        review_result = AIReviewResult(
-            original_confidence=_CONFIDENCE_IN_BAND,
-            revised_confidence=_AI_REVISED_CONFIDENCE,
-            is_phi_risk=True,
-            input_tokens=_AI_INPUT_TOKENS,
-            output_tokens=_AI_OUTPUT_TOKENS,
+        review_result = _build_mock_ai_review_result(
+            is_phi_risk=True, confidence=_AI_REVISED_CONFIDENCE
         )
         with patch("phi_scan.ai_review._request_ai_confidence_review", return_value=review_result):
             result_findings, _ = apply_ai_review_to_findings(
@@ -331,12 +417,12 @@ class TestGracefulFallback:
     def test_api_failure_falls_back_to_original_confidence(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_IN_BAND)
         config = AIReviewConfig(is_enabled=True)
         with patch(
             "phi_scan.ai_review._request_ai_confidence_review",
-            side_effect=AIReviewError("Claude API timeout"),
+            side_effect=AIReviewError("API timeout"),
         ):
             result_findings, _ = apply_ai_review_to_findings([finding], config)
         assert len(result_findings) == 1
@@ -345,19 +431,15 @@ class TestGracefulFallback:
     def test_single_finding_failure_does_not_affect_others(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         failing_finding = _build_finding(_CONFIDENCE_IN_BAND)
         passing_finding = _build_finding(AI_CONFIDENCE_REVIEW_LOWER_BOUND + 0.05)
         config = AIReviewConfig(is_enabled=True)
-        success_result = AIReviewResult(
-            original_confidence=passing_finding.confidence,
-            revised_confidence=_AI_REVISED_CONFIDENCE,
-            is_phi_risk=True,
-            input_tokens=_AI_INPUT_TOKENS,
-            output_tokens=_AI_OUTPUT_TOKENS,
+        success_result = _build_mock_ai_review_result(
+            is_phi_risk=True, confidence=_AI_REVISED_CONFIDENCE
         )
 
-        def _side_effect(finding: ScanFinding, api_key: str) -> AIReviewResult:
+        def _side_effect(finding: ScanFinding, provider: AIProvider, model: str) -> AIReviewResult:
             if finding is failing_finding:
                 raise AIReviewError("transient timeout")
             return success_result
@@ -377,7 +459,7 @@ class TestGracefulFallback:
 
 
 class TestParseAiResponse:
-    """JSON parsing and validation of Claude's response."""
+    """JSON parsing and validation of an AI provider's response."""
 
     def test_valid_json_parsed_correctly(self) -> None:
         from phi_scan.ai_review import _parse_ai_response
@@ -425,12 +507,10 @@ class TestTokenUsageLogging:
     def test_usage_summary_logged_when_findings_reviewed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_IN_BAND)
         config = AIReviewConfig(is_enabled=True)
-        review_result = AIReviewResult(
-            original_confidence=_CONFIDENCE_IN_BAND,
-            revised_confidence=_AI_REVISED_CONFIDENCE,
+        review_result = _build_mock_ai_review_result(
             is_phi_risk=True,
             input_tokens=_EXPECTED_INPUT_TOKENS,
             output_tokens=_EXPECTED_OUTPUT_TOKENS,
@@ -446,16 +526,10 @@ class TestTokenUsageLogging:
         assert summary.estimated_cost_usd > 0
 
     def test_false_positives_counted_in_summary(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_IN_BAND)
         config = AIReviewConfig(is_enabled=True)
-        review_result = AIReviewResult(
-            original_confidence=_CONFIDENCE_IN_BAND,
-            revised_confidence=_AI_REVISED_CONFIDENCE_LOW,
-            is_phi_risk=False,
-            input_tokens=_EXPECTED_INPUT_TOKENS,
-            output_tokens=_EXPECTED_OUTPUT_TOKENS,
-        )
+        review_result = _build_mock_ai_review_result(is_phi_risk=False)
         with patch("phi_scan.ai_review._request_ai_confidence_review", return_value=review_result):
             with patch("phi_scan.ai_review._log_ai_usage_summary") as mock_log:
                 apply_ai_review_to_findings([finding], config)
@@ -463,7 +537,7 @@ class TestTokenUsageLogging:
         assert summary.false_positives_removed == 1
 
     def test_tokens_not_counted_on_api_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_IN_BAND)
         config = AIReviewConfig(is_enabled=True)
         with patch(
@@ -480,13 +554,13 @@ class TestTokenUsageLogging:
     def test_cost_estimate_is_positive_for_nonzero_tokens(self) -> None:
         from phi_scan.ai_review import _calculate_cost_usd  # noqa: PLC2701
 
-        cost = _calculate_cost_usd(1000, 200)
+        cost = _calculate_cost_usd(AI_DEFAULT_MODEL, 1000, 200)
         assert cost > 0
 
     def test_no_summary_logged_when_no_findings_reviewed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         finding = _build_finding(_CONFIDENCE_ABOVE_BAND)
         config = AIReviewConfig(is_enabled=True)
         with patch("phi_scan.ai_review._log_ai_usage_summary") as mock_log:
@@ -497,33 +571,93 @@ class TestTokenUsageLogging:
 
 
 # ---------------------------------------------------------------------------
-# Missing anthropic package
+# Provider adapter — missing SDK raises AIConfigurationError
 # ---------------------------------------------------------------------------
 
 
-class TestMissingAnthropic:
-    """AIConfigurationError raised when anthropic package is not installed."""
+class TestMissingProviderSDK:
+    """AIConfigurationError raised when the required provider SDK is not installed."""
 
-    def test_missing_anthropic_package_raises_ai_configuration_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
-        finding = _build_finding(_CONFIDENCE_IN_BAND)
+    def test_missing_anthropic_package_raises_ai_configuration_error(self) -> None:
+        """_AnthropicProvider.call_review_api raises when anthropic is not importable."""
+        from phi_scan.ai_review import _AnthropicProvider  # noqa: PLC2701
 
+        provider = _AnthropicProvider("sk-test")
         import builtins
 
         original_import = builtins.__import__
 
-        def _mock_import(name: str, *args: object, **kwargs: object) -> object:
+        def _block_anthropic(name: str, *args: object, **kwargs: object) -> object:
             if name == "anthropic":
                 raise ImportError("No module named 'anthropic'")
             return original_import(name, *args, **kwargs)
 
-        with patch("builtins.__import__", side_effect=_mock_import):
+        with patch("builtins.__import__", side_effect=_block_anthropic):
             with pytest.raises(AIConfigurationError, match="anthropic"):
-                from phi_scan.ai_review import _request_ai_confidence_review
+                provider.call_review_api("prompt", _ANTHROPIC_MODEL)
 
-                _request_ai_confidence_review(finding, _VALID_API_KEY)
+    def test_missing_openai_package_raises_ai_configuration_error(self) -> None:
+        """_OpenAIProvider.call_review_api raises when openai is not importable."""
+        from phi_scan.ai_review import _OpenAIProvider  # noqa: PLC2701
+
+        provider = _OpenAIProvider("sk-test")
+        import builtins
+
+        original_import = builtins.__import__
+
+        def _block_openai(name: str, *args: object, **kwargs: object) -> object:
+            if name == "openai":
+                raise ImportError("No module named 'openai'")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_block_openai):
+            with pytest.raises(AIConfigurationError, match="openai"):
+                provider.call_review_api("prompt", _OPENAI_GPT_MODEL)
+
+    def test_missing_google_package_raises_ai_configuration_error(self) -> None:
+        """_GoogleProvider.call_review_api raises when google.generativeai is not importable."""
+        from phi_scan.ai_review import _GoogleProvider  # noqa: PLC2701
+
+        provider = _GoogleProvider("test-key")
+        import builtins
+
+        original_import = builtins.__import__
+
+        def _block_google(name: str, *args: object, **kwargs: object) -> object:
+            if "google" in name:
+                raise ImportError("No module named 'google.generativeai'")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_block_google):
+            with pytest.raises(AIConfigurationError, match="google"):
+                provider.call_review_api("prompt", _GOOGLE_MODEL)
+
+
+# ---------------------------------------------------------------------------
+# Provider adapter routing — _build_provider_adapter returns correct type
+# ---------------------------------------------------------------------------
+
+
+class TestProviderAdapterRouting:
+    """_build_provider_adapter instantiates the correct adapter for each model prefix."""
+
+    def test_claude_model_builds_anthropic_provider(self) -> None:
+        from phi_scan.ai_review import _AnthropicProvider, _build_provider_adapter  # noqa: PLC2701
+
+        adapter = _build_provider_adapter(_ANTHROPIC_MODEL, _VALID_ANTHROPIC_API_KEY)
+        assert isinstance(adapter, _AnthropicProvider)
+
+    def test_gpt_model_builds_openai_provider(self) -> None:
+        from phi_scan.ai_review import _build_provider_adapter, _OpenAIProvider  # noqa: PLC2701
+
+        adapter = _build_provider_adapter(_OPENAI_GPT_MODEL, _VALID_OPENAI_API_KEY)
+        assert isinstance(adapter, _OpenAIProvider)
+
+    def test_gemini_model_builds_google_provider(self) -> None:
+        from phi_scan.ai_review import _build_provider_adapter, _GoogleProvider  # noqa: PLC2701
+
+        adapter = _build_provider_adapter(_GOOGLE_MODEL, _VALID_GOOGLE_API_KEY)
+        assert isinstance(adapter, _GoogleProvider)
 
 
 # ---------------------------------------------------------------------------
@@ -531,7 +665,7 @@ class TestMissingAnthropic:
 # ---------------------------------------------------------------------------
 
 _AB_FINDINGS_TOTAL: int = 5
-_AB_FALSE_POSITIVE_COUNT: int = 3  # findings Claude will mark as not PHI
+_AB_FALSE_POSITIVE_COUNT: int = 3  # findings the AI will mark as not PHI
 _AB_GENUINE_PHI_COUNT: int = _AB_FINDINGS_TOTAL - _AB_FALSE_POSITIVE_COUNT
 _AB_REVISED_CONFIDENCE_PHI: float = 0.82
 _AB_REVISED_CONFIDENCE_NOT_PHI: float = 0.15
@@ -540,7 +674,7 @@ _AB_REVISED_CONFIDENCE_NOT_PHI: float = 0.15
 class TestABComparison:
     """7C.2 — Verify AI review measurably reduces false positives vs baseline.
 
-    Uses mocked Claude responses so the test runs offline. Three of five
+    Uses mocked AI responses so the test runs offline. Three of five
     medium-confidence findings are designated false positives by the mock;
     the remaining two are confirmed PHI. The test asserts:
       - AI-disabled count == total findings
@@ -549,13 +683,15 @@ class TestABComparison:
     """
 
     def test_ai_review_reduces_false_positive_count(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
         findings = [_build_finding(_CONFIDENCE_IN_BAND) for _ in range(_AB_FINDINGS_TOTAL)]
         false_positive_indices = set(range(_AB_FALSE_POSITIVE_COUNT))
 
         next_call_index = 0
 
-        def _return_mock_review_result(finding: ScanFinding, api_key: str) -> AIReviewResult:
+        def _return_mock_review_result(
+            finding: ScanFinding, provider: AIProvider, model: str
+        ) -> AIReviewResult:
             nonlocal next_call_index
             is_phi = next_call_index not in false_positive_indices
             next_call_index += 1

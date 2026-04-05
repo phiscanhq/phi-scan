@@ -11,6 +11,7 @@ import yaml
 
 from phi_scan.config import create_default_config, load_config
 from phi_scan.constants import (
+    AI_DEFAULT_MODEL,
     AUDIT_RETENTION_DAYS,
     CONFIDENCE_SCORE_MAXIMUM,
     CONFIDENCE_SCORE_MINIMUM,
@@ -492,3 +493,73 @@ def test_audit_retention_days_matches_config_default(tmp_path: Path) -> None:
         config_document[_PHI_SCANNER_CONFIG_AUDIT_KEY][_PHI_SCANNER_CONFIG_RETENTION_KEY]
         == AUDIT_RETENTION_DAYS
     )
+
+
+# ---------------------------------------------------------------------------
+# AI review config parsing — 7D multi-provider
+# ---------------------------------------------------------------------------
+
+_AI_SECTION_KEY: str = "ai"
+_ENABLE_AI_REVIEW_KEY: str = "enable_ai_review"
+_ENABLE_CLAUDE_REVIEW_DEPRECATED_KEY: str = "enable_claude_review"
+_AI_MODEL_KEY: str = "model"
+_ANTHROPIC_API_KEY_BANNED_KEY: str = "anthropic_api_key"
+_OPENAI_MODEL_NAME: str = "gpt-4o"
+_GOOGLE_MODEL_NAME: str = "gemini-1.5-flash"
+
+
+def test_load_config_ai_review_disabled_by_default(tmp_path: Path) -> None:
+    config_file = _write_config(tmp_path, _build_minimal_config())
+    scan_config = load_config(config_file)
+    assert scan_config.ai_review_config.is_enabled is False
+
+
+def test_load_config_enable_ai_review_sets_is_enabled(tmp_path: Path) -> None:
+    config = _build_minimal_config()
+    config[_AI_SECTION_KEY] = {_ENABLE_AI_REVIEW_KEY: True}
+    config_file = _write_config(tmp_path, config)
+    scan_config = load_config(config_file)
+    assert scan_config.ai_review_config.is_enabled is True
+
+
+def test_load_config_ai_model_field_sets_model(tmp_path: Path) -> None:
+    config = _build_minimal_config()
+    config[_AI_SECTION_KEY] = {_ENABLE_AI_REVIEW_KEY: True, _AI_MODEL_KEY: _OPENAI_MODEL_NAME}
+    config_file = _write_config(tmp_path, config)
+    scan_config = load_config(config_file)
+    assert scan_config.ai_review_config.model == _OPENAI_MODEL_NAME
+
+
+def test_load_config_omitted_model_defaults_to_ai_default_model(tmp_path: Path) -> None:
+    config = _build_minimal_config()
+    config[_AI_SECTION_KEY] = {_ENABLE_AI_REVIEW_KEY: True}
+    config_file = _write_config(tmp_path, config)
+    scan_config = load_config(config_file)
+    assert scan_config.ai_review_config.model == AI_DEFAULT_MODEL
+
+
+def test_load_config_enable_claude_review_deprecated_emits_warning(tmp_path: Path) -> None:
+    config = _build_minimal_config()
+    config[_AI_SECTION_KEY] = {_ENABLE_CLAUDE_REVIEW_DEPRECATED_KEY: True}
+    config_file = _write_config(tmp_path, config)
+    with pytest.warns(DeprecationWarning, match="enable_claude_review"):
+        scan_config = load_config(config_file)
+    assert scan_config.ai_review_config.is_enabled is True
+
+
+def test_load_config_anthropic_api_key_in_config_raises_configuration_error(
+    tmp_path: Path,
+) -> None:
+    config = _build_minimal_config()
+    config[_AI_SECTION_KEY] = {_ANTHROPIC_API_KEY_BANNED_KEY: "sk-ant-secret"}
+    config_file = _write_config(tmp_path, config)
+    with pytest.raises(ConfigurationError, match="anthropic_api_key"):
+        load_config(config_file)
+
+
+def test_load_config_google_model_stored_correctly(tmp_path: Path) -> None:
+    config = _build_minimal_config()
+    config[_AI_SECTION_KEY] = {_ENABLE_AI_REVIEW_KEY: True, _AI_MODEL_KEY: _GOOGLE_MODEL_NAME}
+    config_file = _write_config(tmp_path, config)
+    scan_config = load_config(config_file)
+    assert scan_config.ai_review_config.model == _GOOGLE_MODEL_NAME
