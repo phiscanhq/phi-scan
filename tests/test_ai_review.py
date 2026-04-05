@@ -19,7 +19,9 @@ from phi_scan.ai_review import (
     AIReviewConfig,
     AIReviewResult,
     AIUsageSummary,
+    _build_review_prompt,  # noqa: PLC2701 — PHI safety sentinel requires direct access
     _redact_phi_from_context,  # noqa: PLC2701 — PHI safety sentinel requires direct access
+    _request_ai_confidence_review,  # noqa: PLC2701 — PHI safety sentinel requires direct access
     apply_ai_review_to_findings,
     resolve_api_key,
 )
@@ -152,6 +154,44 @@ class TestPhiSafety:
                 remediation_hint=_FINDING_REMEDIATION_HINT,
             )
 
+    def test_phi_redacted_in_outbound_prompt(self) -> None:
+        """[REDACTED] must appear in the prompt string passed to provider.call_review_api.
+
+        This is the outbound-boundary sentinel. It verifies that the prompt
+        assembled by _build_review_prompt contains CODE_CONTEXT_REDACTED_VALUE
+        and does not contain any raw PHI string that was never stored in the
+        finding in the first place. The raw value '123-45-6789' is used as the
+        canonical example because ScanFinding construction would have rejected
+        a code_context containing that string — so its absence here is provable.
+        """
+        finding = _build_finding()
+        prompt = _build_review_prompt(finding)
+        assert CODE_CONTEXT_REDACTED_VALUE in prompt
+        assert "123-45-6789" not in prompt
+
+    def test_phi_redacted_in_provider_call(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The prompt received by the provider adapter must contain [REDACTED].
+
+        Intercepts the call at the provider boundary to confirm no raw PHI
+        reaches the AI provider's call_review_api method.
+        """
+        monkeypatch.setenv(ANTHROPIC_API_KEY_ENV_VAR, _VALID_ANTHROPIC_API_KEY)
+        finding = _build_finding()
+        captured_prompts: list[str] = []
+
+        class _CapturingProvider:
+            def call_review_api(self, prompt: str, model: str) -> tuple[str, int, int]:
+                captured_prompts.append(prompt)
+                payload = json.dumps(
+                    {"is_phi_risk": True, "confidence": _AI_REVISED_CONFIDENCE}
+                )
+                return payload, _AI_INPUT_TOKENS, _AI_OUTPUT_TOKENS
+
+        _request_ai_confidence_review(finding, _CapturingProvider(), _ANTHROPIC_MODEL)
+        assert len(captured_prompts) == 1
+        assert CODE_CONTEXT_REDACTED_VALUE in captured_prompts[0]
+        assert "123-45-6789" not in captured_prompts[0]
+
     def test_empty_code_context_not_in_allowlist_raises_ai_review_error(self) -> None:
         """Empty code_context must be rejected at the outbound API boundary.
 
@@ -246,14 +286,14 @@ class TestResolveApiKey:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv(ANTHROPIC_API_KEY_ENV_VAR, raising=False)
-        with pytest.raises(AIConfigurationError):
+        with pytest.raises(AIConfigurationError, match=ANTHROPIC_API_KEY_ENV_VAR):
             resolve_api_key(_ANTHROPIC_MODEL)
 
     def test_missing_openai_key_raises_ai_configuration_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv(OPENAI_API_KEY_ENV_VAR, raising=False)
-        with pytest.raises(AIConfigurationError):
+        with pytest.raises(AIConfigurationError, match=OPENAI_API_KEY_ENV_VAR):
             resolve_api_key(_OPENAI_GPT_MODEL)
 
 
@@ -595,6 +635,33 @@ class TestMissingProviderSDK:
         with patch("builtins.__import__", side_effect=_block_google):
             with pytest.raises(AIConfigurationError, match="google"):
                 provider.call_review_api("prompt", _GOOGLE_MODEL)
+
+
+# ---------------------------------------------------------------------------
+# Provider adapter routing — _build_provider_adapter returns correct type
+# ---------------------------------------------------------------------------
+
+
+class TestProviderAdapterRouting:
+    """_build_provider_adapter instantiates the correct adapter for each model prefix."""
+
+    def test_claude_model_builds_anthropic_provider(self) -> None:
+        from phi_scan.ai_review import _AnthropicProvider, _build_provider_adapter  # noqa: PLC2701
+
+        adapter = _build_provider_adapter(_ANTHROPIC_MODEL, _VALID_ANTHROPIC_API_KEY)
+        assert isinstance(adapter, _AnthropicProvider)
+
+    def test_gpt_model_builds_openai_provider(self) -> None:
+        from phi_scan.ai_review import _build_provider_adapter, _OpenAIProvider  # noqa: PLC2701
+
+        adapter = _build_provider_adapter(_OPENAI_GPT_MODEL, _VALID_OPENAI_API_KEY)
+        assert isinstance(adapter, _OpenAIProvider)
+
+    def test_gemini_model_builds_google_provider(self) -> None:
+        from phi_scan.ai_review import _build_provider_adapter, _GoogleProvider  # noqa: PLC2701
+
+        adapter = _build_provider_adapter(_GOOGLE_MODEL, _VALID_GOOGLE_API_KEY)
+        assert isinstance(adapter, _GoogleProvider)
 
 
 # ---------------------------------------------------------------------------
