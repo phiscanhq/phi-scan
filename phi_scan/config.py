@@ -179,9 +179,9 @@ notifications:
 ai:
   # Set true to send medium-confidence findings to Claude for re-scoring.
   # Requires the 'anthropic' package: pip install phi-scan[ai]
-  # API key resolved from ANTHROPIC_API_KEY env var first, then this field.
+  # Set ANTHROPIC_API_KEY in the environment (preferred) or supply
+  # anthropic_api_key in this section. The env var takes precedence.
   enable_claude_review: false
-  # anthropic_api_key: ""  # Optional — prefer the env var for security
 """
 
 

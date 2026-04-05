@@ -23,7 +23,7 @@ import dataclasses
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from phi_scan.constants import (
     AI_CONFIDENCE_REVIEW_LOWER_BOUND,
@@ -55,7 +55,7 @@ _MISSING_API_KEY_ERROR: str = (
 _AI_IMPORT_ERROR: str = (
     "The 'anthropic' package is required for AI review. Install it with: pip install phi-scan[ai]"
 )
-_UNEXPECTED_AI_RESPONSE_ERROR: str = (
+_UNEXPECTED_AI_RESPONSE_ERROR_TEMPLATE: str = (
     "Unexpected AI response structure for finding {entity_type} in {file_path}: {error}"
 )
 
@@ -73,7 +73,7 @@ class AIReviewConfig:
     """
 
     is_enabled: bool = False
-    api_key: str = ""
+    api_key: str = field(default="", repr=False)
     lower_bound: float = AI_CONFIDENCE_REVIEW_LOWER_BOUND
     upper_bound: float = AI_CONFIDENCE_REVIEW_UPPER_BOUND
 
@@ -151,40 +151,59 @@ def apply_ai_review_to_findings(
         if not _qualifies_for_review(finding, config):
             reviewed_findings.append(finding)
             continue
-        try:
-            review_result = _request_ai_confidence_review(finding, api_key)
-            _logger.info(
-                "AI review: %s in %s — original=%.2f revised=%.2f phi_risk=%s tokens=%d+%d",
-                finding.entity_type,
-                finding.file_path,
-                review_result.original_confidence,
-                review_result.revised_confidence,
-                review_result.is_phi_risk,
-                review_result.input_tokens,
-                review_result.output_tokens,
-            )
-            if not review_result.is_phi_risk:
-                _logger.debug(
-                    "AI review eliminated false positive: %s in %s — %s",
-                    finding.entity_type,
-                    finding.file_path,
-                    review_result.reasoning,
-                )
-                continue
-            updated_finding = dataclasses.replace(
-                finding, confidence=review_result.revised_confidence
-            )
-            reviewed_findings.append(updated_finding)
-        except AIReviewError as review_error:
-            _logger.warning(
-                "AI review failed for %s in %s — using local score: %s",
-                finding.entity_type,
-                finding.file_path,
-                review_error,
-            )
-            reviewed_findings.append(finding)
+        reviewed = _apply_review_to_single_finding(finding, api_key)
+        if reviewed is not None:
+            reviewed_findings.append(reviewed)
 
     return reviewed_findings
+
+
+def _apply_review_to_single_finding(finding: ScanFinding, api_key: str) -> ScanFinding | None:
+    """Call Claude for one finding and return the updated finding, or None to discard.
+
+    Returns None when Claude determines the finding is not a PHI risk (false positive
+    eliminated). Returns the original finding unchanged when the API call fails so the
+    scan can continue with the local confidence score.
+
+    Args:
+        finding: A medium-confidence finding whose code_context is already redacted.
+        api_key: Resolved Anthropic API key.
+
+    Returns:
+        Updated ScanFinding with revised confidence, or None if not a PHI risk.
+        Original ScanFinding when the API call raises AIReviewError.
+    """
+    try:
+        review_result = _request_ai_confidence_review(finding, api_key)
+    except AIReviewError as review_error:
+        _logger.warning(
+            "AI review failed for %s in %s — using local score: %s",
+            finding.entity_type,
+            finding.file_path,
+            review_error,
+        )
+        return finding
+
+    _logger.info(
+        "AI review: %s in %s — original=%.2f revised=%.2f phi_risk=%s tokens=%d+%d",
+        finding.entity_type,
+        finding.file_path,
+        review_result.original_confidence,
+        review_result.revised_confidence,
+        review_result.is_phi_risk,
+        review_result.input_tokens,
+        review_result.output_tokens,
+    )
+    if not review_result.is_phi_risk:
+        _logger.debug(
+            "AI review eliminated false positive: %s in %s — %s",
+            finding.entity_type,
+            finding.file_path,
+            review_result.reasoning,
+        )
+        return None
+
+    return dataclasses.replace(finding, confidence=review_result.revised_confidence)
 
 
 def _qualifies_for_review(finding: ScanFinding, config: AIReviewConfig) -> bool:
@@ -237,7 +256,28 @@ def _build_review_prompt(finding: ScanFinding) -> str:
     )
 
 
-def _parse_ai_response(response_text: str) -> dict:
+def _strip_markdown_fence(response_text: str) -> str:
+    """Remove markdown code fence wrappers from a Claude response string.
+
+    Claude sometimes wraps JSON in ```json ... ``` fences. This strips the
+    opening fence line and, when present, the closing fence line.
+
+    Args:
+        response_text: Raw response text that may contain markdown fences.
+
+    Returns:
+        The response text with fence lines removed, or the original if no fence found.
+    """
+    stripped = response_text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.split("\n")
+    if lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1])
+    return "\n".join(lines[1:])
+
+
+def _parse_ai_response(response_text: str) -> dict[str, object]:
     """Parse Claude's JSON response into a dict with required keys.
 
     Args:
@@ -249,13 +289,9 @@ def _parse_ai_response(response_text: str) -> dict:
     Raises:
         AIReviewError: If the response cannot be parsed or is missing required keys.
     """
+    fence_stripped_response = _strip_markdown_fence(response_text)
     try:
-        # Claude may wrap JSON in markdown code fences — strip them
-        cleaned = response_text.strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.split("\n")
-            cleaned = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-        parsed = json.loads(cleaned)
+        parsed = json.loads(fence_stripped_response)
     except (json.JSONDecodeError, ValueError) as parse_error:
         raise AIReviewError(
             f"Could not parse AI response as JSON: {parse_error!r} — "
@@ -268,7 +304,7 @@ def _parse_ai_response(response_text: str) -> dict:
         raise AIReviewError(
             f"AI response missing required keys {missing!r} — response: {response_text[:200]}"
         )
-    return parsed
+    return parsed  # type: ignore[return-value]
 
 
 def _request_ai_confidence_review(finding: ScanFinding, api_key: str) -> AIReviewResult:
@@ -311,7 +347,7 @@ def _request_ai_confidence_review(finding: ScanFinding, api_key: str) -> AIRevie
         parsed = _parse_ai_response(response_text)
     except AIReviewError as parse_error:
         raise AIReviewError(
-            _UNEXPECTED_AI_RESPONSE_ERROR.format(
+            _UNEXPECTED_AI_RESPONSE_ERROR_TEMPLATE.format(
                 entity_type=finding.entity_type,
                 file_path=finding.file_path,
                 error=parse_error,
