@@ -42,9 +42,6 @@ from phi_scan.constants import (
     AI_MESSAGE_ROLE_USER,
     AI_OPENAI_COST_PER_MILLION_INPUT_TOKENS,
     AI_OPENAI_COST_PER_MILLION_OUTPUT_TOKENS,
-    AI_PROVIDER_ANTHROPIC,
-    AI_PROVIDER_GOOGLE,
-    AI_PROVIDER_OPENAI,
     AI_RESPONSE_FIRST_CHOICE_INDEX,
     AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX,
     AI_RESPONSE_MAX_TOKENS,
@@ -57,6 +54,7 @@ from phi_scan.constants import (
     ANTHROPIC_API_KEY_ENV_VAR,
     GOOGLE_API_KEY_ENV_VAR,
     OPENAI_API_KEY_ENV_VAR,
+    AIProviderName,
 )
 from phi_scan.exceptions import AIConfigurationError, AIReviewError
 from phi_scan.models import ScanFinding
@@ -126,23 +124,23 @@ _GOOGLE_MODEL_PREFIX: str = "gemini-"
 _OPENAI_O_SERIES_BASES: tuple[str, ...] = ("o1", "o3", "o4")
 
 # Maps provider name → env var name (used to build the missing-key error message).
-_PROVIDER_ENV_VARS: dict[str, str] = {
-    AI_PROVIDER_ANTHROPIC: ANTHROPIC_API_KEY_ENV_VAR,
-    AI_PROVIDER_OPENAI: OPENAI_API_KEY_ENV_VAR,
-    AI_PROVIDER_GOOGLE: GOOGLE_API_KEY_ENV_VAR,
+_PROVIDER_ENV_VARS: dict[AIProviderName, str] = {
+    AIProviderName.ANTHROPIC: ANTHROPIC_API_KEY_ENV_VAR,
+    AIProviderName.OPENAI: OPENAI_API_KEY_ENV_VAR,
+    AIProviderName.GOOGLE: GOOGLE_API_KEY_ENV_VAR,
 }
 
 # Maps provider name → (input_rate, output_rate) per million tokens.
-_PROVIDER_COST_RATES: dict[str, tuple[float, float]] = {
-    AI_PROVIDER_ANTHROPIC: (
+_PROVIDER_COST_RATES: dict[AIProviderName, tuple[float, float]] = {
+    AIProviderName.ANTHROPIC: (
         AI_ANTHROPIC_COST_PER_MILLION_INPUT_TOKENS,
         AI_ANTHROPIC_COST_PER_MILLION_OUTPUT_TOKENS,
     ),
-    AI_PROVIDER_OPENAI: (
+    AIProviderName.OPENAI: (
         AI_OPENAI_COST_PER_MILLION_INPUT_TOKENS,
         AI_OPENAI_COST_PER_MILLION_OUTPUT_TOKENS,
     ),
-    AI_PROVIDER_GOOGLE: (
+    AIProviderName.GOOGLE: (
         AI_GOOGLE_COST_PER_MILLION_INPUT_TOKENS,
         AI_GOOGLE_COST_PER_MILLION_OUTPUT_TOKENS,
     ),
@@ -309,24 +307,24 @@ def apply_ai_review_to_findings(
     return reviewed_findings, usage_summary
 
 
-def _detect_provider_name(model: str) -> str:
+def _detect_provider_name(model: str) -> AIProviderName:
     """Return the provider name for the given model name.
 
     Args:
         model: A model name string such as ``claude-sonnet-4-6`` or ``gpt-4o``.
 
     Returns:
-        One of ``AI_PROVIDER_ANTHROPIC``, ``AI_PROVIDER_OPENAI``, ``AI_PROVIDER_GOOGLE``.
+        The ``AIProviderName`` member matching the model prefix.
 
     Raises:
         AIConfigurationError: If the model name does not match any known provider prefix.
     """
     if model.startswith(_ANTHROPIC_MODEL_PREFIX):
-        return AI_PROVIDER_ANTHROPIC
+        return AIProviderName.ANTHROPIC
     if _is_openai_model(model):
-        return AI_PROVIDER_OPENAI
+        return AIProviderName.OPENAI
     if model.startswith(_GOOGLE_MODEL_PREFIX):
-        return AI_PROVIDER_GOOGLE
+        return AIProviderName.GOOGLE
     raise AIConfigurationError(_UNKNOWN_MODEL_ERROR_TEMPLATE.format(model=model))
 
 
@@ -353,9 +351,9 @@ def _build_provider_adapter(model: str, api_key: str) -> AIProvider:
         A concrete AIProvider adapter instance.
     """
     provider_name = _detect_provider_name(model)
-    if provider_name == AI_PROVIDER_ANTHROPIC:
+    if provider_name == AIProviderName.ANTHROPIC:
         return _AnthropicProvider(api_key)
-    if provider_name == AI_PROVIDER_OPENAI:
+    if provider_name == AIProviderName.OPENAI:
         return _OpenAIProvider(api_key)
     return _GoogleProvider(api_key)
 
@@ -717,7 +715,7 @@ def _calculate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> fl
     try:
         provider = _detect_provider_name(model)
     except AIConfigurationError:
-        provider = AI_PROVIDER_ANTHROPIC
+        provider = AIProviderName.ANTHROPIC
     input_rate, output_rate = _PROVIDER_COST_RATES[provider]
     input_cost = (input_tokens / AI_TOKENS_PER_MILLION) * input_rate
     output_cost = (output_tokens / AI_TOKENS_PER_MILLION) * output_rate

@@ -29,14 +29,12 @@ from phi_scan.constants import (
     AI_CONFIDENCE_REVIEW_LOWER_BOUND,
     AI_CONFIDENCE_REVIEW_UPPER_BOUND,
     AI_DEFAULT_MODEL,
-    AI_PROVIDER_ANTHROPIC,
-    AI_PROVIDER_GOOGLE,
-    AI_PROVIDER_OPENAI,
     ANTHROPIC_API_KEY_ENV_VAR,
     CODE_CONTEXT_REDACTED_VALUE,
     GOOGLE_API_KEY_ENV_VAR,
     OPENAI_API_KEY_ENV_VAR,
     SHA256_HEX_DIGEST_LENGTH,
+    AIProviderName,
     DetectionLayer,
     PhiCategory,
     SeverityLevel,
@@ -182,9 +180,7 @@ class TestPhiSafety:
         class _CapturingProvider:
             def call_review_api(self, prompt: str, model: str) -> tuple[str, int, int]:
                 captured_prompts.append(prompt)
-                payload = json.dumps(
-                    {"is_phi_risk": True, "confidence": _AI_REVISED_CONFIDENCE}
-                )
+                payload = json.dumps({"is_phi_risk": True, "confidence": _AI_REVISED_CONFIDENCE})
                 return payload, _AI_INPUT_TOKENS, _AI_OUTPUT_TOKENS
 
         _request_ai_confidence_review(finding, _CapturingProvider(), _ANTHROPIC_MODEL)
@@ -228,32 +224,32 @@ class TestProviderDetection:
     def test_claude_model_detects_anthropic(self) -> None:
         from phi_scan.ai_review import _detect_provider_name
 
-        assert _detect_provider_name(_ANTHROPIC_MODEL) == AI_PROVIDER_ANTHROPIC
+        assert _detect_provider_name(_ANTHROPIC_MODEL) == AIProviderName.ANTHROPIC
 
     def test_gpt_model_detects_openai(self) -> None:
         from phi_scan.ai_review import _detect_provider_name
 
-        assert _detect_provider_name(_OPENAI_GPT_MODEL) == AI_PROVIDER_OPENAI
+        assert _detect_provider_name(_OPENAI_GPT_MODEL) == AIProviderName.OPENAI
 
     def test_o1_model_detects_openai(self) -> None:
         from phi_scan.ai_review import _detect_provider_name
 
-        assert _detect_provider_name(_OPENAI_O1_MODEL) == AI_PROVIDER_OPENAI
+        assert _detect_provider_name(_OPENAI_O1_MODEL) == AIProviderName.OPENAI
 
     def test_o3_bare_detects_openai(self) -> None:
         from phi_scan.ai_review import _detect_provider_name
 
-        assert _detect_provider_name(_OPENAI_O3_MODEL) == AI_PROVIDER_OPENAI
+        assert _detect_provider_name(_OPENAI_O3_MODEL) == AIProviderName.OPENAI
 
     def test_o4_mini_detects_openai(self) -> None:
         from phi_scan.ai_review import _detect_provider_name
 
-        assert _detect_provider_name(_OPENAI_O4_MODEL) == AI_PROVIDER_OPENAI
+        assert _detect_provider_name(_OPENAI_O4_MODEL) == AIProviderName.OPENAI
 
     def test_gemini_model_detects_google(self) -> None:
         from phi_scan.ai_review import _detect_provider_name
 
-        assert _detect_provider_name(_GOOGLE_MODEL) == AI_PROVIDER_GOOGLE
+        assert _detect_provider_name(_GOOGLE_MODEL) == AIProviderName.GOOGLE
 
     def test_unknown_model_raises_ai_configuration_error(self) -> None:
         from phi_scan.ai_review import _detect_provider_name

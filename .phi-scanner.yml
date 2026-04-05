@@ -88,4 +88,8 @@ ai:
   # When enabled, only redacted code structure (never raw PHI) is sent to the AI provider.
   # Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY in your environment.
   enable_ai_review: false
-  # model: claude-sonnet-4-6   # default — override to switch provider
+  # Provider is inferred from the model name prefix:
+  #   claude-*          → Anthropic (requires ANTHROPIC_API_KEY)
+  #   gpt-* / o1/o3/o4  → OpenAI   (requires OPENAI_API_KEY)
+  #   gemini-*          → Google    (requires GOOGLE_API_KEY)
+  model: claude-sonnet-4-6

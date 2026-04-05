@@ -102,9 +102,7 @@ __all__ = [
     "AI_MESSAGE_ROLE_KEY",
     "AI_MESSAGE_ROLE_SYSTEM",
     "AI_MESSAGE_ROLE_USER",
-    "AI_PROVIDER_ANTHROPIC",
-    "AI_PROVIDER_GOOGLE",
-    "AI_PROVIDER_OPENAI",
+    "AIProviderName",
     "AI_RESPONSE_FIRST_CHOICE_INDEX",
     "AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX",
     "AI_RESPONSE_MAX_TOKENS",
@@ -274,11 +272,16 @@ ANTHROPIC_API_KEY_ENV_VAR: str = "ANTHROPIC_API_KEY"
 OPENAI_API_KEY_ENV_VAR: str = "OPENAI_API_KEY"
 GOOGLE_API_KEY_ENV_VAR: str = "GOOGLE_API_KEY"
 
-# Provider name tokens — used by _detect_provider_name() and _get_provider() in ai_review.py
-# to map a model name to the correct adapter and env var.
-AI_PROVIDER_ANTHROPIC: str = "anthropic"
-AI_PROVIDER_OPENAI: str = "openai"
-AI_PROVIDER_GOOGLE: str = "google"
+class AIProviderName(StrEnum):
+    """Identifies which external AI provider backs a model name.
+
+    Used by _detect_provider_name() and _build_provider_adapter() in ai_review.py
+    to map a model name prefix to the correct adapter and API key env var.
+    """
+
+    ANTHROPIC = "anthropic"
+    OPENAI = "openai"
+    GOOGLE = "google"
 
 AI_CONFIDENCE_REVIEW_LOWER_BOUND: float = 0.50
 AI_CONFIDENCE_REVIEW_UPPER_BOUND: float = 0.80
