@@ -1001,8 +1001,12 @@ def test_insert_scan_event_appends_new_row_instead_of_replacing_existing(
 # AI token usage persisted to audit log (7C.5)
 # ---------------------------------------------------------------------------
 
+_AI_INPUT_TOKENS_COLUMN: str = "ai_input_tokens"
+_AI_OUTPUT_TOKENS_COLUMN: str = "ai_output_tokens"
+_AI_COST_USD_COLUMN: str = "ai_cost_usd"
 _AI_TOKEN_USAGE_QUERY: str = (
-    f"SELECT ai_input_tokens, ai_output_tokens, ai_cost_usd FROM {_SCAN_EVENTS_TABLE}"
+    f"SELECT {_AI_INPUT_TOKENS_COLUMN}, {_AI_OUTPUT_TOKENS_COLUMN},"
+    f" {_AI_COST_USD_COLUMN} FROM {_SCAN_EVENTS_TABLE}"
 )
 _AI_SAMPLE_INPUT_TOKENS: int = 450
 _AI_SAMPLE_OUTPUT_TOKENS: int = 80
@@ -1038,13 +1042,12 @@ def test_ai_token_usage_written_to_audit_log_when_ai_review_ran(
 
     insert_scan_event(database_with_key, scan_result)
 
-    connection = sqlite3.connect(str(database_with_key))
-    row = connection.execute(_AI_TOKEN_USAGE_QUERY).fetchone()
-    connection.close()
-    assert row is not None
-    assert row[0] == _AI_SAMPLE_INPUT_TOKENS
-    assert row[1] == _AI_SAMPLE_OUTPUT_TOKENS
-    assert row[2] > _AI_ZERO_COST
+    with sqlite3.connect(str(database_with_key)) as connection:
+        ai_usage_row = connection.execute(_AI_TOKEN_USAGE_QUERY).fetchone()
+    assert ai_usage_row is not None
+    assert ai_usage_row[0] == _AI_SAMPLE_INPUT_TOKENS
+    assert ai_usage_row[1] == _AI_SAMPLE_OUTPUT_TOKENS
+    assert ai_usage_row[2] > _AI_ZERO_COST
 
 
 def test_ai_token_usage_is_zero_when_ai_review_disabled(
@@ -1055,10 +1058,9 @@ def test_ai_token_usage_is_zero_when_ai_review_disabled(
 
     insert_scan_event(database_with_key, scan_result)
 
-    connection = sqlite3.connect(str(database_with_key))
-    row = connection.execute(_AI_TOKEN_USAGE_QUERY).fetchone()
-    connection.close()
-    assert row is not None
-    assert row[0] == _AI_ZERO_TOKENS
-    assert row[1] == _AI_ZERO_TOKENS
-    assert row[2] == _AI_ZERO_COST
+    with sqlite3.connect(str(database_with_key)) as connection:
+        ai_usage_row = connection.execute(_AI_TOKEN_USAGE_QUERY).fetchone()
+    assert ai_usage_row is not None
+    assert ai_usage_row[0] == _AI_ZERO_TOKENS
+    assert ai_usage_row[1] == _AI_ZERO_TOKENS
+    assert ai_usage_row[2] == _AI_ZERO_COST
