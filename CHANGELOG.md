@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-04
+
+### Added
+
+- **CI/CD notifications:** `--post-comment` posts scan findings as a PR/MR comment;
+  `--set-status` sets the commit status; `--upload-sarif` uploads SARIF to GitHub Code Scanning
+  for inline PR diff annotations; auto-detects GitHub, GitLab, Azure DevOps, CircleCI, Bitbucket
+- **Output formats:** `junit`, `codequality`, `gitlab-sast` added; all formats suppressed from
+  stdout when `--report-path` is given
+- **Enterprise reports:** PDF (`phi-scan[pdf]`) and HTML output formats with summary charts
+- **Compliance frameworks:** `--framework gdpr,soc2,hitrust` annotates findings with applicable
+  standards; HIPAA is always active
+- **Docker image:** `ghcr.io/joeyessak/phi-scan` multi-arch (amd64/arm64) image published on
+  every release
+- **CI integrations:** GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines,
+  CircleCI orb, AWS CodeBuild — each with native report group and annotation support
+- **AI confidence review (BYOAK):** `phi-scan[ai]` optional extra; when `ANTHROPIC_API_KEY` is
+  set, medium-confidence findings are re-scored by Claude to reduce false positives; PHI is
+  always redacted before any API call; no raw PHI ever leaves the local machine
+- **Scan history commands:** `phi-scan history show|diff|export` — query the SQLite audit log
+  with `--repo` and `--violations-only` filters
+- **GitHub Action:** `joeyessak/phi-scan-action` composite action — one-liner CI/CD integration
+  for any repository; supports SARIF upload, PR comment, diff-only scanning, and AI review
+
+### Changed
+
+- Minimum Python version remains 3.12
+- `--quiet` now suppresses the Rich banner and progress bar as well as the findings table
+
 ## [0.3.0] - 2026-03-30
 
 ### Added
