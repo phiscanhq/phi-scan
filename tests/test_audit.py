@@ -1006,6 +1006,7 @@ _AI_TOKEN_USAGE_QUERY: str = (
 )
 _AI_SAMPLE_INPUT_TOKENS: int = 450
 _AI_SAMPLE_OUTPUT_TOKENS: int = 80
+_AI_SAMPLE_COST_USD: float = 0.001
 _AI_ZERO_TOKENS: int = 0
 _AI_ZERO_COST: float = 0.0
 
@@ -1021,7 +1022,7 @@ def test_ai_token_usage_written_to_audit_log_when_ai_review_ran(
         false_positives_removed=0,
         input_tokens=_AI_SAMPLE_INPUT_TOKENS,
         output_tokens=_AI_SAMPLE_OUTPUT_TOKENS,
-        estimated_cost_usd=0.001,
+        estimated_cost_usd=_AI_SAMPLE_COST_USD,
     )
     scan_result = ScanResult(
         findings=(),

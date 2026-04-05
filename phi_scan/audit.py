@@ -288,6 +288,8 @@ _INSERT_SCAN_EVENT_SQL: str = f"""
 _ROW_TUPLE_AI_INPUT_TOKENS_INDEX: int = 17
 _ROW_TUPLE_AI_OUTPUT_TOKENS_INDEX: int = 18
 _ROW_TUPLE_AI_COST_USD_INDEX: int = 19
+_AI_USAGE_ZERO_TOKENS: int = 0
+_AI_USAGE_ZERO_COST_USD: float = 0.0
 
 _SELECT_RECENT_SCANS_BASE_SQL: str = f"SELECT * FROM {_SCAN_EVENTS_TABLE} WHERE timestamp >= ?"
 _FILTER_REPOSITORY_HASH_SQL: str = " AND repository_hash = ?"
@@ -1055,9 +1057,10 @@ def _build_scan_event_row(
     repository_hash, branch_hash = _collect_repository_identity()
     committer_name_hash, committer_email_hash = _collect_committer_identity()
     action_taken = ACTION_TAKEN_PASS if scan_result.is_clean else ACTION_TAKEN_FAIL
-    ai_input_tokens = scan_result.ai_usage.input_tokens if scan_result.ai_usage else 0
-    ai_output_tokens = scan_result.ai_usage.output_tokens if scan_result.ai_usage else 0
-    ai_cost_usd = scan_result.ai_usage.estimated_cost_usd if scan_result.ai_usage else 0.0
+    ai_usage = scan_result.ai_usage
+    ai_input_tokens = ai_usage.input_tokens if ai_usage else _AI_USAGE_ZERO_TOKENS
+    ai_output_tokens = ai_usage.output_tokens if ai_usage else _AI_USAGE_ZERO_TOKENS
+    ai_cost_usd = ai_usage.estimated_cost_usd if ai_usage else _AI_USAGE_ZERO_COST_USD
     return (
         _get_current_timestamp(),
         __version__,
