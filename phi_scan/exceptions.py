@@ -170,17 +170,19 @@ class AIConfigurationError(PhiScanError):
     """Raised when the AI review layer cannot be initialised due to missing
     or invalid configuration.
 
-    Examples include a missing API key when ``ai.enable_claude_review: true``
-    is set, or the ``anthropic`` package not being installed.
+    Examples include a missing API key when ``ai.enable_ai_review: true`` is
+    set, an unrecognised model name whose provider cannot be inferred, or the
+    required provider SDK not being installed.
 
     Args:
         message: Description of the configuration failure including the
-            setting name and the resolution (e.g. env var to set).
+            setting name and the resolution (e.g. env var to set or package
+            to install).
     """
 
 
 class AIReviewError(PhiScanError):
-    """Raised when a Claude API call for confidence review fails.
+    """Raised when an AI provider API call for confidence review fails.
 
     This is a transient failure — callers must catch it and fall back to the
     local confidence score rather than crashing the scan. Never silence it

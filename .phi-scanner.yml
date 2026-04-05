@@ -84,7 +84,8 @@ audit:
   retention_days: 2192
 
 ai:
-  # Claude API review is disabled by default — all scanning is local.
-  # Enabling this sends only redacted code structure (never raw PHI) to the API.
-  # See CLAUDE.md AI Integration Rules before enabling.
-  enable_claude_review: false
+  # AI review is disabled by default — all scanning is local.
+  # When enabled, only redacted code structure (never raw PHI) is sent to the AI provider.
+  # Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY in your environment.
+  enable_ai_review: false
+  # model: claude-sonnet-4-6   # default — override to switch provider

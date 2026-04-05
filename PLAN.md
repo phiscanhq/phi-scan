@@ -50,7 +50,7 @@ All tools confirmed installed and version-verified in WSL on March 15, 2026:
 
 ## Current State (April 5, 2026)
 
-**Phase 1 complete. Phase 2 complete. Phase 3A–3D complete. v0.3.0 published to PyPI. Phase 4A–4B complete. Phase 5 complete. Phase 6 complete. Phase 7A complete (Claude API confidence review layer, BYOAK). Phase 7B next.**
+**Phase 1 complete. Phase 2 complete. Phase 3A–3D complete. v0.3.0 published to PyPI. Phase 4A–4B complete. Phase 5 complete. Phase 6 complete. Phase 7A complete (Claude API confidence review layer, BYOAK). Phase 7B complete (phi-scan-action GitHub Action). Phase 7C complete (AI testing + token audit logging). Phase 7D in progress (multi-provider AI support).**
 
 ```
 phi-scan/
@@ -1910,16 +1910,34 @@ matches bypass Claude entirely.
 - [x] **7C.4** Test missing API key with `ai.enable_claude_review: true` raises clear `AIConfigurationError`
 - [x] **7C.5** Test token cost logging writes to audit log correctly
 
+### 7D — Multi-Provider AI Support
+
+**Goal:** Generalise the AI confidence review layer to support Anthropic, OpenAI, and
+Google AI without introducing new mandatory dependencies. Provider is inferred from the
+model name. No third-party routing library (no LiteLLM) — lean per-provider adapters only.
+
+- [ ] **7D.1** Add `ai-anthropic`, `ai-openai`, `ai-google` optional extras to `pyproject.toml`; keep `ai` as meta-extra defaulting to `ai-anthropic`
+- [ ] **7D.2** Add `OPENAI_API_KEY_ENV_VAR`, `GOOGLE_API_KEY_ENV_VAR`, per-provider cost rate constants, `AI_DEFAULT_MODEL`, provider name constants, and model-prefix detection constants to `constants.py`
+- [ ] **7D.3** Define `AIProvider` protocol in `ai_review.py` with `call_review_api(prompt, model) -> tuple[str, int, int]`
+- [ ] **7D.4** Implement `_AnthropicProvider`, `_OpenAIProvider`, `_GoogleProvider` adapters — each ~30 lines, lazy import
+- [ ] **7D.5** Add `_detect_provider_name(model)` and `_get_provider(model, api_key)` factory in `ai_review.py`
+- [ ] **7D.6** Replace `AIReviewConfig.api_key` with `AIReviewConfig.model` (defaults to `AI_DEFAULT_MODEL`); update `resolve_api_key(model: str)` signature
+- [ ] **7D.7** Update `config.py`: add `enable_ai_review` key; emit `DeprecationWarning` for `enable_claude_review`; raise `ConfigurationError` if `anthropic_api_key` is set in YAML (use env var instead); add `model` field
+- [ ] **7D.8** Update `exceptions.py`, `help_text.py` — remove all Claude/Anthropic-specific language from user-facing text
+- [ ] **7D.9** Update tests: `test_ai_review.py` for provider-agnostic mocking; add provider-detection tests; add `test_config.py` multi-provider parsing tests
+- [ ] **7D.10** Update `phi-scan-action/action.yml` and `README.md`: rename `anthropic_api_key` input to `ai_api_key`; add `ai_model` input
+
 ### Phase 7 Verification Checklist
 
-- [ ] `[REDACTED]` appears in every Claude API request — zero raw PHI leaks
+- [ ] `[REDACTED]` appears in every AI API request — zero raw PHI leaks
 - [ ] False positive rate reduced measurably with AI enabled vs disabled
-- [x] Claude API failure falls back to local score — scanner does not crash
-- [ ] `ai.enable_claude_review: false` (default) produces zero API calls
+- [x] AI API failure falls back to local score — scanner does not crash
+- [ ] `ai.enable_ai_review: false` (default) produces zero API calls
 - [ ] Missing API key with AI enabled raises `AIConfigurationError` with clear message
 - [x] Token usage logged per scan in audit database
 - [x] GitHub Action installs, scans, and posts PR comment in one step
 - [ ] Action published to GitHub Marketplace
+- [ ] Anthropic (`claude-*`), OpenAI (`gpt-*`, `o1`/`o3`/`o4`), and Google (`gemini-*`) model names each route to the correct provider adapter
 
 ---
 

@@ -17,7 +17,7 @@ This is enforced structurally, not by configuration:
 - The base install has no HTTP client used during scanning
 - `httpx` is a listed dependency for future webhook notifications (Phase 5) — it is
   never called during the scan path
-- AI-assisted confidence scoring (`ai.enable_claude_review`) is disabled by default
+- AI-assisted confidence scoring (`ai.enable_ai_review`) is disabled by default
   and requires explicit opt-in. Even when enabled, only redacted code structure is
   sent — never raw PHI values
 
@@ -116,14 +116,14 @@ audit:
 
 ## AI Integration (Optional, Disabled by Default)
 
-When `ai.enable_claude_review: true` is set in `.phi-scanner.yml`:
+When `ai.enable_ai_review: true` is set in `.phi-scanner.yml`:
 
 - Only medium-confidence findings (score < 0.8) are submitted for review
-- High-confidence regex and structural matches bypass Claude entirely
+- High-confidence regex and structural matches bypass the AI provider entirely
 - Before any API call, all matched values in the code snippet are replaced with
   `[REDACTED]` — the API receives only code structure
-- The `claude-sonnet-4-6` model is used
-- Claude failures fall back gracefully to local-only scoring — they never crash the scan
+- Provider is inferred from the model name (default: `claude-sonnet-4-6` via Anthropic)
+- AI provider failures fall back gracefully to local-only scoring — they never crash the scan
 
 The API call looks like:
 

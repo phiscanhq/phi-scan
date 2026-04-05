@@ -49,9 +49,18 @@ nlp = ["presidio-analyzer>=2.0", "presidio-anonymizer>=2.0", "spacy>=3.7"]
 fhir = ["fhir.resources>=7.0"]
 hl7 = ["hl7>=0.4"]
 reports = ["fpdf2>=2.7", "jinja2>=3.1", "matplotlib>=3.8"]
-ai = [
+ai-anthropic = [
     "anthropic>=0.40.0",
 ]
+ai-openai = [
+    "openai>=1.0.0",
+]
+ai-google = [
+    "google-generativeai>=0.8.0",
+]
+# Meta-extra: installs Anthropic by default (the primary supported provider).
+# Use ai-openai or ai-google for other providers.
+ai = ["phi-scan[ai-anthropic]"]
 full = ["phi-scan[nlp]", "phi-scan[fhir]", "phi-scan[hl7]", "phi-scan[reports]", "phi-scan[ai]"]
 
 [dependency-groups]  # uv-native; pip users install dev deps via source checkout + uv sync
@@ -102,7 +111,10 @@ python_version = "3.12"
 strict = true
 
 [[tool.mypy.overrides]]
-# anthropic is an optional dependency — not installed in CI without [ai] extra.
-# Ignore missing stubs/imports so mypy passes on both bare and [ai] installs.
-module = ["anthropic", "anthropic.*"]
+# AI provider SDKs (anthropic, openai, google-generativeai) are all optional extras.
+# None are installed in CI by default — only the extra under test is installed.
+# Ignoring missing imports here lets mypy pass regardless of which provider is active.
+# Each provider's adapter uses a lazy `import` inside its method body so the module
+# is only required at runtime when that provider is actually selected.
+module = ["anthropic", "anthropic.*", "openai", "openai.*", "google", "google.*"]
 ignore_missing_imports = true

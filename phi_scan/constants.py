@@ -91,17 +91,26 @@ __all__ = [
     "ACTION_TAKEN_WARN",
     "AI_CONFIDENCE_REVIEW_LOWER_BOUND",
     "AI_CONFIDENCE_REVIEW_UPPER_BOUND",
-    "AI_COST_PER_MILLION_INPUT_TOKENS",
-    "AI_COST_PER_MILLION_OUTPUT_TOKENS",
+    "AI_DEFAULT_MODEL",
+    "AI_ANTHROPIC_COST_PER_MILLION_INPUT_TOKENS",
+    "AI_ANTHROPIC_COST_PER_MILLION_OUTPUT_TOKENS",
+    "AI_OPENAI_COST_PER_MILLION_INPUT_TOKENS",
+    "AI_OPENAI_COST_PER_MILLION_OUTPUT_TOKENS",
+    "AI_GOOGLE_COST_PER_MILLION_INPUT_TOKENS",
+    "AI_GOOGLE_COST_PER_MILLION_OUTPUT_TOKENS",
     "AI_MESSAGE_CONTENT_KEY",
     "AI_MESSAGE_ROLE_KEY",
     "AI_MESSAGE_ROLE_USER",
-    "AI_MODEL_NAME",
+    "AI_PROVIDER_ANTHROPIC",
+    "AI_PROVIDER_GOOGLE",
+    "AI_PROVIDER_OPENAI",
     "AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX",
     "AI_RESPONSE_MAX_TOKENS",
     "AI_RESPONSE_REQUIRED_KEYS",
     "AI_RESPONSE_TRUNCATION_LENGTH",
     "ANTHROPIC_API_KEY_ENV_VAR",
+    "GOOGLE_API_KEY_ENV_VAR",
+    "OPENAI_API_KEY_ENV_VAR",
     "AI_REVIEW_PERMITTED_EMPTY_CONTEXT_ENTITY_TYPES",
     "AI_REVIEW_REDACTED_PLACEHOLDER",
     "AI_REVIEW_SYSTEM_PROMPT",
@@ -256,16 +265,26 @@ AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX: float = 0.15
 # they are already definitive and the API call adds no value.
 # Low-confidence findings (< lower bound) are below the scan threshold
 # and are never reported regardless of AI review.
-# Environment variable name for the Anthropic API key — part of the public BYOAK
+# Environment variable names for AI provider API keys — part of the public BYOAK
 # contract documented in ai_review.py and user-facing documentation.  Exported so
-# any module that reads this env var can import the name rather than duplicate it.
+# any module that reads these env vars imports the name rather than duplicating it.
 ANTHROPIC_API_KEY_ENV_VAR: str = "ANTHROPIC_API_KEY"
+OPENAI_API_KEY_ENV_VAR: str = "OPENAI_API_KEY"
+GOOGLE_API_KEY_ENV_VAR: str = "GOOGLE_API_KEY"
+
+# Provider name tokens — used by _detect_provider_name() and _get_provider() in ai_review.py
+# to map a model name to the correct adapter and env var.
+AI_PROVIDER_ANTHROPIC: str = "anthropic"
+AI_PROVIDER_OPENAI: str = "openai"
+AI_PROVIDER_GOOGLE: str = "google"
 
 AI_CONFIDENCE_REVIEW_LOWER_BOUND: float = 0.50
 AI_CONFIDENCE_REVIEW_UPPER_BOUND: float = 0.80
 
-# Claude model used for confidence review.
-AI_MODEL_NAME: str = "claude-sonnet-4-6"
+# Default model for AI confidence review — Anthropic claude-sonnet-4-6.
+# Users can override this with ai.model in .phi-scanner.yml to use any
+# supported model (claude-*, gpt-*, o1/o3/o4, gemini-*).
+AI_DEFAULT_MODEL: str = "claude-sonnet-4-6"
 
 # Maximum tokens in Claude's response — the JSON answer is short.
 AI_RESPONSE_MAX_TOKENS: int = 256
@@ -303,10 +322,19 @@ AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX: int = 0
 # Enough context to diagnose malformed JSON without logging verbose output.
 AI_RESPONSE_TRUNCATION_LENGTH: int = 200
 
-# Token cost rates for claude-sonnet-4-6 (USD per million tokens).
+# Token cost rates per provider (USD per million tokens).
 # Used to compute estimated_cost_usd in the per-scan AI usage summary.
-AI_COST_PER_MILLION_INPUT_TOKENS: float = 3.00
-AI_COST_PER_MILLION_OUTPUT_TOKENS: float = 15.00
+# Rates are based on each provider's published pricing for their default model tier
+# and are approximations — actual charges depend on the specific model selected.
+# Anthropic: claude-sonnet-4-6
+AI_ANTHROPIC_COST_PER_MILLION_INPUT_TOKENS: float = 3.00
+AI_ANTHROPIC_COST_PER_MILLION_OUTPUT_TOKENS: float = 15.00
+# OpenAI: gpt-4o
+AI_OPENAI_COST_PER_MILLION_INPUT_TOKENS: float = 2.50
+AI_OPENAI_COST_PER_MILLION_OUTPUT_TOKENS: float = 10.00
+# Google: gemini-1.5-flash
+AI_GOOGLE_COST_PER_MILLION_INPUT_TOKENS: float = 0.075
+AI_GOOGLE_COST_PER_MILLION_OUTPUT_TOKENS: float = 0.30
 AI_TOKENS_PER_MILLION: int = 1_000_000
 
 # System prompt for Claude confidence review calls.

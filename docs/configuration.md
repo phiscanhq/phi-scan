@@ -41,7 +41,8 @@ audit:
   retention_days: 2192
 
 ai:
-  enable_claude_review: false
+  enable_ai_review: false
+  # model: claude-sonnet-4-6
 ```
 
 ---
@@ -234,23 +235,52 @@ Do not reduce this value below 2192 in production environments subject to HIPAA.
 
 ## `ai` Section
 
-### `enable_claude_review`
+### `enable_ai_review`
 
 **Type:** boolean
 **Default:** `false`
 
-When `true`, PhiScan sends redacted code structure (never raw PHI values) to the
-Claude API for medium-confidence finding review. This is optional — all 4 detection
+When `true`, PhiScan sends redacted code structure (never raw PHI values) to an AI
+provider for medium-confidence finding review. This is optional — all 4 detection
 layers operate fully locally when this is `false`.
 
 **Important constraints when enabling:**
 - Raw PHI values are always replaced with `[REDACTED]` before any API call
-- Only findings with confidence below `0.8` are sent (high-confidence matches bypass Claude)
-- The `ANTHROPIC_API_KEY` environment variable must be set (loaded from `.env` if present)
-- Claude failures fall back gracefully to local-only scoring — they do not crash the scan
+- Only findings with confidence below `0.8` are sent (high-confidence matches bypass review)
+- The appropriate API key environment variable must be set for the chosen provider
+- AI provider failures fall back gracefully to local-only scoring — they do not crash the scan
 
 This setting is disabled by default because local scanning satisfies all HIPAA
 requirements without any external API calls.
+
+---
+
+### `model`
+
+**Type:** string
+**Default:** `claude-sonnet-4-6`
+
+The AI model to use for confidence review. The provider is inferred automatically from
+the model name prefix:
+
+| Prefix | Provider | Required extra | API key env var |
+|--------|----------|----------------|-----------------|
+| `claude-` | Anthropic | `phi-scan[ai-anthropic]` | `ANTHROPIC_API_KEY` |
+| `gpt-`, `o1`, `o3`, `o4` | OpenAI | `phi-scan[ai-openai]` | `OPENAI_API_KEY` |
+| `gemini-` | Google | `phi-scan[ai-google]` | `GOOGLE_API_KEY` |
+
+**Example — switch to OpenAI:**
+```yaml
+ai:
+  enable_ai_review: true
+  model: gpt-4o
+```
+
+> **Deprecated:** `enable_claude_review` is accepted as an alias for `enable_ai_review` but
+> emits a `DeprecationWarning`. Update your config file to use `enable_ai_review`.
+>
+> **Security:** `anthropic_api_key` in the config file is rejected with a `ConfigurationError`.
+> API keys must be supplied via environment variables — never stored in config files.
 
 ---
 
