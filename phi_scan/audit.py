@@ -282,6 +282,13 @@ _INSERT_SCAN_EVENT_SQL: str = f"""
          ai_input_tokens, ai_output_tokens, ai_cost_usd)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
+# Row tuple positional indices for the three AI usage columns added in schema v3.
+# Index 16 (row_chain_hash) is intentionally excluded from the chain-hash content
+# dict in _compute_row_chain_hash — the chain hash cannot include itself.
+_ROW_TUPLE_AI_INPUT_TOKENS_INDEX: int = 17
+_ROW_TUPLE_AI_OUTPUT_TOKENS_INDEX: int = 18
+_ROW_TUPLE_AI_COST_USD_INDEX: int = 19
+
 _SELECT_RECENT_SCANS_BASE_SQL: str = f"SELECT * FROM {_SCAN_EVENTS_TABLE} WHERE timestamp >= ?"
 _FILTER_REPOSITORY_HASH_SQL: str = " AND repository_hash = ?"
 _FILTER_VIOLATIONS_ONLY_SQL: str = " AND is_clean = ?"
@@ -1417,9 +1424,9 @@ def _compute_row_chain_hash(
             "pipeline": row_tuple[13],
             "action_taken": row_tuple[14],
             "notifications_sent": row_tuple[15],
-            "ai_input_tokens": row_tuple[17],
-            "ai_output_tokens": row_tuple[18],
-            "ai_cost_usd": row_tuple[19],
+            "ai_input_tokens": row_tuple[_ROW_TUPLE_AI_INPUT_TOKENS_INDEX],
+            "ai_output_tokens": row_tuple[_ROW_TUPLE_AI_OUTPUT_TOKENS_INDEX],
+            "ai_cost_usd": row_tuple[_ROW_TUPLE_AI_COST_USD_INDEX],
         }
         row_content_string = _row_content_for_hashing(row_fields)
         return _hmac_sha256(key, prev_hash + row_content_string)

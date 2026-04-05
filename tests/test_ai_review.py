@@ -553,12 +553,12 @@ class TestABComparison:
         findings = [_build_finding(_CONFIDENCE_IN_BAND) for _ in range(_AB_FINDINGS_TOTAL)]
         false_positive_indices = set(range(_AB_FALSE_POSITIVE_COUNT))
 
-        call_count = [0]
+        next_call_index = 0
 
         def _mock_review(finding: ScanFinding, api_key: str) -> AIReviewResult:
-            call_index = call_count[0]
-            call_count[0] += 1
-            is_phi = call_index not in false_positive_indices
+            nonlocal next_call_index
+            is_phi = next_call_index not in false_positive_indices
+            next_call_index += 1
             revised = _AB_REVISED_CONFIDENCE_PHI if is_phi else _AB_REVISED_CONFIDENCE_NOT_PHI
             return AIReviewResult(
                 original_confidence=finding.confidence,
