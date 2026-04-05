@@ -484,12 +484,15 @@ class _GoogleProvider:
         except ImportError as import_error:
             raise AIConfigurationError(_AI_GOOGLE_IMPORT_ERROR) from import_error
         try:
-            genai.configure(api_key=self._api_key)
-            model_instance = genai.GenerativeModel(
-                model_name=model,
-                system_instruction=AI_REVIEW_SYSTEM_PROMPT,
+            client = genai.Client(api_key=self._api_key)
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=AI_REVIEW_SYSTEM_PROMPT,
+                    max_output_tokens=AI_RESPONSE_MAX_TOKENS,
+                ),
             )
-            response = model_instance.generate_content(prompt)
         except google_exceptions.GoogleAPIError as api_error:
             raise AIReviewError(
                 _GOOGLE_API_ERROR_TEMPLATE.format(error_type=type(api_error).__name__)
