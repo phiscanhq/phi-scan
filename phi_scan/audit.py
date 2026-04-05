@@ -9,6 +9,9 @@ Schema v2 additions (Phase 5):
   event_type, committer_name_hash, committer_email_hash, pr_number, pipeline,
   action_taken, notifications_sent, row_chain_hash.
 
+Schema v3 additions (Phase 7A):
+  ai_input_tokens, ai_output_tokens, ai_cost_usd.
+
 Hash chain (5C.8):
   Each row carries ``row_chain_hash = HMAC-SHA256(key=audit_secret,
   msg=prev_chain_hash || row_content)``. The first row uses
@@ -253,7 +256,10 @@ _CREATE_SCAN_EVENTS_SQL: str = f"""
         pipeline              TEXT    NOT NULL DEFAULT '',
         action_taken          TEXT    NOT NULL DEFAULT '',
         notifications_sent    TEXT    NOT NULL DEFAULT '[]',
-        row_chain_hash        TEXT    NOT NULL DEFAULT ''
+        row_chain_hash        TEXT    NOT NULL DEFAULT '',
+        ai_input_tokens       INTEGER NOT NULL DEFAULT 0,
+        ai_output_tokens      INTEGER NOT NULL DEFAULT 0,
+        ai_cost_usd           REAL    NOT NULL DEFAULT 0.0
     )
 """
 _CREATE_SCHEMA_META_SQL: str = f"""
@@ -272,8 +278,9 @@ _INSERT_SCAN_EVENT_SQL: str = f"""
         (timestamp, scanner_version, repository_hash, branch_hash,
          files_scanned, findings_count, findings_json, is_clean, scan_duration,
          event_type, committer_name_hash, committer_email_hash,
-         pr_number, pipeline, action_taken, notifications_sent, row_chain_hash)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         pr_number, pipeline, action_taken, notifications_sent, row_chain_hash,
+         ai_input_tokens, ai_output_tokens, ai_cost_usd)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 _SELECT_RECENT_SCANS_BASE_SQL: str = f"SELECT * FROM {_SCAN_EVENTS_TABLE} WHERE timestamp >= ?"
 _FILTER_REPOSITORY_HASH_SQL: str = " AND repository_hash = ?"
@@ -316,8 +323,15 @@ _MIGRATION_V1_TO_V2: list[str] = [
     f" ADD COLUMN row_chain_hash TEXT NOT NULL DEFAULT '{_CHAIN_HASH_PLACEHOLDER}'",
 ]
 
+_MIGRATION_V2_TO_V3: list[str] = [
+    f"ALTER TABLE {_SCAN_EVENTS_TABLE} ADD COLUMN ai_input_tokens INTEGER NOT NULL DEFAULT 0",
+    f"ALTER TABLE {_SCAN_EVENTS_TABLE} ADD COLUMN ai_output_tokens INTEGER NOT NULL DEFAULT 0",
+    f"ALTER TABLE {_SCAN_EVENTS_TABLE} ADD COLUMN ai_cost_usd REAL NOT NULL DEFAULT 0.0",
+]
+
 _MIGRATIONS: dict[int, list[str]] = {
     1: _MIGRATION_V1_TO_V2,
+    2: _MIGRATION_V2_TO_V3,
 }
 
 
@@ -1013,7 +1027,7 @@ def _build_scan_event_row(
     notifications_sent: list[str],
     encrypted_findings_json: str,
 ) -> tuple[str | int | float, ...]:
-    """Build the 17-tuple for INSERT into scan_events from already-encrypted findings.
+    """Build the 20-tuple for INSERT into scan_events from already-encrypted findings.
 
     Delegates identity collection to focused helpers. Encryption is the
     caller's responsibility so this function has a single concern: assembling
@@ -1028,12 +1042,15 @@ def _build_scan_event_row(
             already produced by _serialize_and_encrypt.
 
     Returns:
-        17-tuple matching the INSERT column order (id is auto-assigned;
+        20-tuple matching the INSERT column order (id is auto-assigned;
         row_chain_hash is updated after INSERT).
     """
     repository_hash, branch_hash = _collect_repository_identity()
     committer_name_hash, committer_email_hash = _collect_committer_identity()
     action_taken = ACTION_TAKEN_PASS if scan_result.is_clean else ACTION_TAKEN_FAIL
+    ai_input_tokens = scan_result.ai_usage.input_tokens if scan_result.ai_usage else 0
+    ai_output_tokens = scan_result.ai_usage.output_tokens if scan_result.ai_usage else 0
+    ai_cost_usd = scan_result.ai_usage.estimated_cost_usd if scan_result.ai_usage else 0.0
     return (
         _get_current_timestamp(),
         __version__,
@@ -1052,6 +1069,9 @@ def _build_scan_event_row(
         action_taken,
         json.dumps(notifications_sent),
         _CHAIN_HASH_PLACEHOLDER,  # replaced by HMAC in subsequent UPDATE
+        ai_input_tokens,
+        ai_output_tokens,
+        ai_cost_usd,
     )
 
 
@@ -1364,7 +1384,7 @@ def _compute_row_chain_hash(
         database_path: Used to locate the audit key directory.
         connection: Open database connection for prev-hash lookup.
         new_row_id: The autoincrement id of the just-inserted row.
-        row_tuple: The 17-tuple passed to INSERT (same column order).
+        row_tuple: The 20-tuple passed to INSERT (same column order).
 
     Returns:
         64-hex-char chain hash, or empty string if key is absent.
@@ -1397,6 +1417,9 @@ def _compute_row_chain_hash(
             "pipeline": row_tuple[13],
             "action_taken": row_tuple[14],
             "notifications_sent": row_tuple[15],
+            "ai_input_tokens": row_tuple[17],
+            "ai_output_tokens": row_tuple[18],
+            "ai_cost_usd": row_tuple[19],
         }
         row_content_string = _row_content_for_hashing(row_fields)
         return _hmac_sha256(key, prev_hash + row_content_string)

@@ -71,8 +71,8 @@ _SCHEMA_VERSION_FROM: int = 1
 _SCHEMA_VERSION_TO: int = 2
 # Versions for which no migration path exists in _MIGRATIONS — used to verify
 # that migrate_schema raises SchemaMigrationError when the step is absent.
-_SCHEMA_VERSION_NO_MIGRATION_FROM: int = 2
-_SCHEMA_VERSION_NO_MIGRATION_TO: int = 3
+_SCHEMA_VERSION_NO_MIGRATION_FROM: int = 3
+_SCHEMA_VERSION_NO_MIGRATION_TO: int = 4
 _SAMPLE_MIGRATION_SQL: list[str] = ["ALTER TABLE scan_events ADD COLUMN extra TEXT"]
 _RECENT_SCANS_DAYS: int = 7
 _ZERO_DAYS: int = 0
@@ -995,3 +995,69 @@ def test_insert_scan_event_appends_new_row_instead_of_replacing_existing(
     assert row is not None
     row_count = row[0]
     assert row_count == _EXPECTED_TWO_AUDIT_ROWS
+
+
+# ---------------------------------------------------------------------------
+# AI token usage persisted to audit log (7C.5)
+# ---------------------------------------------------------------------------
+
+_AI_TOKEN_USAGE_QUERY: str = (
+    f"SELECT ai_input_tokens, ai_output_tokens, ai_cost_usd FROM {_SCAN_EVENTS_TABLE}"
+)
+_AI_SAMPLE_INPUT_TOKENS: int = 450
+_AI_SAMPLE_OUTPUT_TOKENS: int = 80
+_AI_ZERO_TOKENS: int = 0
+_AI_ZERO_COST: float = 0.0
+
+
+def test_ai_token_usage_written_to_audit_log_when_ai_review_ran(
+    database_with_key: Path, patched_git_info: None
+) -> None:
+    """AI token counts and cost are persisted to the audit row when AI review ran."""
+    from phi_scan.ai_review import AIUsageSummary
+
+    ai_usage = AIUsageSummary(
+        findings_reviewed=1,
+        false_positives_removed=0,
+        input_tokens=_AI_SAMPLE_INPUT_TOKENS,
+        output_tokens=_AI_SAMPLE_OUTPUT_TOKENS,
+        estimated_cost_usd=0.001,
+    )
+    scan_result = ScanResult(
+        findings=(),
+        files_scanned=_SAMPLE_FILES_SCANNED,
+        files_with_findings=0,
+        scan_duration=_SAMPLE_SCAN_DURATION,
+        is_clean=True,
+        risk_level=RiskLevel.CLEAN,
+        severity_counts=MappingProxyType({}),
+        category_counts=MappingProxyType({}),
+        ai_usage=ai_usage,
+    )
+
+    insert_scan_event(database_with_key, scan_result)
+
+    connection = sqlite3.connect(str(database_with_key))
+    row = connection.execute(_AI_TOKEN_USAGE_QUERY).fetchone()
+    connection.close()
+    assert row is not None
+    assert row[0] == _AI_SAMPLE_INPUT_TOKENS
+    assert row[1] == _AI_SAMPLE_OUTPUT_TOKENS
+    assert row[2] > _AI_ZERO_COST
+
+
+def test_ai_token_usage_is_zero_when_ai_review_disabled(
+    database_with_key: Path, patched_git_info: None
+) -> None:
+    """Audit row records zero AI tokens when AI review was not enabled."""
+    scan_result = _build_clean_scan_result()
+
+    insert_scan_event(database_with_key, scan_result)
+
+    connection = sqlite3.connect(str(database_with_key))
+    row = connection.execute(_AI_TOKEN_USAGE_QUERY).fetchone()
+    connection.close()
+    assert row is not None
+    assert row[0] == _AI_ZERO_TOKENS
+    assert row[1] == _AI_ZERO_TOKENS
+    assert row[2] == _AI_ZERO_COST

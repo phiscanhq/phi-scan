@@ -184,7 +184,7 @@ def resolve_api_key(config: AIReviewConfig) -> str:
 def apply_ai_review_to_findings(
     findings: list[ScanFinding],
     config: AIReviewConfig,
-) -> list[ScanFinding]:
+) -> tuple[list[ScanFinding], AIUsageSummary | None]:
     """Apply Claude confidence review to medium-confidence findings.
 
     Findings outside the review band [lower_bound, upper_bound) are returned
@@ -200,15 +200,16 @@ def apply_ai_review_to_findings(
         config: AI review configuration including the review band and API key.
 
     Returns:
-        Updated findings list with revised confidence scores where AI review ran.
-        Findings Claude determined are not PHI risks are removed.
+        Tuple of (updated findings list, AI usage summary). Usage summary is None
+        when AI review is disabled. Findings Claude determined are not PHI risks
+        are removed from the list.
     """
     if not config.is_enabled:
-        return findings
+        return findings, None
     api_key = resolve_api_key(config)
     reviewed_findings, usage_summary = _review_qualifying_findings(findings, api_key, config)
     _log_ai_usage_summary(usage_summary)
-    return reviewed_findings
+    return reviewed_findings, usage_summary
 
 
 def _review_qualifying_findings(

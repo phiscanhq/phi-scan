@@ -202,8 +202,9 @@ class TestReviewBandFiltering:
     def test_disabled_config_returns_findings_unchanged(self) -> None:
         findings = [_build_finding(_CONFIDENCE_IN_BAND)]
         config = AIReviewConfig(is_enabled=False)
-        result = apply_ai_review_to_findings(findings, config)
-        assert result == findings
+        result_findings, usage = apply_ai_review_to_findings(findings, config)
+        assert result_findings == findings
+        assert usage is None
 
     def test_finding_below_lower_bound_bypasses_review(
         self, monkeypatch: pytest.MonkeyPatch
@@ -212,18 +213,18 @@ class TestReviewBandFiltering:
         finding = _build_finding(_CONFIDENCE_BELOW_BAND)
         config = AIReviewConfig(is_enabled=True)
         with patch("phi_scan.ai_review._request_ai_confidence_review") as mock_review:
-            result = apply_ai_review_to_findings([finding], config)
+            result_findings, _ = apply_ai_review_to_findings([finding], config)
         mock_review.assert_not_called()
-        assert result == [finding]
+        assert result_findings == [finding]
 
     def test_finding_at_upper_bound_bypasses_review(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
         finding = _build_finding(_CONFIDENCE_AT_UPPER_BOUND)
         config = AIReviewConfig(is_enabled=True)
         with patch("phi_scan.ai_review._request_ai_confidence_review") as mock_review:
-            result = apply_ai_review_to_findings([finding], config)
+            result_findings, _ = apply_ai_review_to_findings([finding], config)
         mock_review.assert_not_called()
-        assert result == [finding]
+        assert result_findings == [finding]
 
     def test_finding_above_upper_bound_bypasses_review(
         self, monkeypatch: pytest.MonkeyPatch
@@ -232,9 +233,9 @@ class TestReviewBandFiltering:
         finding = _build_finding(_CONFIDENCE_ABOVE_BAND)
         config = AIReviewConfig(is_enabled=True)
         with patch("phi_scan.ai_review._request_ai_confidence_review") as mock_review:
-            result = apply_ai_review_to_findings([finding], config)
+            result_findings, _ = apply_ai_review_to_findings([finding], config)
         mock_review.assert_not_called()
-        assert result == [finding]
+        assert result_findings == [finding]
 
     def test_finding_at_lower_bound_enters_review(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
@@ -250,9 +251,9 @@ class TestReviewBandFiltering:
         with patch(
             "phi_scan.ai_review._request_ai_confidence_review", return_value=review_result
         ) as mock_review:
-            result = apply_ai_review_to_findings([finding], config)
+            result_findings, _ = apply_ai_review_to_findings([finding], config)
         mock_review.assert_called_once()
-        assert result[0].confidence == _AI_REVISED_CONFIDENCE
+        assert result_findings[0].confidence == _AI_REVISED_CONFIDENCE
 
 
 # ---------------------------------------------------------------------------
@@ -275,9 +276,9 @@ class TestConfidenceUpdateAndFalsePositive:
             output_tokens=_AI_OUTPUT_TOKENS,
         )
         with patch("phi_scan.ai_review._request_ai_confidence_review", return_value=review_result):
-            result = apply_ai_review_to_findings([finding], config)
-        assert len(result) == 1
-        assert result[0].confidence == _AI_REVISED_CONFIDENCE
+            result_findings, _ = apply_ai_review_to_findings([finding], config)
+        assert len(result_findings) == 1
+        assert result_findings[0].confidence == _AI_REVISED_CONFIDENCE
 
     def test_false_positive_eliminated_when_phi_risk_false(
         self, monkeypatch: pytest.MonkeyPatch
@@ -293,8 +294,8 @@ class TestConfidenceUpdateAndFalsePositive:
             output_tokens=_AI_OUTPUT_TOKENS,
         )
         with patch("phi_scan.ai_review._request_ai_confidence_review", return_value=review_result):
-            result = apply_ai_review_to_findings([finding], config)
-        assert result == []
+            result_findings, _ = apply_ai_review_to_findings([finding], config)
+        assert result_findings == []
 
     def test_out_of_band_findings_preserved_alongside_reviewed_findings(
         self, monkeypatch: pytest.MonkeyPatch
@@ -311,10 +312,12 @@ class TestConfidenceUpdateAndFalsePositive:
             output_tokens=_AI_OUTPUT_TOKENS,
         )
         with patch("phi_scan.ai_review._request_ai_confidence_review", return_value=review_result):
-            result = apply_ai_review_to_findings([high_confidence_finding, in_band_finding], config)
-        assert len(result) == 2
-        assert result[0] is high_confidence_finding
-        assert result[1].confidence == _AI_REVISED_CONFIDENCE
+            result_findings, _ = apply_ai_review_to_findings(
+                [high_confidence_finding, in_band_finding], config
+            )
+        assert len(result_findings) == 2
+        assert result_findings[0] is high_confidence_finding
+        assert result_findings[1].confidence == _AI_REVISED_CONFIDENCE
 
 
 # ---------------------------------------------------------------------------
@@ -335,9 +338,9 @@ class TestGracefulFallback:
             "phi_scan.ai_review._request_ai_confidence_review",
             side_effect=AIReviewError("Claude API timeout"),
         ):
-            result = apply_ai_review_to_findings([finding], config)
-        assert len(result) == 1
-        assert result[0].confidence == _CONFIDENCE_IN_BAND
+            result_findings, _ = apply_ai_review_to_findings([finding], config)
+        assert len(result_findings) == 1
+        assert result_findings[0].confidence == _CONFIDENCE_IN_BAND
 
     def test_single_finding_failure_does_not_affect_others(
         self, monkeypatch: pytest.MonkeyPatch
@@ -360,10 +363,12 @@ class TestGracefulFallback:
             return success_result
 
         with patch("phi_scan.ai_review._request_ai_confidence_review", side_effect=_side_effect):
-            result = apply_ai_review_to_findings([failing_finding, passing_finding], config)
-        assert len(result) == 2
-        assert result[0].confidence == _CONFIDENCE_IN_BAND
-        assert result[1].confidence == _AI_REVISED_CONFIDENCE
+            result_findings, _ = apply_ai_review_to_findings(
+                [failing_finding, passing_finding], config
+            )
+        assert len(result_findings) == 2
+        assert result_findings[0].confidence == _CONFIDENCE_IN_BAND
+        assert result_findings[1].confidence == _AI_REVISED_CONFIDENCE
 
 
 # ---------------------------------------------------------------------------
@@ -519,3 +524,71 @@ class TestMissingAnthropic:
                 from phi_scan.ai_review import _request_ai_confidence_review
 
                 _request_ai_confidence_review(finding, _VALID_API_KEY)
+
+
+# ---------------------------------------------------------------------------
+# 7C.2 — A/B comparison: AI enabled vs disabled false positive delta
+# ---------------------------------------------------------------------------
+
+_AB_FINDINGS_TOTAL: int = 5
+_AB_FALSE_POSITIVE_COUNT: int = 3  # findings Claude will mark as not PHI
+_AB_GENUINE_PHI_COUNT: int = _AB_FINDINGS_TOTAL - _AB_FALSE_POSITIVE_COUNT
+_AB_REVISED_CONFIDENCE_PHI: float = 0.82
+_AB_REVISED_CONFIDENCE_NOT_PHI: float = 0.15
+
+
+class TestABComparison:
+    """7C.2 — Verify AI review measurably reduces false positives vs baseline.
+
+    Uses mocked Claude responses so the test runs offline. Three of five
+    medium-confidence findings are designated false positives by the mock;
+    the remaining two are confirmed PHI. The test asserts:
+      - AI-disabled count == total findings
+      - AI-enabled count == genuine PHI count (false positives eliminated)
+      - delta == number of false positives removed
+    """
+
+    def test_ai_review_reduces_false_positive_count(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(_ENV_VAR_NAME, _VALID_API_KEY)
+        findings = [_build_finding(_CONFIDENCE_IN_BAND) for _ in range(_AB_FINDINGS_TOTAL)]
+        false_positive_indices = set(range(_AB_FALSE_POSITIVE_COUNT))
+
+        call_count = [0]
+
+        def _mock_review(finding: ScanFinding, api_key: str) -> AIReviewResult:
+            call_index = call_count[0]
+            call_count[0] += 1
+            is_phi = call_index not in false_positive_indices
+            revised = _AB_REVISED_CONFIDENCE_PHI if is_phi else _AB_REVISED_CONFIDENCE_NOT_PHI
+            return AIReviewResult(
+                original_confidence=finding.confidence,
+                revised_confidence=revised,
+                is_phi_risk=is_phi,
+                input_tokens=_AI_INPUT_TOKENS,
+                output_tokens=_AI_OUTPUT_TOKENS,
+            )
+
+        disabled_config = AIReviewConfig(is_enabled=False)
+        enabled_config = AIReviewConfig(is_enabled=True)
+
+        baseline_findings, baseline_usage = apply_ai_review_to_findings(findings, disabled_config)
+        with patch("phi_scan.ai_review._request_ai_confidence_review", side_effect=_mock_review):
+            reviewed_findings, ai_usage = apply_ai_review_to_findings(findings, enabled_config)
+
+        assert len(baseline_findings) == _AB_FINDINGS_TOTAL
+        assert baseline_usage is None
+        assert len(reviewed_findings) == _AB_GENUINE_PHI_COUNT
+        false_positive_delta = len(baseline_findings) - len(reviewed_findings)
+        assert false_positive_delta == _AB_FALSE_POSITIVE_COUNT
+        assert ai_usage is not None
+        assert ai_usage.false_positives_removed == _AB_FALSE_POSITIVE_COUNT
+        assert ai_usage.findings_reviewed == _AB_FINDINGS_TOTAL
+
+    def test_ai_disabled_returns_identical_findings(self) -> None:
+        findings = [_build_finding(_CONFIDENCE_IN_BAND) for _ in range(_AB_FINDINGS_TOTAL)]
+        config = AIReviewConfig(is_enabled=False)
+        result_findings, usage = apply_ai_review_to_findings(findings, config)
+        assert result_findings == findings
+        assert usage is None

@@ -253,8 +253,8 @@ def test_migrate_same_version_is_no_op(tmp_path: Path) -> None:
     """migrate_schema must be a no-op when from_version equals to_version."""
     db_path = tmp_path / "audit.db"
     create_audit_schema(db_path)
-    migrate_schema(db_path, from_version=_V2_SCHEMA, to_version=_V2_SCHEMA)
-    assert get_schema_version(db_path) == _V2_SCHEMA
+    migrate_schema(db_path, from_version=AUDIT_SCHEMA_VERSION, to_version=AUDIT_SCHEMA_VERSION)
+    assert get_schema_version(db_path) == AUDIT_SCHEMA_VERSION
 
 
 # ---------------------------------------------------------------------------

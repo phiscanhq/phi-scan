@@ -597,7 +597,8 @@ AUDIT_GENESIS_CHAIN_HASH: str = "phi-scan-genesis-v1"
 # Increment when the audit SQLite schema changes; triggers migration logic.
 # v1 → v2 (Phase 5): added event_type, committer_name_hash, committer_email_hash,
 # pr_number, pipeline, action_taken, notifications_sent, row_chain_hash columns.
-AUDIT_SCHEMA_VERSION: int = 2
+# v2 → v3 (Phase 7A): added ai_input_tokens, ai_output_tokens, ai_cost_usd columns.
+AUDIT_SCHEMA_VERSION: int = 3
 
 # Increment when the scan-cache SQLite schema changes; triggers migration logic.
 CACHE_SCHEMA_VERSION: int = 1

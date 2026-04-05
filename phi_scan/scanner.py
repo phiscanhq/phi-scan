@@ -11,8 +11,12 @@ import zlib
 from collections import Counter
 from pathlib import Path
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 import pathspec
+
+if TYPE_CHECKING:
+    from phi_scan.ai_review import AIUsageSummary
 
 from phi_scan.cache import FileCacheKey, get_cached_result, store_cached_result
 from phi_scan.constants import (
@@ -333,9 +337,9 @@ def execute_scan(scan_targets: list[Path], config: ScanConfig) -> ScanResult:
     for file_path in scan_targets:
         file_findings = scan_file(file_path, config)
         all_findings.extend(file_findings)
-    reviewed_findings = apply_ai_review_to_findings(all_findings, config.ai_review_config)
+    reviewed_findings, ai_usage = apply_ai_review_to_findings(all_findings, config.ai_review_config)
     scan_duration = time.monotonic() - scan_start
-    return build_scan_result(tuple(reviewed_findings), len(scan_targets), scan_duration)
+    return build_scan_result(tuple(reviewed_findings), len(scan_targets), scan_duration, ai_usage)
 
 
 # ---------------------------------------------------------------------------
@@ -650,6 +654,7 @@ def build_scan_result(
     findings: tuple[ScanFinding, ...],
     files_scanned: int,
     scan_duration: float,
+    ai_usage: AIUsageSummary | None = None,
 ) -> ScanResult:
     """Construct and return a fully populated ScanResult from aggregated scan data.
 
@@ -661,6 +666,8 @@ def build_scan_result(
         findings: All findings produced by the scan.
         files_scanned: Total number of files passed to scan_file.
         scan_duration: Wall-clock seconds measured by execute_scan.
+        ai_usage: Aggregated token usage from AI confidence review, or None
+            when AI review was disabled for this scan.
 
     Returns:
         A fully populated, immutable ScanResult.
@@ -681,6 +688,7 @@ def build_scan_result(
         risk_level=_derive_risk_level(findings),
         severity_counts=_count_by_severity(findings),
         category_counts=_count_by_category(findings),
+        ai_usage=ai_usage,
     )
 
 

@@ -1905,10 +1905,10 @@ matches bypass Claude entirely.
 ### 7C — AI Testing
 
 - [x] **7C.1** Verify no raw PHI values appear in any API request — sentinel test asserts `[REDACTED]` in all outbound payloads
-- [ ] **7C.2** A/B comparison: scan with AI enabled vs disabled — log false positive delta
+- [x] **7C.2** A/B comparison: scan with AI enabled vs disabled — log false positive delta
 - [x] **7C.3** Test Claude API failure falls back gracefully to local-only confidence score
 - [x] **7C.4** Test missing API key with `ai.enable_claude_review: true` raises clear `AIConfigurationError`
-- [ ] **7C.5** Test token cost logging writes to audit log correctly
+- [x] **7C.5** Test token cost logging writes to audit log correctly
 
 ### Phase 7 Verification Checklist
 
@@ -1917,7 +1917,7 @@ matches bypass Claude entirely.
 - [ ] Claude API failure falls back to local score — scanner does not crash
 - [ ] `ai.enable_claude_review: false` (default) produces zero API calls
 - [ ] Missing API key with AI enabled raises `AIConfigurationError` with clear message
-- [ ] Token usage logged per scan in audit database
+- [x] Token usage logged per scan in audit database
 - [x] GitHub Action installs, scans, and posts PR comment in one step
 - [ ] Action published to GitHub Marketplace
 

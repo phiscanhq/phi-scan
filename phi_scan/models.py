@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, final
 
 if TYPE_CHECKING:
-    from phi_scan.ai_review import AIReviewConfig
+    from phi_scan.ai_review import AIReviewConfig, AIUsageSummary
 
 from phi_scan.constants import (
     CODE_CONTEXT_REDACTED_VALUE,
@@ -281,6 +281,7 @@ class ScanResult:
     risk_level: RiskLevel
     severity_counts: MappingProxyType[SeverityLevel, int]
     category_counts: MappingProxyType[PhiCategory, int]
+    ai_usage: AIUsageSummary | None = None
 
     def __post_init__(self) -> None:
         _reject_negative_files_scanned(self)
