@@ -38,12 +38,14 @@ from phi_scan.constants import (
     AI_GOOGLE_COST_PER_MILLION_OUTPUT_TOKENS,
     AI_MESSAGE_CONTENT_KEY,
     AI_MESSAGE_ROLE_KEY,
+    AI_MESSAGE_ROLE_SYSTEM,
     AI_MESSAGE_ROLE_USER,
     AI_OPENAI_COST_PER_MILLION_INPUT_TOKENS,
     AI_OPENAI_COST_PER_MILLION_OUTPUT_TOKENS,
     AI_PROVIDER_ANTHROPIC,
     AI_PROVIDER_GOOGLE,
     AI_PROVIDER_OPENAI,
+    AI_RESPONSE_FIRST_CHOICE_INDEX,
     AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX,
     AI_RESPONSE_MAX_TOKENS,
     AI_RESPONSE_REQUIRED_KEYS,
@@ -110,9 +112,15 @@ _EMPTY_CODE_CONTEXT_NOT_PERMITTED_ERROR: str = (
 _UNEXPECTED_CONTENT_BLOCK_ERROR: str = (
     "AI provider returned a non-text content block ({block_type!r}) — expected text"
 )
+_OPENAI_NULL_CONTENT_ERROR_TEMPLATE: str = "OpenAI returned null content for model {model!r}"
+_USAGE_METRICS_UNAVAILABLE_WARNING: str = (
+    "AI provider returned no usage metrics for model %r — "
+    "token counts will be zero in this scan's audit log"
+)
 
 # Model name prefixes used to detect which provider to route to.
 _ANTHROPIC_MODEL_PREFIX: str = "claude-"
+_OPENAI_GPT_MODEL_PREFIX: str = "gpt-"
 _GOOGLE_MODEL_PREFIX: str = "gemini-"
 # OpenAI o-series model base names (matched with or without a hyphen suffix).
 _OPENAI_O_SERIES_BASES: tuple[str, ...] = ("o1", "o3", "o4")
@@ -295,7 +303,7 @@ def apply_ai_review_to_findings(
     if not config.is_enabled:
         return findings, None
     api_key = resolve_api_key(config.model)
-    provider = _get_provider(config.model, api_key)
+    provider = _build_provider_adapter(config.model, api_key)
     reviewed_findings, usage_summary = _review_qualifying_findings(findings, provider, config)
     _log_ai_usage_summary(usage_summary)
     return reviewed_findings, usage_summary
@@ -329,12 +337,12 @@ def _is_openai_model(model: str) -> bool:
     - ``gpt-*`` (e.g. ``gpt-4o``, ``gpt-4o-mini``, ``gpt-3.5-turbo``)
     - ``o1``, ``o1-mini``, ``o1-preview``, ``o3``, ``o3-mini``, ``o4-mini``, etc.
     """
-    if model.startswith("gpt-"):
+    if model.startswith(_OPENAI_GPT_MODEL_PREFIX):
         return True
     return any(model == base or model.startswith(f"{base}-") for base in _OPENAI_O_SERIES_BASES)
 
 
-def _get_provider(model: str, api_key: str) -> AIProvider:
+def _build_provider_adapter(model: str, api_key: str) -> AIProvider:
     """Instantiate and return the provider adapter for the given model.
 
     Args:
@@ -408,25 +416,31 @@ class _OpenAIProvider:
             import openai
         except ImportError as import_error:
             raise AIConfigurationError(_AI_OPENAI_IMPORT_ERROR) from import_error
+        system_message: Any = {
+            AI_MESSAGE_ROLE_KEY: AI_MESSAGE_ROLE_SYSTEM,
+            AI_MESSAGE_CONTENT_KEY: AI_REVIEW_SYSTEM_PROMPT,
+        }
+        user_message: Any = {
+            AI_MESSAGE_ROLE_KEY: AI_MESSAGE_ROLE_USER,
+            AI_MESSAGE_CONTENT_KEY: prompt,
+        }
         try:
             client = openai.OpenAI(api_key=self._api_key)
             response = client.chat.completions.create(
                 model=model,
                 max_tokens=AI_RESPONSE_MAX_TOKENS,
-                messages=[  # type: ignore[misc, unused-ignore]
-                    {"role": "system", "content": AI_REVIEW_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
+                messages=[system_message, user_message],
             )
         except openai.APIError as api_error:
             raise AIReviewError(f"OpenAI API error: {type(api_error).__name__}") from api_error
-        choice = response.choices[0]
-        if choice.message.content is None:
-            raise AIReviewError(f"OpenAI returned null content for model {model!r}")
+        first_choice = response.choices[AI_RESPONSE_FIRST_CHOICE_INDEX]
+        if first_choice.message.content is None:
+            raise AIReviewError(_OPENAI_NULL_CONTENT_ERROR_TEMPLATE.format(model=model))
         usage = response.usage
-        input_tokens = usage.prompt_tokens if usage is not None else 0
-        output_tokens = usage.completion_tokens if usage is not None else 0
-        return choice.message.content, input_tokens, output_tokens
+        if usage is None:
+            _logger.warning(_USAGE_METRICS_UNAVAILABLE_WARNING, model)
+            return first_choice.message.content, 0, 0
+        return first_choice.message.content, usage.prompt_tokens, usage.completion_tokens
 
 
 class _GoogleProvider:
@@ -457,9 +471,10 @@ class _GoogleProvider:
             raise AIReviewError(f"Google AI API error: {type(api_error).__name__}") from api_error
         response_text = response.text
         usage = response.usage_metadata
-        input_tokens = usage.prompt_token_count if usage is not None else 0
-        output_tokens = usage.candidates_token_count if usage is not None else 0
-        return response_text, input_tokens, output_tokens
+        if usage is None:
+            _logger.warning(_USAGE_METRICS_UNAVAILABLE_WARNING, model)
+            return response_text, 0, 0
+        return response_text, usage.prompt_token_count, usage.candidates_token_count
 
 
 def _review_qualifying_findings(

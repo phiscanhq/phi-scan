@@ -100,10 +100,12 @@ __all__ = [
     "AI_GOOGLE_COST_PER_MILLION_OUTPUT_TOKENS",
     "AI_MESSAGE_CONTENT_KEY",
     "AI_MESSAGE_ROLE_KEY",
+    "AI_MESSAGE_ROLE_SYSTEM",
     "AI_MESSAGE_ROLE_USER",
     "AI_PROVIDER_ANTHROPIC",
     "AI_PROVIDER_GOOGLE",
     "AI_PROVIDER_OPENAI",
+    "AI_RESPONSE_FIRST_CHOICE_INDEX",
     "AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX",
     "AI_RESPONSE_MAX_TOKENS",
     "AI_RESPONSE_REQUIRED_KEYS",
@@ -293,10 +295,12 @@ AI_RESPONSE_MAX_TOKENS: int = 256
 # API call. Must appear in every outbound payload — verified by sentinel tests.
 AI_REVIEW_REDACTED_PLACEHOLDER: str = "[REDACTED]"
 
-# Keys and values used when constructing the messages list for the Anthropic API.
+# Keys and values used when constructing the messages list for provider APIs.
 # String literals in logic code are banned — these named constants must be used
 # everywhere a messages=[{"role": ..., "content": ...}] payload is built.
+# Applies to Anthropic, OpenAI, and any provider that uses the role/content schema.
 AI_MESSAGE_ROLE_KEY: str = "role"
+AI_MESSAGE_ROLE_SYSTEM: str = "system"
 AI_MESSAGE_ROLE_USER: str = "user"
 AI_MESSAGE_CONTENT_KEY: str = "content"
 
@@ -315,8 +319,10 @@ AI_RESPONSE_REQUIRED_KEYS: frozenset[str] = frozenset({"is_phi_risk", "confidenc
 # NOT silently bypass the redaction check by leaving code_context empty.
 AI_REVIEW_PERMITTED_EMPTY_CONTEXT_ENTITY_TYPES: frozenset[str] = frozenset()
 
-# Index of the first content block in Claude's response message.
+# Index of the first content block in an Anthropic response message.
 AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX: int = 0
+# Index of the first choice in an OpenAI chat completions response.
+AI_RESPONSE_FIRST_CHOICE_INDEX: int = 0
 
 # Maximum characters of a raw Claude response included in error messages.
 # Enough context to diagnose malformed JSON without logging verbose output.
