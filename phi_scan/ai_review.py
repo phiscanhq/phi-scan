@@ -43,6 +43,7 @@ from phi_scan.constants import (
     AI_REVIEW_REDACTED_PLACEHOLDER,
     AI_REVIEW_SYSTEM_PROMPT,
     AI_TOKENS_PER_MILLION,
+    ANTHROPIC_API_KEY_ENV_VAR,
 )
 from phi_scan.exceptions import AIConfigurationError, AIReviewError
 from phi_scan.models import ScanFinding
@@ -58,10 +59,9 @@ __all__ = [
 _logger = logging.getLogger(__name__)
 
 _MARKDOWN_CODE_FENCE: str = "```"
-_ENV_VAR_API_KEY: str = "ANTHROPIC_API_KEY"
 _MISSING_API_KEY_ERROR: str = (
     "AI review is enabled but no API key was found. "
-    f"Set the {_ENV_VAR_API_KEY} environment variable or add "
+    f"Set the {ANTHROPIC_API_KEY_ENV_VAR} environment variable or add "
     "'ai.anthropic_api_key' to .phi-scanner.yml. "
     "To disable AI review set 'ai.enable_claude_review: false'."
 )
@@ -90,9 +90,10 @@ class _AIResponsePayload(TypedDict):
     """Typed structure of the JSON Claude returns, containing only the fields we act on.
 
     reasoning is intentionally excluded: Claude's explanation may paraphrase PHI
-    context and is discarded immediately after JSON parsing without ever being
-    assigned to a variable. Excluding it from this TypedDict ensures it cannot
-    be accidentally accessed or logged by any caller.
+    context. It is present in the decoded_response dict inside _parse_ai_response
+    (json.loads includes all keys), but it is never accessed or extracted from that
+    dict — only is_phi_risk and confidence are read. Excluding it from this TypedDict
+    ensures no caller can accidentally reference, store, or log it.
     """
 
     is_phi_risk: bool
@@ -173,7 +174,7 @@ def resolve_api_key(config: AIReviewConfig) -> str:
     Raises:
         AIConfigurationError: If no key is found in either location.
     """
-    env_key = os.environ.get(_ENV_VAR_API_KEY, "")
+    env_key = os.environ.get(ANTHROPIC_API_KEY_ENV_VAR, "")
     if env_key:
         return env_key
     if config.api_key:
@@ -253,7 +254,7 @@ def _review_qualifying_findings(
         false_positives_removed=false_positives_removed,
         input_tokens=total_input_tokens,
         output_tokens=total_output_tokens,
-        estimated_cost_usd=_estimate_cost_usd(total_input_tokens, total_output_tokens),
+        estimated_cost_usd=_calculate_cost_usd(total_input_tokens, total_output_tokens),
     )
 
 
@@ -281,7 +282,7 @@ def _apply_review_to_single_finding(
             "AI review failed for %s in %s — using local score: %s",
             finding.entity_type,
             finding.file_path,
-            review_error,
+            type(review_error).__name__,
         )
         return finding, None
 
@@ -409,29 +410,28 @@ def _parse_ai_response(response_text: str) -> _AIResponsePayload:
     """
     fence_stripped_response = _strip_markdown_fence(response_text)
     try:
-        json_payload = json.loads(fence_stripped_response)
+        decoded_response = json.loads(fence_stripped_response)
     except (json.JSONDecodeError, ValueError) as parse_error:
         raise AIReviewError(
             f"Could not parse AI response as JSON: {parse_error!r} — "
             f"response: {response_text[:AI_RESPONSE_TRUNCATION_LENGTH]}"
         ) from parse_error
 
-    missing_keys = AI_RESPONSE_REQUIRED_KEYS - json_payload.keys()
+    missing_keys = AI_RESPONSE_REQUIRED_KEYS - decoded_response.keys()
     if missing_keys:
         raise AIReviewError(
             f"AI response missing required keys {missing_keys!r} — "
             f"response: {response_text[:AI_RESPONSE_TRUNCATION_LENGTH]}"
         )
-    # reasoning is validated (required by AI_RESPONSE_REQUIRED_KEYS) but intentionally
-    # excluded from the returned payload — it may paraphrase PHI context and must
-    # never be stored, assigned, or logged.
+    # reasoning is validated (present in decoded_response per AI_RESPONSE_REQUIRED_KEYS)
+    # but never accessed or extracted — only is_phi_risk and confidence are read out.
     return _AIResponsePayload(
-        is_phi_risk=bool(json_payload["is_phi_risk"]),
-        confidence=float(json_payload["confidence"]),
+        is_phi_risk=bool(decoded_response["is_phi_risk"]),
+        confidence=float(decoded_response["confidence"]),
     )
 
 
-def _estimate_cost_usd(input_tokens: int, output_tokens: int) -> float:
+def _calculate_cost_usd(input_tokens: int, output_tokens: int) -> float:
     """Calculate estimated API cost in USD from token counts.
 
     Args:
@@ -465,14 +465,14 @@ def _log_ai_usage_summary(summary: AIUsageSummary) -> None:
     )
 
 
-def _extract_text_from_message(message: Any) -> str:
+def _extract_text_from_message(claude_message_response: Any) -> str:
     """Extract the text content from a Claude API message response.
 
-    message is typed as Any because anthropic is an optional dependency loaded
-    at runtime — its types are not available at module import time.
+    claude_message_response is typed as Any because anthropic is an optional
+    dependency loaded at runtime — its types are not available at module import time.
 
     Args:
-        message: A response object from anthropic.Anthropic().messages.create().
+        claude_message_response: A response object from anthropic.Anthropic().messages.create().
 
     Returns:
         The text content of the first content block.
@@ -480,7 +480,7 @@ def _extract_text_from_message(message: Any) -> str:
     Raises:
         AIReviewError: If the first content block does not have a text attribute.
     """
-    first_block = message.content[AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX]
+    first_block = claude_message_response.content[AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX]
     if not hasattr(first_block, "text"):
         raise AIReviewError(
             _UNEXPECTED_CONTENT_BLOCK_ERROR.format(block_type=type(first_block).__name__)
@@ -488,7 +488,7 @@ def _extract_text_from_message(message: Any) -> str:
     return str(first_block.text)
 
 
-def _call_claude_api(anthropic_client: Any, prompt: str) -> Any:
+def _call_claude_api(anthropic_client: Any, review_prompt: str) -> Any:
     """Invoke the Claude messages API with the given prompt.
 
     Separating the raw API call from error handling and response parsing keeps
@@ -496,7 +496,7 @@ def _call_claude_api(anthropic_client: Any, prompt: str) -> Any:
 
     Args:
         anthropic_client: An instantiated anthropic.Anthropic client.
-        prompt: The user-turn prompt text to send to Claude.
+        review_prompt: The user-turn prompt text to send to Claude.
 
     Returns:
         The raw message response object from the Anthropic SDK.
@@ -506,7 +506,7 @@ def _call_claude_api(anthropic_client: Any, prompt: str) -> Any:
         max_tokens=AI_RESPONSE_MAX_TOKENS,
         system=AI_REVIEW_SYSTEM_PROMPT,
         messages=[  # type: ignore[misc, unused-ignore]
-            {AI_MESSAGE_ROLE_KEY: AI_MESSAGE_ROLE_USER, AI_MESSAGE_CONTENT_KEY: prompt}
+            {AI_MESSAGE_ROLE_KEY: AI_MESSAGE_ROLE_USER, AI_MESSAGE_CONTENT_KEY: review_prompt}
         ],
     )
 
@@ -530,9 +530,9 @@ def _request_ai_confidence_review(finding: ScanFinding, api_key: str) -> AIRevie
     except ImportError as import_error:
         raise AIConfigurationError(_AI_IMPORT_ERROR) from import_error
 
-    prompt = _build_review_prompt(finding)
+    review_prompt = _build_review_prompt(finding)
     try:
-        claude_response = _call_claude_api(anthropic.Anthropic(api_key=api_key), prompt)
+        claude_response = _call_claude_api(anthropic.Anthropic(api_key=api_key), review_prompt)
     except anthropic.APIError as api_error:
         raise AIReviewError(
             f"Claude API error reviewing {finding.entity_type} in {finding.file_path}: "

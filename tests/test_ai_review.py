@@ -472,9 +472,9 @@ class TestTokenUsageLogging:
         assert summary.output_tokens == 0
 
     def test_cost_estimate_is_positive_for_nonzero_tokens(self) -> None:
-        from phi_scan.ai_review import _estimate_cost_usd
+        from phi_scan.ai_review import _calculate_cost_usd  # noqa: PLC2701
 
-        cost = _estimate_cost_usd(1000, 200)
+        cost = _calculate_cost_usd(1000, 200)
         assert cost > 0
 
     def test_no_summary_logged_when_no_findings_reviewed(

@@ -101,6 +101,7 @@ __all__ = [
     "AI_RESPONSE_MAX_TOKENS",
     "AI_RESPONSE_REQUIRED_KEYS",
     "AI_RESPONSE_TRUNCATION_LENGTH",
+    "ANTHROPIC_API_KEY_ENV_VAR",
     "AI_REVIEW_PERMITTED_EMPTY_CONTEXT_ENTITY_TYPES",
     "AI_REVIEW_REDACTED_PLACEHOLDER",
     "AI_REVIEW_SYSTEM_PROMPT",
@@ -255,6 +256,11 @@ AI_LAYER_CONFIDENCE_ADJUSTMENT_MAX: float = 0.15
 # they are already definitive and the API call adds no value.
 # Low-confidence findings (< lower bound) are below the scan threshold
 # and are never reported regardless of AI review.
+# Environment variable name for the Anthropic API key — part of the public BYOAK
+# contract documented in ai_review.py and user-facing documentation.  Exported so
+# any module that reads this env var can import the name rather than duplicate it.
+ANTHROPIC_API_KEY_ENV_VAR: str = "ANTHROPIC_API_KEY"
+
 AI_CONFIDENCE_REVIEW_LOWER_BOUND: float = 0.50
 AI_CONFIDENCE_REVIEW_UPPER_BOUND: float = 0.80
 
