@@ -48,9 +48,9 @@ All tools confirmed installed and version-verified in WSL on March 15, 2026:
 
 ---
 
-## Current State (March 31, 2026)
+## Current State (April 5, 2026)
 
-**Phase 1 complete. Phase 2 complete. Phase 3A complete. Phase 3B complete. Phase 3C complete. Phase 3D complete. v0.3.0 published to PyPI. Phase 4A complete. Phase 4B complete. Phase 4C next.**
+**Phase 1 complete. Phase 2 complete. Phase 3A–3D complete. v0.3.0 published to PyPI. Phase 4A–4B complete. Phase 5 complete. Phase 6 complete. Phase 7A complete (Claude API confidence review layer, BYOAK). Phase 7B next.**
 
 ```
 phi-scan/
