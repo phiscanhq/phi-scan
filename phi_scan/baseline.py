@@ -15,6 +15,7 @@ path, and metadata needed to match future findings without re-exposing the value
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -279,19 +280,13 @@ def _find_persisting_findings(
 def _count_entries_by_category(
     entries: list[BaselineEntry],
 ) -> dict[PhiCategory, int]:
-    counts: dict[PhiCategory, int] = {}
-    for entry in entries:
-        counts[entry.hipaa_category] = counts.get(entry.hipaa_category, 0) + 1
-    return counts
+    return dict(Counter(entry.hipaa_category for entry in entries))
 
 
 def _count_entries_by_severity(
     entries: list[BaselineEntry],
 ) -> dict[SeverityLevel, int]:
-    counts: dict[SeverityLevel, int] = {}
-    for entry in entries:
-        counts[entry.severity] = counts.get(entry.severity, 0) + 1
-    return counts
+    return dict(Counter(entry.severity for entry in entries))
 
 
 def _compute_oldest_entry_age_days(entries: list[BaselineEntry], now: datetime) -> int:

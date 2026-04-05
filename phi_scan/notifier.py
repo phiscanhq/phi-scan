@@ -167,7 +167,6 @@ _SLACK_COLOR_GOOD: str = "good"
 _TEAMS_THEME_COLOR_RED: str = "FF0000"
 _TEAMS_THEME_COLOR_GREEN: str = "00AA00"
 _MAX_FINDINGS_IN_NOTIFICATION: int = 20  # prevent oversized payloads
-_RETRY_BACKOFF_MULTIPLIER: float = 1.0  # seconds between retry attempts (linear)
 
 
 # ---------------------------------------------------------------------------

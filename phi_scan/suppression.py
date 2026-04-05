@@ -200,4 +200,4 @@ def _parse_entity_type_list(type_list_text: str) -> set[str]:
         Set of upper-cased entity type strings, e.g. ``{"SSN", "MRN"}``.
     """
     tokens = _TYPE_LIST_SEPARATOR.split(type_list_text.strip())
-    return {token.strip().upper() for token in tokens if token.strip()}
+    return {t.upper() for token in tokens if (t := token.strip())}
