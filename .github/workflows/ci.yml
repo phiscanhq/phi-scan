@@ -68,7 +68,7 @@ jobs:
           fetch-depth: 0
 
       - name: Scan for PHI/PII
-        uses: joeyessak/phi-scan-action@main
+        uses: joeyessak/phi-scan-action@b17418799d4cf730cf57676b49d4828a579930ed  # v0.1.0
         with:
           severity_threshold: medium
           diff_ref: ${{ github.event_name == 'pull_request' && 'origin/main' || '' }}
