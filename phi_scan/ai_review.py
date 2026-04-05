@@ -115,6 +115,12 @@ _USAGE_METRICS_UNAVAILABLE_WARNING: str = (
     "AI provider returned no usage metrics for model %r — "
     "token counts will be zero in this scan's audit log"
 )
+_ANTHROPIC_API_ERROR_TEMPLATE: str = "Anthropic API error: {error_type}"
+_OPENAI_API_ERROR_TEMPLATE: str = "OpenAI API error: {error_type}"
+_GOOGLE_API_ERROR_TEMPLATE: str = "Google AI API error: {error_type}"
+_COST_FALLBACK_WARNING: str = (
+    "Unrecognised model %r in _calculate_cost_usd — falling back to Anthropic cost rates"
+)
 
 # Model name prefixes used to detect which provider to route to.
 _ANTHROPIC_MODEL_PREFIX: str = "claude-"
@@ -265,12 +271,26 @@ def resolve_api_key(model: str) -> str:
     Raises:
         AIConfigurationError: If the model prefix is unrecognised or no key is found.
     """
-    provider = _detect_provider_name(model)
-    env_var = _PROVIDER_ENV_VARS[provider]
+    return _resolve_key_for_provider(_detect_provider_name(model))
+
+
+def _resolve_key_for_provider(provider_name: AIProviderName) -> str:
+    """Return the API key for the given provider from the environment.
+
+    Args:
+        provider_name: The provider whose environment variable to read.
+
+    Returns:
+        The resolved API key string.
+
+    Raises:
+        AIConfigurationError: If the environment variable is not set or is empty.
+    """
+    env_var = _PROVIDER_ENV_VARS[provider_name]
     key = os.environ.get(env_var, "")
     if not key:
         raise AIConfigurationError(
-            _MISSING_API_KEY_ERROR_TEMPLATE.format(provider=provider, env_var=env_var)
+            _MISSING_API_KEY_ERROR_TEMPLATE.format(provider=provider_name, env_var=env_var)
         )
     return key
 
@@ -300,8 +320,9 @@ def apply_ai_review_to_findings(
     """
     if not config.is_enabled:
         return findings, None
-    api_key = resolve_api_key(config.model)
-    provider = _build_provider_adapter(config.model, api_key)
+    provider_name = _detect_provider_name(config.model)
+    api_key = _resolve_key_for_provider(provider_name)
+    provider = _build_provider_adapter(provider_name, api_key)
     reviewed_findings, usage_summary = _review_qualifying_findings(findings, provider, config)
     _log_ai_usage_summary(usage_summary)
     return reviewed_findings, usage_summary
@@ -340,17 +361,16 @@ def _is_openai_model(model: str) -> bool:
     return any(model == base or model.startswith(f"{base}-") for base in _OPENAI_O_SERIES_BASES)
 
 
-def _build_provider_adapter(model: str, api_key: str) -> AIProvider:
-    """Instantiate and return the provider adapter for the given model.
+def _build_provider_adapter(provider_name: AIProviderName, api_key: str) -> AIProvider:
+    """Instantiate and return the provider adapter for the given provider name.
 
     Args:
-        model: A model name string used to select the provider.
+        provider_name: The resolved provider to instantiate.
         api_key: The resolved API key for the provider.
 
     Returns:
         A concrete AIProvider adapter instance.
     """
-    provider_name = _detect_provider_name(model)
     if provider_name == AIProviderName.ANTHROPIC:
         return _AnthropicProvider(api_key)
     if provider_name == AIProviderName.OPENAI:
@@ -388,7 +408,9 @@ class _AnthropicProvider:
                 messages=[user_message],
             )
         except anthropic.APIError as api_error:
-            raise AIReviewError(f"Anthropic API error: {type(api_error).__name__}") from api_error
+            raise AIReviewError(
+                _ANTHROPIC_API_ERROR_TEMPLATE.format(error_type=type(api_error).__name__)
+            ) from api_error
         first_block = response.content[AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX]
         if not hasattr(first_block, "text"):
             raise AIReviewError(
@@ -430,7 +452,9 @@ class _OpenAIProvider:
                 messages=[system_message, user_message],
             )
         except openai.APIError as api_error:
-            raise AIReviewError(f"OpenAI API error: {type(api_error).__name__}") from api_error
+            raise AIReviewError(
+                _OPENAI_API_ERROR_TEMPLATE.format(error_type=type(api_error).__name__)
+            ) from api_error
         first_choice = response.choices[AI_RESPONSE_FIRST_CHOICE_INDEX]
         if first_choice.message.content is None:
             raise AIReviewError(_OPENAI_NULL_CONTENT_ERROR_TEMPLATE.format(model=model))
@@ -455,6 +479,7 @@ class _GoogleProvider:
     def call_review_api(self, prompt: str, model: str) -> tuple[str, int, int]:
         """Call the Google Generative AI API and return (text, input_tokens, output_tokens)."""
         try:
+            import google.api_core.exceptions as google_exceptions
             import google.generativeai as genai
         except ImportError as import_error:
             raise AIConfigurationError(_AI_GOOGLE_IMPORT_ERROR) from import_error
@@ -465,8 +490,10 @@ class _GoogleProvider:
                 system_instruction=AI_REVIEW_SYSTEM_PROMPT,
             )
             response = model_instance.generate_content(prompt)
-        except Exception as api_error:
-            raise AIReviewError(f"Google AI API error: {type(api_error).__name__}") from api_error
+        except google_exceptions.GoogleAPIError as api_error:
+            raise AIReviewError(
+                _GOOGLE_API_ERROR_TEMPLATE.format(error_type=type(api_error).__name__)
+            ) from api_error
         response_text = response.text
         usage = response.usage_metadata
         if usage is None:
@@ -715,6 +742,7 @@ def _calculate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> fl
     try:
         provider = _detect_provider_name(model)
     except AIConfigurationError:
+        _logger.warning(_COST_FALLBACK_WARNING, model)
         provider = AIProviderName.ANTHROPIC
     input_rate, output_rate = _PROVIDER_COST_RATES[provider]
     input_cost = (input_tokens / AI_TOKENS_PER_MILLION) * input_rate

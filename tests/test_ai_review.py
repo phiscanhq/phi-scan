@@ -641,22 +641,22 @@ class TestMissingProviderSDK:
 class TestProviderAdapterRouting:
     """_build_provider_adapter instantiates the correct adapter for each model prefix."""
 
-    def test_claude_model_builds_anthropic_provider(self) -> None:
+    def test_anthropic_provider_name_builds_anthropic_provider(self) -> None:
         from phi_scan.ai_review import _AnthropicProvider, _build_provider_adapter  # noqa: PLC2701
 
-        adapter = _build_provider_adapter(_ANTHROPIC_MODEL, _VALID_ANTHROPIC_API_KEY)
+        adapter = _build_provider_adapter(AIProviderName.ANTHROPIC, _VALID_ANTHROPIC_API_KEY)
         assert isinstance(adapter, _AnthropicProvider)
 
-    def test_gpt_model_builds_openai_provider(self) -> None:
+    def test_openai_provider_name_builds_openai_provider(self) -> None:
         from phi_scan.ai_review import _build_provider_adapter, _OpenAIProvider  # noqa: PLC2701
 
-        adapter = _build_provider_adapter(_OPENAI_GPT_MODEL, _VALID_OPENAI_API_KEY)
+        adapter = _build_provider_adapter(AIProviderName.OPENAI, _VALID_OPENAI_API_KEY)
         assert isinstance(adapter, _OpenAIProvider)
 
-    def test_gemini_model_builds_google_provider(self) -> None:
+    def test_google_provider_name_builds_google_provider(self) -> None:
         from phi_scan.ai_review import _build_provider_adapter, _GoogleProvider  # noqa: PLC2701
 
-        adapter = _build_provider_adapter(_GOOGLE_MODEL, _VALID_GOOGLE_API_KEY)
+        adapter = _build_provider_adapter(AIProviderName.GOOGLE, _VALID_GOOGLE_API_KEY)
         assert isinstance(adapter, _GoogleProvider)
 
 
