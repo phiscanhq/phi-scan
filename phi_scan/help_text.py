@@ -190,10 +190,11 @@ without replacing previous layers.
   Requires [cyan]pip install phi-scan[fhir][/cyan]. Confidence: 0.80–0.95.
 
 [bold]Layer 4 — AI Augmentation (optional)[/bold]
-  Claude API reduces false positives by re-scoring medium-confidence findings.
+  AI provider reduces false positives by re-scoring medium-confidence findings.
   PHI values are ALWAYS redacted before any API call — only code structure
   with [REDACTED] placeholders is sent. Confidence adjustment: ±0.15.
-  Disabled by default. Enable with [cyan]ai.enable_claude_review: true[/cyan].
+  Supports Anthropic (claude-*), OpenAI (gpt-*, o1/o3/o4), and Google (gemini-*).
+  Disabled by default. Enable with [cyan]ai.enable_ai_review: true[/cyan].
 """
 
 # ---------------------------------------------------------------------------
@@ -220,8 +221,8 @@ Run [cyan]phi-scan config init[/cyan] to generate a default file.
   [cyan]retention_days[/cyan]: 2192           # HIPAA minimum is 6 years (2192 days)
 
 [bold]ai:[/bold]
-  [cyan]enable_claude_review[/cyan]: false    # Phase 7 — disabled by default
-  [cyan]confidence_threshold[/cyan]: 0.8     # Only review findings below this
+  [cyan]enable_ai_review[/cyan]: false        # disabled by default
+  [cyan]model[/cyan]: claude-sonnet-4-6       # claude-*, gpt-*, o1/o3/o4, or gemini-*
 
 All values shown are defaults. Omit a key to use its default.
 """

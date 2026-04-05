@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ import yaml
 
 from phi_scan.ai_review import AIReviewConfig
 from phi_scan.constants import (
+    AI_DEFAULT_MODEL,
     AUDIT_RETENTION_DAYS,
     CONFIDENCE_SCORE_MAXIMUM,
     CONFIDENCE_SCORE_MINIMUM,
@@ -56,8 +58,12 @@ _YAML_KEY_WEBHOOK_TYPE: str = "webhook_type"
 _YAML_KEY_WEBHOOK_RETRY_COUNT: str = "webhook_retry_count"
 _YAML_KEY_NOTIFY_ON_VIOLATION_ONLY: str = "notify_on_violation_only"
 _YAML_SECTION_AI: str = "ai"
-_YAML_KEY_ENABLE_CLAUDE_REVIEW: str = "enable_claude_review"
-_YAML_KEY_ANTHROPIC_API_KEY: str = "anthropic_api_key"
+_YAML_KEY_ENABLE_AI_REVIEW: str = "enable_ai_review"
+_YAML_KEY_AI_MODEL: str = "model"
+# Deprecated key — accepted with a warning and mapped to enable_ai_review.
+_YAML_KEY_ENABLE_CLAUDE_REVIEW_DEPRECATED: str = "enable_claude_review"
+# Banned key — api keys must come from env vars; in-config keys are rejected.
+_YAML_KEY_ANTHROPIC_API_KEY_BANNED: str = "anthropic_api_key"
 
 # ---------------------------------------------------------------------------
 # Config defaults and constraints
@@ -103,6 +109,15 @@ _INVALID_WEBHOOK_TYPE_ERROR: str = (
 )
 _INVALID_SMTP_RECIPIENTS_ERROR: str = (
     "notifications.smtp_recipients must be a list of strings, got {value!r}"
+)
+_DEPRECATED_ENABLE_CLAUDE_REVIEW_WARNING: str = (
+    "ai.enable_claude_review is deprecated — use ai.enable_ai_review instead. "
+    "Support for enable_claude_review will be removed in a future release."
+)
+_BANNED_ANTHROPIC_API_KEY_IN_CONFIG_ERROR: str = (
+    "ai.anthropic_api_key must not be set in .phi-scanner.yml — "
+    "API keys must be supplied via environment variables to avoid committing secrets. "
+    "Set ANTHROPIC_API_KEY in your environment instead."
 )
 
 # ---------------------------------------------------------------------------
@@ -177,11 +192,18 @@ notifications:
   notify_on_violation_only: true
 
 ai:
-  # Set true to send medium-confidence findings to Claude for re-scoring.
-  # Requires the 'anthropic' package: pip install phi-scan[ai]
-  # Set ANTHROPIC_API_KEY in the environment (preferred) or supply
-  # anthropic_api_key in this section. The env var takes precedence.
-  enable_claude_review: false
+  # Set true to send medium-confidence findings to an AI provider for re-scoring.
+  # This reduces false positives by having the AI evaluate code structure context.
+  # PHI values are always replaced with [REDACTED] before any API call.
+  #
+  # Supported providers (install the matching extra):
+  #   Anthropic (default): pip install phi-scan[ai-anthropic]  → set ANTHROPIC_API_KEY
+  #   OpenAI:              pip install phi-scan[ai-openai]     → set OPENAI_API_KEY
+  #   Google:              pip install phi-scan[ai-google]     → set GOOGLE_API_KEY
+  #
+  # The provider is inferred automatically from the model name.
+  enable_ai_review: false
+  # model: claude-sonnet-4-6   # default — change to gpt-4o or gemini-1.5-flash to switch
 """
 
 
@@ -501,19 +523,36 @@ def _parse_notification_config(notifications_section: dict[str, Any]) -> Notific
 def _parse_ai_review_config(ai_section: dict[str, Any]) -> AIReviewConfig:
     """Parse the ai: section into an AIReviewConfig.
 
-    An empty or absent ai: section yields a disabled AIReviewConfig. The API
-    key is optional here — if omitted it will be resolved from the environment
-    variable at review time.
+    An empty or absent ai: section yields a disabled AIReviewConfig.
+    The API key is never read from the config file — it must come from the
+    environment variable matching the chosen provider (e.g. ANTHROPIC_API_KEY).
+
+    Backward compatibility:
+    - ``enable_claude_review: true`` is accepted with a DeprecationWarning and
+      treated identically to ``enable_ai_review: true``.
+    - ``anthropic_api_key: <value>`` raises ``ConfigurationError`` — API keys
+      must not be stored in config files.
 
     Args:
         ai_section: The ai: section of the parsed config (may be empty).
 
     Returns:
-        An AIReviewConfig with is_enabled and optional api_key populated.
+        An AIReviewConfig with is_enabled and model populated.
+
+    Raises:
+        ConfigurationError: If ``anthropic_api_key`` is present in the config.
     """
-    is_enabled = bool(ai_section.get(_YAML_KEY_ENABLE_CLAUDE_REVIEW, False))
-    api_key = str(ai_section.get(_YAML_KEY_ANTHROPIC_API_KEY, ""))
-    return AIReviewConfig(is_enabled=is_enabled, api_key=api_key)
+    if _YAML_KEY_ANTHROPIC_API_KEY_BANNED in ai_section:
+        raise ConfigurationError(_BANNED_ANTHROPIC_API_KEY_IN_CONFIG_ERROR)
+
+    is_enabled = bool(ai_section.get(_YAML_KEY_ENABLE_AI_REVIEW, False))
+
+    if not is_enabled and _YAML_KEY_ENABLE_CLAUDE_REVIEW_DEPRECATED in ai_section:
+        warnings.warn(_DEPRECATED_ENABLE_CLAUDE_REVIEW_WARNING, DeprecationWarning, stacklevel=2)
+        is_enabled = bool(ai_section.get(_YAML_KEY_ENABLE_CLAUDE_REVIEW_DEPRECATED, False))
+
+    model = str(ai_section.get(_YAML_KEY_AI_MODEL, "")) or AI_DEFAULT_MODEL
+    return AIReviewConfig(is_enabled=is_enabled, model=model)
 
 
 def _build_scan_config(

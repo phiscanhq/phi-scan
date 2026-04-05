@@ -1,6 +1,6 @@
-"""AI confidence review layer for PhiScan — Phase 7A.
+"""AI confidence review layer for PhiScan — Phase 7A/7D.
 
-Sends redacted code context to Claude claude-sonnet-4-6 to re-score medium-confidence
+Sends redacted code context to an AI provider to re-score medium-confidence
 findings and reduce false positives. High-confidence and regex-only findings
 bypass this layer entirely.
 
@@ -12,8 +12,10 @@ PHI Safety contract:
   is constructed.
 
 BYOAK (Bring Your Own API Key):
-- API key resolved from ``ANTHROPIC_API_KEY`` env var first.
-- Falls back to ``ai.anthropic_api_key`` in ``.phi-scanner.yml``.
+- API key is resolved from an environment variable based on the model name:
+    - ``claude-*``                    → ``ANTHROPIC_API_KEY``
+    - ``gpt-*``, ``o1``/``o3``/``o4``→ ``OPENAI_API_KEY``
+    - ``gemini-*``                    → ``GOOGLE_API_KEY``
 - Raises ``AIConfigurationError`` if AI is enabled but no key is found.
 """
 
@@ -24,17 +26,23 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from typing import Any, Protocol, TypedDict
 
 from phi_scan.constants import (
+    AI_ANTHROPIC_COST_PER_MILLION_INPUT_TOKENS,
+    AI_ANTHROPIC_COST_PER_MILLION_OUTPUT_TOKENS,
     AI_CONFIDENCE_REVIEW_LOWER_BOUND,
     AI_CONFIDENCE_REVIEW_UPPER_BOUND,
-    AI_COST_PER_MILLION_INPUT_TOKENS,
-    AI_COST_PER_MILLION_OUTPUT_TOKENS,
+    AI_DEFAULT_MODEL,
+    AI_GOOGLE_COST_PER_MILLION_INPUT_TOKENS,
+    AI_GOOGLE_COST_PER_MILLION_OUTPUT_TOKENS,
     AI_MESSAGE_CONTENT_KEY,
     AI_MESSAGE_ROLE_KEY,
+    AI_MESSAGE_ROLE_SYSTEM,
     AI_MESSAGE_ROLE_USER,
-    AI_MODEL_NAME,
+    AI_OPENAI_COST_PER_MILLION_INPUT_TOKENS,
+    AI_OPENAI_COST_PER_MILLION_OUTPUT_TOKENS,
+    AI_RESPONSE_FIRST_CHOICE_INDEX,
     AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX,
     AI_RESPONSE_MAX_TOKENS,
     AI_RESPONSE_REQUIRED_KEYS,
@@ -43,12 +51,17 @@ from phi_scan.constants import (
     AI_REVIEW_REDACTED_PLACEHOLDER,
     AI_REVIEW_SYSTEM_PROMPT,
     AI_TOKENS_PER_MILLION,
+    AI_ZERO_TOKEN_COUNT,
     ANTHROPIC_API_KEY_ENV_VAR,
+    GOOGLE_API_KEY_ENV_VAR,
+    OPENAI_API_KEY_ENV_VAR,
+    AIProviderName,
 )
 from phi_scan.exceptions import AIConfigurationError, AIReviewError
 from phi_scan.models import ScanFinding
 
 __all__ = [
+    "AIProvider",
     "AIReviewConfig",
     "AIReviewResult",
     "AIUsageSummary",
@@ -59,20 +72,31 @@ __all__ = [
 _logger = logging.getLogger(__name__)
 
 _MARKDOWN_CODE_FENCE: str = "```"
-_MISSING_API_KEY_ERROR: str = (
-    "AI review is enabled but no API key was found. "
-    f"Set the {ANTHROPIC_API_KEY_ENV_VAR} environment variable or add "
-    "'ai.anthropic_api_key' to .phi-scanner.yml. "
-    "To disable AI review set 'ai.enable_claude_review: false'."
+
+_MISSING_API_KEY_ERROR_TEMPLATE: str = (
+    "AI review is enabled but no API key was found for provider '{provider}'. "
+    "Set the {env_var} environment variable. "
+    "To disable AI review set 'ai.enable_ai_review: false'."
 )
-_AI_IMPORT_ERROR: str = (
-    "The 'anthropic' package is required for AI review. Install it with: pip install phi-scan[ai]"
+_UNKNOWN_MODEL_ERROR_TEMPLATE: str = (
+    "Cannot determine AI provider from model name {model!r}. "
+    "Model names must start with 'claude-' (Anthropic), 'gpt-' or 'o1'/'o3'/'o4' (OpenAI), "
+    "or 'gemini-' (Google)."
+)
+_AI_ANTHROPIC_IMPORT_ERROR: str = (
+    "The 'anthropic' package is required to use Anthropic models. "
+    "Install it with: pip install phi-scan[ai-anthropic]"
+)
+_AI_OPENAI_IMPORT_ERROR: str = (
+    "The 'openai' package is required to use OpenAI models. "
+    "Install it with: pip install phi-scan[ai-openai]"
+)
+_AI_GOOGLE_IMPORT_ERROR: str = (
+    "The 'google-generativeai' package is required to use Google AI models. "
+    "Install it with: pip install phi-scan[ai-google]"
 )
 _UNEXPECTED_AI_RESPONSE_ERROR_TEMPLATE: str = (
     "Unexpected AI response structure for finding {entity_type} in {file_path}: {error}"
-)
-_UNEXPECTED_CONTENT_BLOCK_ERROR: str = (
-    "Claude returned a non-text content block ({block_type!r}) — expected TextBlock"
 )
 _PHI_SAFETY_VIOLATION_ERROR: str = (
     "PHI safety violation: code_context for {entity_type} does not contain "
@@ -84,19 +108,88 @@ _EMPTY_CODE_CONTEXT_NOT_PERMITTED_ERROR: str = (
     "{entity_type!r} is not in AI_REVIEW_PERMITTED_EMPTY_CONTEXT_ENTITY_TYPES — "
     "add the entity type to the allowlist only if it is proven to carry no source line"
 )
+_UNEXPECTED_CONTENT_BLOCK_ERROR: str = (
+    "AI provider returned a non-text content block ({block_type!r}) — expected text"
+)
+_OPENAI_NULL_CONTENT_ERROR_TEMPLATE: str = "OpenAI returned null content for model {model!r}"
+_USAGE_METRICS_UNAVAILABLE_WARNING: str = (
+    "AI provider returned no usage metrics for model %r — "
+    "token counts will be zero in this scan's audit log"
+)
+_ANTHROPIC_API_ERROR_TEMPLATE: str = "Anthropic API error: {error_type}"
+_OPENAI_API_ERROR_TEMPLATE: str = "OpenAI API error: {error_type}"
+_GOOGLE_API_ERROR_TEMPLATE: str = "Google AI API error: {error_type}"
+_COST_FALLBACK_WARNING: str = (
+    "Unrecognised model %r in _calculate_cost_usd — falling back to Anthropic cost rates"
+)
+
+# Model name prefixes used to detect which provider to route to.
+_ANTHROPIC_MODEL_PREFIX: str = "claude-"
+_OPENAI_GPT_MODEL_PREFIX: str = "gpt-"
+_GOOGLE_MODEL_PREFIX: str = "gemini-"
+# OpenAI o-series model base names (matched with or without a hyphen suffix).
+_OPENAI_O_SERIES_BASES: tuple[str, ...] = ("o1", "o3", "o4")
+
+# Maps provider name → env var name (used to build the missing-key error message).
+_PROVIDER_ENV_VARS: dict[AIProviderName, str] = {
+    AIProviderName.ANTHROPIC: ANTHROPIC_API_KEY_ENV_VAR,
+    AIProviderName.OPENAI: OPENAI_API_KEY_ENV_VAR,
+    AIProviderName.GOOGLE: GOOGLE_API_KEY_ENV_VAR,
+}
+
+# Maps provider name → (input_rate, output_rate) per million tokens.
+_PROVIDER_COST_RATES: dict[AIProviderName, tuple[float, float]] = {
+    AIProviderName.ANTHROPIC: (
+        AI_ANTHROPIC_COST_PER_MILLION_INPUT_TOKENS,
+        AI_ANTHROPIC_COST_PER_MILLION_OUTPUT_TOKENS,
+    ),
+    AIProviderName.OPENAI: (
+        AI_OPENAI_COST_PER_MILLION_INPUT_TOKENS,
+        AI_OPENAI_COST_PER_MILLION_OUTPUT_TOKENS,
+    ),
+    AIProviderName.GOOGLE: (
+        AI_GOOGLE_COST_PER_MILLION_INPUT_TOKENS,
+        AI_GOOGLE_COST_PER_MILLION_OUTPUT_TOKENS,
+    ),
+}
 
 
 class _AIResponsePayload(TypedDict):
-    """Typed structure of the JSON Claude returns, containing only the fields we act on.
+    """Typed structure of the JSON the AI provider returns.
 
     reasoning is intentionally excluded from AI_RESPONSE_REQUIRED_KEYS and from
-    this TypedDict. Claude's explanation may paraphrase PHI context — we never
-    want to store, access, or log it. Not requiring it also means the contract
-    does not break if a future Claude model version omits the field.
+    this TypedDict. The explanation may paraphrase PHI context — we never want to
+    store, access, or log it. Not requiring it also means the contract does not
+    break if a future model version omits the field.
     """
 
     is_phi_risk: bool
     confidence: float
+
+
+class AIProvider(Protocol):
+    """Protocol satisfied by each per-provider adapter.
+
+    Implementations must perform a lazy import of their SDK inside
+    ``call_review_api`` so that the SDK is only required at runtime when
+    the provider is actually used, not at module import time.
+    """
+
+    def call_review_api(self, prompt: str, model: str) -> tuple[str, int, int]:
+        """Call the provider API and return (response_text, input_tokens, output_tokens).
+
+        Args:
+            prompt: The user-turn prompt text (PHI already redacted).
+            model: The model name to invoke (e.g. ``claude-sonnet-4-6``).
+
+        Returns:
+            Three-tuple of (response_text, input_token_count, output_token_count).
+
+        Raises:
+            AIConfigurationError: If the provider SDK is not installed.
+            AIReviewError: If the API call fails.
+        """
+        ...
 
 
 @dataclass
@@ -104,8 +197,8 @@ class AIUsageSummary:
     """Aggregated token usage and cost across all AI review calls in one scan.
 
     Args:
-        findings_reviewed: Number of findings sent to Claude for re-scoring.
-        false_positives_removed: Findings Claude determined were not PHI risks.
+        findings_reviewed: Number of findings sent to the AI provider for re-scoring.
+        false_positives_removed: Findings the AI determined were not PHI risks.
         input_tokens: Total prompt tokens consumed across all API calls.
         output_tokens: Total completion tokens consumed across all API calls.
         estimated_cost_usd: Estimated API cost in USD based on published token rates.
@@ -123,33 +216,34 @@ class AIReviewConfig:
     """Configuration for the AI confidence review layer.
 
     Args:
-        is_enabled: Whether to call Claude for medium-confidence findings.
-        api_key: Anthropic API key. Resolved from env var if not set explicitly.
+        is_enabled: Whether to call an AI provider for medium-confidence findings.
+        model: Model name to use for confidence review. The provider is inferred
+            from the model prefix: ``claude-*`` → Anthropic, ``gpt-*``/``o1``/
+            ``o3``/``o4`` → OpenAI, ``gemini-*`` → Google. Defaults to the
+            Anthropic claude-sonnet-4-6 model.
         lower_bound: Minimum confidence score that qualifies for AI review.
         upper_bound: Maximum confidence score that qualifies for AI review.
             Findings at or above this value bypass AI review entirely.
     """
 
     is_enabled: bool = False
-    api_key: str = field(default="", repr=False)
+    model: str = field(default=AI_DEFAULT_MODEL)
     lower_bound: float = AI_CONFIDENCE_REVIEW_LOWER_BOUND
     upper_bound: float = AI_CONFIDENCE_REVIEW_UPPER_BOUND
 
 
 @dataclass
 class AIReviewResult:
-    """Result of a single Claude confidence review call.
+    """Result of a single AI provider confidence review call.
 
-    reasoning is intentionally absent — Claude's explanation may paraphrase PHI
+    reasoning is intentionally absent — the AI explanation may paraphrase PHI
     context. It is parsed inside _request_ai_confidence_review and immediately
-    discarded without logging or storage. Logging was considered but ruled out
-    because log aggregation systems (CI, Datadog, CloudWatch) may retain the
-    text, creating a HIPAA risk if the reasoning echoes patient context.
+    discarded without logging or storage.
 
     Args:
         original_confidence: Confidence score from the local detection layer.
-        revised_confidence: Confidence score returned by Claude.
-        is_phi_risk: Whether Claude considers this a genuine PHI risk.
+        revised_confidence: Confidence score returned by the AI provider.
+        is_phi_risk: Whether the AI considers this a genuine PHI risk.
         input_tokens: Tokens consumed in the request (for cost tracking).
         output_tokens: Tokens consumed in the response (for cost tracking).
     """
@@ -161,68 +255,268 @@ class AIReviewResult:
     output_tokens: int
 
 
-def resolve_api_key(config: AIReviewConfig) -> str:
-    """Return the Anthropic API key from env var or config, in that order.
+def resolve_api_key(model: str) -> str:
+    """Return the API key for the provider inferred from the model name.
+
+    Reads the appropriate environment variable based on the model prefix:
+    - ``claude-*``                    → ``ANTHROPIC_API_KEY``
+    - ``gpt-*``, ``o1``/``o3``/``o4``→ ``OPENAI_API_KEY``
+    - ``gemini-*``                    → ``GOOGLE_API_KEY``
 
     Args:
-        config: AI review configuration that may contain an explicit key.
+        model: The model name used to detect the provider.
 
     Returns:
         The resolved API key string.
 
     Raises:
-        AIConfigurationError: If no key is found in either location.
+        AIConfigurationError: If the model prefix is unrecognised or no key is found.
     """
-    env_key = os.environ.get(ANTHROPIC_API_KEY_ENV_VAR, "")
-    if env_key:
-        return env_key
-    if config.api_key:
-        return config.api_key
-    raise AIConfigurationError(_MISSING_API_KEY_ERROR)
+    return _resolve_key_for_provider(_detect_provider_name(model))
+
+
+def _resolve_key_for_provider(provider_name: AIProviderName) -> str:
+    """Return the API key for the given provider from the environment.
+
+    Args:
+        provider_name: The provider whose environment variable to read.
+
+    Returns:
+        The resolved API key string.
+
+    Raises:
+        AIConfigurationError: If the environment variable is not set or is empty.
+    """
+    env_var = _PROVIDER_ENV_VARS[provider_name]
+    key = os.environ.get(env_var, "")
+    if not key:
+        raise AIConfigurationError(
+            _MISSING_API_KEY_ERROR_TEMPLATE.format(provider=provider_name, env_var=env_var)
+        )
+    return key
 
 
 def apply_ai_review_to_findings(
     findings: list[ScanFinding],
     config: AIReviewConfig,
 ) -> tuple[list[ScanFinding], AIUsageSummary | None]:
-    """Apply Claude confidence review to medium-confidence findings.
+    """Apply AI provider confidence review to medium-confidence findings.
 
     Findings outside the review band [lower_bound, upper_bound) are returned
-    unchanged. Findings within the band are sent to Claude with redacted context;
-    the returned confidence replaces the local score. Findings Claude scores as
-    not PHI risks are removed (false positives eliminated).
+    unchanged. Findings within the band are sent to the AI provider with redacted
+    context; the returned confidence replaces the local score. Findings the AI
+    scores as not PHI risks are removed (false positives eliminated).
 
-    If the Claude API call fails for any finding, that finding is returned with
-    its original confidence score — the scan never crashes due to AI unavailability.
+    If the API call fails for any finding, that finding is returned with its
+    original confidence score — the scan never crashes due to AI unavailability.
 
     Args:
         findings: All findings from the local detection layers.
-        config: AI review configuration including the review band and API key.
+        config: AI review configuration including the review band and model name.
 
     Returns:
         Tuple of (updated findings list, AI usage summary). Usage summary is None
-        when AI review is disabled. Findings Claude determined are not PHI risks
+        when AI review is disabled. Findings the AI determined are not PHI risks
         are removed from the list.
     """
     if not config.is_enabled:
         return findings, None
-    api_key = resolve_api_key(config)
-    reviewed_findings, usage_summary = _review_qualifying_findings(findings, api_key, config)
+    provider_name = _detect_provider_name(config.model)
+    api_key = _resolve_key_for_provider(provider_name)
+    provider = _build_provider_adapter(provider_name, api_key)
+    reviewed_findings, usage_summary = _review_qualifying_findings(findings, provider, config)
     _log_ai_usage_summary(usage_summary)
     return reviewed_findings, usage_summary
 
 
+def _detect_provider_name(model: str) -> AIProviderName:
+    """Return the provider name for the given model name.
+
+    Args:
+        model: A model name string such as ``claude-sonnet-4-6`` or ``gpt-4o``.
+
+    Returns:
+        The ``AIProviderName`` member matching the model prefix.
+
+    Raises:
+        AIConfigurationError: If the model name does not match any known provider prefix.
+    """
+    if model.startswith(_ANTHROPIC_MODEL_PREFIX):
+        return AIProviderName.ANTHROPIC
+    if _is_openai_model(model):
+        return AIProviderName.OPENAI
+    if model.startswith(_GOOGLE_MODEL_PREFIX):
+        return AIProviderName.GOOGLE
+    raise AIConfigurationError(_UNKNOWN_MODEL_ERROR_TEMPLATE.format(model=model))
+
+
+def _is_openai_model(model: str) -> bool:
+    """Return True if the model name identifies an OpenAI model.
+
+    Covers:
+    - ``gpt-*`` (e.g. ``gpt-4o``, ``gpt-4o-mini``, ``gpt-3.5-turbo``)
+    - ``o1``, ``o1-mini``, ``o1-preview``, ``o3``, ``o3-mini``, ``o4-mini``, etc.
+    """
+    if model.startswith(_OPENAI_GPT_MODEL_PREFIX):
+        return True
+    return any(model == base or model.startswith(f"{base}-") for base in _OPENAI_O_SERIES_BASES)
+
+
+def _build_provider_adapter(provider_name: AIProviderName, api_key: str) -> AIProvider:
+    """Instantiate and return the provider adapter for the given provider name.
+
+    Args:
+        provider_name: The resolved provider to instantiate.
+        api_key: The resolved API key for the provider.
+
+    Returns:
+        A concrete AIProvider adapter instance.
+    """
+    if provider_name == AIProviderName.ANTHROPIC:
+        return _AnthropicProvider(api_key)
+    if provider_name == AIProviderName.OPENAI:
+        return _OpenAIProvider(api_key)
+    return _GoogleProvider(api_key)
+
+
+class _AnthropicProvider:
+    """AI provider adapter for Anthropic (Claude) models.
+
+    The ``anthropic`` SDK is imported lazily inside ``call_review_api`` so that
+    the package is not required unless an Anthropic model is actually selected.
+    Install with: ``pip install phi-scan[ai-anthropic]``
+    """
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+
+    def call_review_api(self, prompt: str, model: str) -> tuple[str, int, int]:
+        """Call the Anthropic messages API and return (text, input_tokens, output_tokens)."""
+        try:
+            import anthropic
+        except ImportError as import_error:
+            raise AIConfigurationError(_AI_ANTHROPIC_IMPORT_ERROR) from import_error
+        user_message: Any = {
+            AI_MESSAGE_ROLE_KEY: AI_MESSAGE_ROLE_USER,
+            AI_MESSAGE_CONTENT_KEY: prompt,
+        }
+        try:
+            client = anthropic.Anthropic(api_key=self._api_key)
+            response = client.messages.create(
+                model=model,
+                max_tokens=AI_RESPONSE_MAX_TOKENS,
+                system=AI_REVIEW_SYSTEM_PROMPT,
+                messages=[user_message],
+            )
+        except anthropic.APIError as api_error:
+            raise AIReviewError(
+                _ANTHROPIC_API_ERROR_TEMPLATE.format(error_type=type(api_error).__name__)
+            ) from api_error
+        first_block = response.content[AI_RESPONSE_FIRST_CONTENT_BLOCK_INDEX]
+        if not hasattr(first_block, "text"):
+            raise AIReviewError(
+                _UNEXPECTED_CONTENT_BLOCK_ERROR.format(block_type=type(first_block).__name__)
+            )
+        return str(first_block.text), response.usage.input_tokens, response.usage.output_tokens
+
+
+class _OpenAIProvider:
+    """AI provider adapter for OpenAI (GPT / o-series) models.
+
+    The ``openai`` SDK is imported lazily inside ``call_review_api`` so that
+    the package is not required unless an OpenAI model is actually selected.
+    Install with: ``pip install phi-scan[ai-openai]``
+    """
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+
+    def call_review_api(self, prompt: str, model: str) -> tuple[str, int, int]:
+        """Call the OpenAI chat completions API and return (text, input_tokens, output_tokens)."""
+        try:
+            import openai
+        except ImportError as import_error:
+            raise AIConfigurationError(_AI_OPENAI_IMPORT_ERROR) from import_error
+        system_message: Any = {
+            AI_MESSAGE_ROLE_KEY: AI_MESSAGE_ROLE_SYSTEM,
+            AI_MESSAGE_CONTENT_KEY: AI_REVIEW_SYSTEM_PROMPT,
+        }
+        user_message: Any = {
+            AI_MESSAGE_ROLE_KEY: AI_MESSAGE_ROLE_USER,
+            AI_MESSAGE_CONTENT_KEY: prompt,
+        }
+        try:
+            client = openai.OpenAI(api_key=self._api_key)
+            response = client.chat.completions.create(
+                model=model,
+                max_tokens=AI_RESPONSE_MAX_TOKENS,
+                messages=[system_message, user_message],
+            )
+        except openai.APIError as api_error:
+            raise AIReviewError(
+                _OPENAI_API_ERROR_TEMPLATE.format(error_type=type(api_error).__name__)
+            ) from api_error
+        first_choice = response.choices[AI_RESPONSE_FIRST_CHOICE_INDEX]
+        if first_choice.message.content is None:
+            raise AIReviewError(_OPENAI_NULL_CONTENT_ERROR_TEMPLATE.format(model=model))
+        usage = response.usage
+        if usage is None:
+            _logger.warning(_USAGE_METRICS_UNAVAILABLE_WARNING, model)
+            return first_choice.message.content, AI_ZERO_TOKEN_COUNT, AI_ZERO_TOKEN_COUNT
+        return first_choice.message.content, usage.prompt_tokens, usage.completion_tokens
+
+
+class _GoogleProvider:
+    """AI provider adapter for Google AI (Gemini) models.
+
+    The ``google-generativeai`` SDK is imported lazily inside ``call_review_api``
+    so that the package is not required unless a Google model is selected.
+    Install with: ``pip install phi-scan[ai-google]``
+    """
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+
+    def call_review_api(self, prompt: str, model: str) -> tuple[str, int, int]:
+        """Call the Google Generative AI API and return (text, input_tokens, output_tokens)."""
+        try:
+            import google.api_core.exceptions as google_exceptions
+            import google.generativeai as genai
+        except ImportError as import_error:
+            raise AIConfigurationError(_AI_GOOGLE_IMPORT_ERROR) from import_error
+        try:
+            client = genai.Client(api_key=self._api_key)
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=AI_REVIEW_SYSTEM_PROMPT,
+                    max_output_tokens=AI_RESPONSE_MAX_TOKENS,
+                ),
+            )
+        except google_exceptions.GoogleAPIError as api_error:
+            raise AIReviewError(
+                _GOOGLE_API_ERROR_TEMPLATE.format(error_type=type(api_error).__name__)
+            ) from api_error
+        response_text = response.text
+        usage = response.usage_metadata
+        if usage is None:
+            _logger.warning(_USAGE_METRICS_UNAVAILABLE_WARNING, model)
+            return response_text, AI_ZERO_TOKEN_COUNT, AI_ZERO_TOKEN_COUNT
+        return response_text, usage.prompt_token_count, usage.candidates_token_count
+
+
 def _review_qualifying_findings(
     findings: list[ScanFinding],
-    api_key: str,
+    provider: AIProvider,
     config: AIReviewConfig,
 ) -> tuple[list[ScanFinding], AIUsageSummary]:
     """Dispatch AI review for each qualifying finding and accumulate usage stats.
 
     Args:
         findings: All findings from the local detection layers.
-        api_key: Resolved Anthropic API key.
-        config: AI review configuration for band filtering.
+        provider: The instantiated AI provider adapter.
+        config: AI review configuration for band filtering and model name.
 
     Returns:
         Tuple of (reviewed_findings, usage_summary) where reviewed_findings has
@@ -239,7 +533,9 @@ def _review_qualifying_findings(
         if not _qualifies_for_review(finding, config):
             reviewed_findings.append(finding)
             continue
-        updated_finding, review_result = _apply_review_to_single_finding(finding, api_key)
+        updated_finding, review_result = _apply_review_to_single_finding(
+            finding, provider, config.model
+        )
         if review_result is not None:
             findings_reviewed += 1
             total_input_tokens += review_result.input_tokens
@@ -254,29 +550,34 @@ def _review_qualifying_findings(
         false_positives_removed=false_positives_removed,
         input_tokens=total_input_tokens,
         output_tokens=total_output_tokens,
-        estimated_cost_usd=_calculate_cost_usd(total_input_tokens, total_output_tokens),
+        estimated_cost_usd=_calculate_cost_usd(
+            config.model, total_input_tokens, total_output_tokens
+        ),
     )
 
 
 def _apply_review_to_single_finding(
-    finding: ScanFinding, api_key: str
+    finding: ScanFinding,
+    provider: AIProvider,
+    model: str,
 ) -> tuple[ScanFinding | None, AIReviewResult | None]:
-    """Call Claude for one finding and return the result alongside the updated finding.
+    """Call the AI provider for one finding and return the result.
 
     The second tuple element is None when the API call fails — callers use this to
     distinguish a skipped review from a completed review that eliminated the finding.
 
     Args:
         finding: A medium-confidence finding whose code_context is already redacted.
-        api_key: Resolved Anthropic API key.
+        provider: The instantiated AI provider adapter.
+        model: The model name used for log messages.
 
     Returns:
-        (updated_finding, review_result): updated_finding is None when Claude
+        (updated_finding, review_result): updated_finding is None when the AI
         determines the finding is not a PHI risk, or the original finding on API
         failure. review_result is None on API failure, populated otherwise.
     """
     try:
-        review_result = _request_ai_confidence_review(finding, api_key)
+        review_result = _request_ai_confidence_review(finding, provider, model)
     except AIReviewError as review_error:
         # Log only the exception type, not str(review_error). AIReviewError messages
         # embed entity_type and file_path (never raw PHI), but at this outbound log
@@ -321,13 +622,7 @@ def _redact_phi_from_context(finding: ScanFinding) -> str:
     ScanFinding enforces CODE_CONTEXT_REDACTED_VALUE at construction time, making
     this check redundant under normal operation. It exists as a defence-in-depth
     gate — if the ScanFinding contract were ever weakened, this explicit check at
-    the outbound API boundary prevents raw PHI from escaping to Claude.
-
-    Empty code_context is only permitted for entity types listed in
-    AI_REVIEW_PERMITTED_EMPTY_CONTEXT_ENTITY_TYPES. All current detection layers
-    produce at least a labelled segment/field context containing the redaction
-    marker, so that allowlist is currently empty. Any future finding type that
-    legitimately carries no source line must be added to the allowlist explicitly.
+    the outbound API boundary prevents raw PHI from escaping to any external service.
 
     Args:
         finding: A validated ScanFinding whose code_context has been redacted.
@@ -352,7 +647,7 @@ def _redact_phi_from_context(finding: ScanFinding) -> str:
 
 
 def _build_review_prompt(finding: ScanFinding) -> str:
-    """Build the user prompt for Claude confidence review.
+    """Build the user prompt for AI confidence review.
 
     Only structural metadata and redacted context are included. The matched
     PHI value is never present — code_context already contains only
@@ -362,7 +657,7 @@ def _build_review_prompt(finding: ScanFinding) -> str:
         finding: Finding with redacted code context.
 
     Returns:
-        Prompt string safe to send to the Claude API.
+        Prompt string safe to send to any AI provider.
     """
     redacted_context = _redact_phi_from_context(finding)
     return (
@@ -379,9 +674,9 @@ def _build_review_prompt(finding: ScanFinding) -> str:
 
 
 def _strip_markdown_fence(response_text: str) -> str:
-    """Remove markdown code fence wrappers from a Claude response string.
+    """Remove markdown code fence wrappers from an AI response string.
 
-    Claude sometimes wraps JSON in ```json ... ``` fences. This strips the
+    AI providers sometimes wrap JSON in ```json ... ``` fences. This strips the
     opening fence line and, when present, the closing fence line.
 
     Args:
@@ -400,10 +695,10 @@ def _strip_markdown_fence(response_text: str) -> str:
 
 
 def _parse_ai_response(response_text: str) -> _AIResponsePayload:
-    """Parse Claude's JSON response into a typed payload.
+    """Parse the AI provider's JSON response into a typed payload.
 
     Args:
-        response_text: Raw text response from Claude.
+        response_text: Raw text response from the AI provider.
 
     Returns:
         _AIResponsePayload with is_phi_risk and confidence fields. reasoning is
@@ -433,18 +728,29 @@ def _parse_ai_response(response_text: str) -> _AIResponsePayload:
     )
 
 
-def _calculate_cost_usd(input_tokens: int, output_tokens: int) -> float:
+def _calculate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
     """Calculate estimated API cost in USD from token counts.
 
+    Selects cost rates based on the provider inferred from the model name.
+    Falls back to Anthropic rates for unrecognised models so the function
+    never raises during scan teardown.
+
     Args:
+        model: Model name used to select provider cost rates.
         input_tokens: Total prompt tokens consumed.
         output_tokens: Total completion tokens consumed.
 
     Returns:
-        Estimated cost in USD based on published claude-sonnet-4-6 rates.
+        Estimated cost in USD.
     """
-    input_cost = (input_tokens / AI_TOKENS_PER_MILLION) * AI_COST_PER_MILLION_INPUT_TOKENS
-    output_cost = (output_tokens / AI_TOKENS_PER_MILLION) * AI_COST_PER_MILLION_OUTPUT_TOKENS
+    try:
+        provider_name = _detect_provider_name(model)
+    except AIConfigurationError:
+        _logger.warning(_COST_FALLBACK_WARNING, model)
+        provider_name = AIProviderName.ANTHROPIC
+    input_rate, output_rate = _PROVIDER_COST_RATES[provider_name]
+    input_cost = (input_tokens / AI_TOKENS_PER_MILLION) * input_rate
+    output_cost = (output_tokens / AI_TOKENS_PER_MILLION) * output_rate
     return input_cost + output_cost
 
 
@@ -467,11 +773,60 @@ def _log_ai_usage_summary(summary: AIUsageSummary) -> None:
     )
 
 
-def _extract_text_from_message(claude_message_response: Any) -> str:
-    """Extract the text content from a Claude API message response.
+def _request_ai_confidence_review(
+    finding: ScanFinding,
+    provider: AIProvider,
+    model: str,
+) -> AIReviewResult:
+    """Call the AI provider to review a single medium-confidence finding.
 
-    claude_message_response is typed as Any because anthropic is an optional
-    dependency loaded at runtime — its types are not available at module import time.
+    Args:
+        finding: Finding to review. Its code_context must be redacted.
+        provider: The instantiated AI provider adapter.
+        model: Model name (used in error messages).
+
+    Returns:
+        AIReviewResult with the revised confidence and PHI risk determination.
+
+    Raises:
+        AIReviewError: If the API call fails or the response cannot be parsed.
+        AIConfigurationError: If the provider SDK is not installed.
+    """
+    review_prompt = _build_review_prompt(finding)
+    try:
+        response_text, input_tokens, output_tokens = provider.call_review_api(review_prompt, model)
+    except (AIReviewError, AIConfigurationError):
+        raise
+    except Exception as unexpected_error:
+        raise AIReviewError(
+            f"Unexpected error reviewing {finding.entity_type} in {finding.file_path}: "
+            f"{type(unexpected_error).__name__}"
+        ) from unexpected_error
+
+    try:
+        ai_response_payload = _parse_ai_response(response_text)
+    except AIReviewError as parse_error:
+        raise AIReviewError(
+            _UNEXPECTED_AI_RESPONSE_ERROR_TEMPLATE.format(
+                entity_type=finding.entity_type,
+                file_path=finding.file_path,
+                error=parse_error,
+            )
+        ) from parse_error
+
+    return AIReviewResult(
+        original_confidence=finding.confidence,
+        revised_confidence=ai_response_payload["confidence"],
+        is_phi_risk=ai_response_payload["is_phi_risk"],
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
+# Retained for backward compatibility — callers that imported _extract_text_from_message
+# directly should migrate to _AnthropicProvider.call_review_api.
+def _extract_text_from_message(claude_message_response: Any) -> str:
+    """Extract text from a Claude API response (legacy — use _AnthropicProvider).
 
     Args:
         claude_message_response: A response object from anthropic.Anthropic().messages.create().
@@ -488,75 +843,3 @@ def _extract_text_from_message(claude_message_response: Any) -> str:
             _UNEXPECTED_CONTENT_BLOCK_ERROR.format(block_type=type(first_block).__name__)
         )
     return str(first_block.text)
-
-
-def _call_claude_api(anthropic_client: Any, review_prompt: str) -> Any:
-    """Invoke the Claude messages API with the given prompt.
-
-    Separating the raw API call from error handling and response parsing keeps
-    _request_ai_confidence_review under 30 lines.
-
-    Args:
-        anthropic_client: An instantiated anthropic.Anthropic client.
-        review_prompt: The user-turn prompt text to send to Claude.
-
-    Returns:
-        The raw message response object from the Anthropic SDK.
-    """
-    return anthropic_client.messages.create(
-        model=AI_MODEL_NAME,
-        max_tokens=AI_RESPONSE_MAX_TOKENS,
-        system=AI_REVIEW_SYSTEM_PROMPT,
-        messages=[  # type: ignore[misc, unused-ignore]
-            {AI_MESSAGE_ROLE_KEY: AI_MESSAGE_ROLE_USER, AI_MESSAGE_CONTENT_KEY: review_prompt}
-        ],
-    )
-
-
-def _request_ai_confidence_review(finding: ScanFinding, api_key: str) -> AIReviewResult:
-    """Call Claude to review a single medium-confidence finding.
-
-    Args:
-        finding: Finding to review. Its code_context must be redacted.
-        api_key: Anthropic API key.
-
-    Returns:
-        AIReviewResult with the revised confidence and PHI risk determination.
-
-    Raises:
-        AIReviewError: If the API call fails or the response cannot be parsed.
-        AIConfigurationError: If the anthropic package is not installed.
-    """
-    try:
-        import anthropic
-    except ImportError as import_error:
-        raise AIConfigurationError(_AI_IMPORT_ERROR) from import_error
-
-    review_prompt = _build_review_prompt(finding)
-    try:
-        claude_response = _call_claude_api(anthropic.Anthropic(api_key=api_key), review_prompt)
-    except anthropic.APIError as api_error:
-        raise AIReviewError(
-            f"Claude API error reviewing {finding.entity_type} in {finding.file_path}: "
-            f"{type(api_error).__name__}"
-        ) from api_error
-
-    response_text = _extract_text_from_message(claude_response)
-    try:
-        ai_response_payload = _parse_ai_response(response_text)
-    except AIReviewError as parse_error:
-        raise AIReviewError(
-            _UNEXPECTED_AI_RESPONSE_ERROR_TEMPLATE.format(
-                entity_type=finding.entity_type,
-                file_path=finding.file_path,
-                error=parse_error,
-            )
-        ) from parse_error
-
-    return AIReviewResult(
-        original_confidence=finding.confidence,
-        revised_confidence=ai_response_payload["confidence"],
-        is_phi_risk=ai_response_payload["is_phi_risk"],
-        input_tokens=claude_response.usage.input_tokens,
-        output_tokens=claude_response.usage.output_tokens,
-    )
