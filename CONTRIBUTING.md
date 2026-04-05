@@ -211,8 +211,7 @@ docs/compliance-frameworks
    and `nlp_detector.py` are accepted; do not add new ones)
 3. `make test` — all tests pass
 4. `make scan` — `phi_scan/` itself is clean
-5. Update `PLAN.md` to check off completed tasks
-6. Update `docs/changelog.md` under `[Unreleased]`
+5. Update `CHANGELOG.md` under `[Unreleased]`
 
 ### Commit Message Style
 
@@ -259,8 +258,7 @@ history unilaterally — coordinate with the maintainer.
 
 - **Bug reports**: open a GitHub issue with reproduction steps, expected
   behaviour, actual behaviour, and output of `phi-scan --version`.
-- **Feature requests**: open a GitHub issue describing the use case. Check
-  `PLAN.md` first — the feature may already be planned.
+- **Feature requests**: open a GitHub issue describing the use case.
 - **False positives / false negatives**: open an issue with the entity type,
   the pattern that triggered (or didn't trigger), and a minimal reproduction.
   Do not include real PHI in issue reports.

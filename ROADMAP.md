@@ -51,8 +51,8 @@ extended regulatory categories.
   locations, and context-aware detection (optional install)
 - **Layer 3 — Structured Formats:** FHIR R4 field name recognition, HL7 v2 segment
   scanning (PID, NK1, IN1)
-- **Layer 4 — AI Scoring:** Claude API confidence adjustment for ambiguous findings
-  (optional; values redacted before any API call)
+- **Layer 4 — AI Scoring:** AI provider confidence adjustment for ambiguous findings
+  (optional; Anthropic, OpenAI, or Google; values redacted before any API call)
 - Inline suppression: `# phi-scan:ignore`, `# phi-scan:ignore[SSN,MRN]`,
   `# phi-scan:ignore-next-line`, `# phi-scan:ignore-file`
 - Content-hash scan cache — skip unchanged files
@@ -75,54 +75,57 @@ Production-quality output and first public PyPI release.
 
 ---
 
-## Phase 4 — Enterprise Reports & Compliance 🔄 In Progress `→ v0.4.0`
+## Phase 4 — Enterprise Reports & Compliance ✅ `v0.5.0`
 
 Enterprise-grade PDF and HTML reports with charts, and multi-framework compliance mapping.
 
-- [x] **4A** — PDF and HTML reports with executive summary, severity charts, findings
-  table, remediation guidance, and trend chart from audit history
-- [ ] **4B** — Multi-framework compliance mapping: HIPAA, GDPR, SOC 2, PCI-DSS, CCPA,
-  HITRUST — each finding mapped to the applicable regulatory controls
-- [ ] **4C** — Full documentation suite: architecture, plugin authoring, compliance
-  reference, de-identification guide
-- [ ] **4D** — Phase 4 test coverage
+- PDF and HTML reports with executive summary, severity charts, findings table,
+  remediation guidance, and trend chart from audit history
+- Multi-framework compliance mapping: HIPAA, GDPR, SOC 2, HITRUST, NIST SP 800-53,
+  42 CFR Part 2, GINA, CCPA, BIPA, SHIELD Act, MRPA — each finding annotated with
+  applicable regulatory controls
+- Full documentation suite: confidence scoring, detection layers, output formats,
+  remediation guide, compliance frameworks, de-identification guide
+- 163-test suite covering PDF/HTML output, compliance mapping, and multi-framework annotation
 
 ---
 
-## Phase 5 — Notifications & Audit Hardening 📋 Planned `→ v0.5.0`
+## Phase 5 — Notifications & Audit Hardening ✅ `v0.5.0`
 
 Alerting when PHI is detected and hardened audit infrastructure.
 
-- Email notifications (SMTP) on scan findings above configurable threshold
-- Webhook notifications (Slack, Teams, PagerDuty, generic HTTP)
-- Audit log encryption at rest
-- Structured audit query API for downstream integrations
-- `phi-scan history` improvements: date filters, severity filters, export
+- CI/CD notifications: `--post-comment` (PR/MR comment), `--set-status` (commit status),
+  `--upload-sarif` (GitHub Code Scanning inline annotations)
+- Auto-detects GitHub, GitLab, Azure DevOps, CircleCI, Bitbucket
+- Output formats: `junit`, `codequality`, `gitlab-sast`
+- `phi-scan history show|diff|export` with `--repo` and `--violations-only` filters
 
 ---
 
-## Phase 6 — CI/CD Integration & Docker 📋 Planned `→ v0.6.0`
+## Phase 6 — CI/CD Integration & Docker ✅ `v0.5.0`
 
 Drop-in CI/CD templates for all major platforms and a production Docker image.
 
-- Native templates: GitHub Actions, GitLab CI, Jenkins, Azure DevOps, CircleCI,
-  Bitbucket Pipelines, AWS CodeBuild
-- PR/MR inline annotations and comments on each platform
-- GitHub Marketplace action (`phi-scan/phi-scan-action`)
-- Official Docker image on Docker Hub (`phi-scan/phi-scan`)
-- `phi-scan init` auto-detects CI platform and generates the correct template
+- Native templates: GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines,
+  CircleCI orb, AWS CodeBuild — each with native report group and annotation support
+- `joeyessak/phi-scan-action` composite action — one-liner GitHub CI/CD integration
+  with SARIF upload, PR comment, diff-only scanning, and AI review support
+- Multi-arch Docker image (`ghcr.io/joeyessak/phi-scan`, amd64/arm64)
 
 ---
 
-## Phase 7 — AI Enhancement _(Optional)_ 📋 Planned `→ v0.7.0`
+## Phase 7 — AI Enhancement _(Optional)_ 🔄 In Progress `→ v0.7.0`
 
-Reduce false positives using Claude API confidence scoring. Fully optional — the
-scanner operates at full capability without this phase.
+Reduce false positives using AI confidence scoring. Fully optional — the scanner
+operates at full capability without this phase.
 
-- Claude reviews medium-confidence findings only (`confidence < 0.8`)
-- PHI values are redacted before any API call — raw values never leave the machine
-- Graceful fallback to local-only scoring if API is unavailable
-- Disabled by default; opt-in via `.phi-scanner.yml`
+- ✅ AI confidence review layer — medium-confidence findings re-scored by an AI provider
+- ✅ Multi-provider support: Anthropic (`claude-*`), OpenAI (`gpt-*`/`o1`/`o3`/`o4`),
+  Google (`gemini-*`) — provider inferred from model name, no new mandatory dependencies
+- ✅ PHI always redacted before any API call — raw values never leave the machine
+- ✅ Graceful fallback to local-only scoring if API is unavailable
+- ✅ AI token usage logged in audit trail (`prompt_tokens`, `completion_tokens`, `estimated_cost_usd`)
+- ✅ Disabled by default; opt-in via `ai.enable_ai_review: true` in `.phi-scanner.yml`
 
 ---
 

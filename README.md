@@ -282,7 +282,7 @@ Copy-paste templates for all CI platforms: [docs/ci-cd-integration.md](docs/ci-c
 | [docs/ci-cd-integration.md](docs/ci-cd-integration.md) | CI/CD platform copy-paste templates |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common issues, FAQ, debug tips |
 | [docs/known-limitations.md](docs/known-limitations.md) | Binary formats, advisory scope boundaries |
-| [docs/changelog.md](docs/changelog.md) | Version history |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, standards, PR process |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting policy |
 
