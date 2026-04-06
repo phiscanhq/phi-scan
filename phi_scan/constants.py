@@ -155,11 +155,11 @@ DEFAULT_TEXT_ENCODING: str = "utf-8"
 ARCHIVE_EXTENSIONS: frozenset[str] = frozenset({".jar", ".war", ".zip"})
 
 # Decompression bomb protection — per-member limits applied before archive.read().
+# ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES is defined after BYTES_PER_MEGABYTE below.
 # ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES: members whose ZipInfo.file_size exceeds
 # this value are skipped with a WARNING. 100 MB is well above any realistic source
 # file; text config/JSON/XML files in JARs/WARs are typically under 1 MB.
 ARCHIVE_MAX_MEMBER_UNCOMPRESSED_MB: int = 100
-ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES: int = ARCHIVE_MAX_MEMBER_UNCOMPRESSED_MB * 1024 * 1024
 # ARCHIVE_MAX_COMPRESSION_RATIO: if compress_size > 0 and the ratio of
 # file_size / compress_size exceeds this threshold the member is skipped.
 # Classic ZIP bombs achieve ratios of 1032:1 or higher. 200:1 is a safe ceiling
@@ -394,6 +394,8 @@ _KILOBYTES_PER_MEGABYTE: int = 1024
 # outside a named constant — always define a named constant at the call site.
 BYTES_PER_MEGABYTE: int = _BYTES_PER_KILOBYTE * _KILOBYTES_PER_MEGABYTE
 MAX_FILE_SIZE_BYTES: int = MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE
+# Defined here (after BYTES_PER_MEGABYTE) to avoid a forward-reference error.
+ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES: int = ARCHIVE_MAX_MEMBER_UNCOMPRESSED_MB * BYTES_PER_MEGABYTE
 
 # ---------------------------------------------------------------------------
 # HIPAA audit retention

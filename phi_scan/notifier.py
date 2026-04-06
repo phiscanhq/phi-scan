@@ -79,7 +79,6 @@ _NO_SMTP_HOST_ERROR: str = "Email notification requires smtp_host to be set"
 _NO_SMTP_FROM_ERROR: str = "Email notification requires smtp_from to be set"
 _NO_WEBHOOK_URL_ERROR: str = "Webhook notification requires webhook_url to be set"
 _REQUIRED_WEBHOOK_SCHEME: str = "https"
-_EMPTY_HOSTNAME: str = ""
 # URL and hostname values in these messages are SHA-256 hashed before interpolation —
 # webhook URLs may contain path segments with PHI-like content (e.g. /patient/123456789).
 _WEBHOOK_SCHEME_ERROR: str = (
@@ -91,6 +90,10 @@ _WEBHOOK_PRIVATE_IP_ERROR: str = (
     "Webhook URL sha256:{url_hash} resolves to a blocked IP range (sha256:{address_hash}). "
     "Requests to RFC1918, link-local, and cloud metadata ranges are blocked by default. "
     "Set is_private_webhook_url_allowed=True in NotificationConfig to allow self-hosted targets."
+)
+_WEBHOOK_MISSING_HOSTNAME_ERROR: str = (
+    "Webhook URL sha256:{url_hash} contains no hostname — the URL is malformed or empty. "
+    "Provide a valid https:// endpoint with a resolvable hostname."
 )
 _WEBHOOK_DOMAIN_BYPASS_DEBUG: str = (
     "Webhook hostname sha256:{hostname_hash} is not a literal IP — SSRF IP block list skipped. "
@@ -557,9 +560,10 @@ def _build_webhook_payload(
 def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> None:
     """Raise NotificationError if the webhook URL fails SSRF safety checks.
 
-    Enforces two guards when is_private_webhook_url_allowed is False (the default):
+    Enforces three guards (1–2 always, 3 when is_private_webhook_url_allowed is False):
     1. Scheme must be 'https' — plaintext http is rejected.
-    2. Hostname, if a literal IP address, must not fall in a private, loopback,
+    2. Hostname must be present — a URL with no hostname (e.g. 'https://') is always rejected.
+    3. Hostname, if a literal IP address, must not fall in a private, loopback,
        link-local, CGNAT, or cloud metadata range.
 
     Limitation: only literal IP addresses are checked. Domain names that resolve
@@ -580,9 +584,13 @@ def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> Non
         raise NotificationError(
             _WEBHOOK_SCHEME_ERROR.format(url_hash=compute_value_hash(url), scheme=parsed.scheme)
         )
+    hostname = parsed.hostname
+    if not hostname:
+        raise NotificationError(
+            _WEBHOOK_MISSING_HOSTNAME_ERROR.format(url_hash=compute_value_hash(url))
+        )
     if is_private_webhook_url_allowed:
         return
-    hostname = parsed.hostname or _EMPTY_HOSTNAME
     try:
         address = ipaddress.ip_address(hostname)
     except ValueError:

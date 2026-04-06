@@ -545,6 +545,18 @@ def test_validate_webhook_url_still_rejects_http_when_opted_in() -> None:
         _validate_webhook_url(_HTTP_WEBHOOK_URL, is_private_webhook_url_allowed=True)
 
 
+def test_validate_webhook_url_rejects_missing_hostname() -> None:
+    """_validate_webhook_url must reject a URL with no hostname (e.g. 'https://')."""
+    with pytest.raises(NotificationError, match="hostname"):
+        _validate_webhook_url("https://", is_private_webhook_url_allowed=False)
+
+
+def test_validate_webhook_url_rejects_missing_hostname_even_when_opted_in() -> None:
+    """Missing hostname must be rejected even when is_private_webhook_url_allowed=True."""
+    with pytest.raises(NotificationError, match="hostname"):
+        _validate_webhook_url("https://", is_private_webhook_url_allowed=True)
+
+
 def test_validate_webhook_url_scheme_error_does_not_expose_raw_url() -> None:
     """Scheme error message must not contain the raw URL — only its SHA-256 hash."""
     with pytest.raises(NotificationError) as exc_info:
