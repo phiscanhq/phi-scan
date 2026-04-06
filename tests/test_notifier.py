@@ -545,6 +545,24 @@ def test_validate_webhook_url_still_rejects_http_when_opted_in() -> None:
         _validate_webhook_url(_HTTP_WEBHOOK_URL, is_private_allowed=True)
 
 
+def test_validate_webhook_url_scheme_error_does_not_expose_raw_url() -> None:
+    """Scheme error message must not contain the raw URL — only its SHA-256 hash."""
+    with pytest.raises(NotificationError) as exc_info:
+        _validate_webhook_url(_HTTP_WEBHOOK_URL, is_private_allowed=False)
+    error_message = str(exc_info.value)
+    assert _HTTP_WEBHOOK_URL not in error_message
+    assert "sha256:" in error_message
+
+
+def test_validate_webhook_url_private_ip_error_does_not_expose_raw_url() -> None:
+    """Private-IP error message must not contain the raw URL — only its SHA-256 hash."""
+    with pytest.raises(NotificationError) as exc_info:
+        _validate_webhook_url(_PRIVATE_IP_WEBHOOK_URL, is_private_allowed=False)
+    error_message = str(exc_info.value)
+    assert _PRIVATE_IP_WEBHOOK_URL not in error_message
+    assert "sha256:" in error_message
+
+
 def test_send_webhook_rejects_http_url() -> None:
     """send_webhook_notification must raise NotificationError for http:// webhook_url."""
     config = NotificationConfig(

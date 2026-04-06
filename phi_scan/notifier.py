@@ -49,6 +49,7 @@ from phi_scan.constants import (
     WebhookType,
 )
 from phi_scan.exceptions import NotificationError
+from phi_scan.hashing import compute_value_hash
 from phi_scan.models import NotificationConfig, ScanResult
 
 __all__ = ["send_email_notification", "send_webhook_notification"]
@@ -77,18 +78,20 @@ _NO_RECIPIENTS_ERROR: str = "Email notification requires at least one recipient 
 _NO_SMTP_HOST_ERROR: str = "Email notification requires smtp_host to be set"
 _NO_SMTP_FROM_ERROR: str = "Email notification requires smtp_from to be set"
 _NO_WEBHOOK_URL_ERROR: str = "Webhook notification requires webhook_url to be set"
+# URL and hostname values in these messages are SHA-256 hashed before interpolation —
+# webhook URLs may contain path segments with PHI-like content (e.g. /patient/123456789).
 _WEBHOOK_SCHEME_ERROR: str = (
-    "Webhook URL {url!r} uses scheme {scheme!r} — only 'https' is permitted. "
+    "Webhook URL sha256:{url_hash} uses scheme {scheme!r} — only 'https' is permitted. "
     "Use an https:// endpoint to prevent credentials and findings metadata from "
     "being transmitted in plaintext."
 )
 _WEBHOOK_PRIVATE_IP_ERROR: str = (
-    "Webhook URL {url!r} resolves to a private or reserved IP address {address!r}. "
+    "Webhook URL sha256:{url_hash} resolves to private or reserved IP address {address!r}. "
     "Requests to RFC1918, link-local, and cloud metadata ranges are blocked by default. "
     "Set is_private_webhook_url_allowed=True in NotificationConfig to allow self-hosted targets."
 )
 _WEBHOOK_DOMAIN_BYPASS_DEBUG: str = (
-    "Webhook hostname {hostname!r} is not a literal IP address — SSRF IP block list skipped. "
+    "Webhook hostname sha256:{hostname_hash} is not a literal IP — SSRF IP block list skipped. "
     "DNS-based SSRF (e.g. a domain resolving to 169.254.169.254) is not covered by this check; "
     "enforce network-level egress controls to block metadata endpoint access."
 )
@@ -572,17 +575,27 @@ def _validate_webhook_url(url: str, is_private_allowed: bool) -> None:
     """
     parsed = urlparse(url)
     if parsed.scheme != "https":
-        raise NotificationError(_WEBHOOK_SCHEME_ERROR.format(url=url, scheme=parsed.scheme))
+        raise NotificationError(
+            _WEBHOOK_SCHEME_ERROR.format(
+                url_hash=compute_value_hash(url), scheme=parsed.scheme
+            )
+        )
     if is_private_allowed:
         return
     hostname = parsed.hostname or ""
     try:
         address = ipaddress.ip_address(hostname)
     except ValueError:
-        _logger.debug(_WEBHOOK_DOMAIN_BYPASS_DEBUG.format(hostname=hostname))
+        _logger.debug(
+            _WEBHOOK_DOMAIN_BYPASS_DEBUG.format(hostname_hash=compute_value_hash(hostname))
+        )
         return
     if any(address in network for network in _BLOCKED_IP_NETWORKS):
-        raise NotificationError(_WEBHOOK_PRIVATE_IP_ERROR.format(url=url, address=str(address)))
+        raise NotificationError(
+            _WEBHOOK_PRIVATE_IP_ERROR.format(
+                url_hash=compute_value_hash(url), address=str(address)
+            )
+        )
 
 
 def _post_with_retry(

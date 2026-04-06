@@ -634,7 +634,8 @@ def _check_archive_member_size(member_info: zipfile.ZipInfo, archive_path: Path)
         )
         return False
     if member_info.compress_size > 0:
-        # integer floor division is intentional — truncation only tightens the safety check
+        # integer floor division is intentional — rounds down at the boundary, so a ratio of
+        # 200.9:1 becomes 200 and passes the > 200 guard (conservative: fewer false positives)
         ratio = member_info.file_size // member_info.compress_size
         if ratio > ARCHIVE_MAX_COMPRESSION_RATIO:
             _logger.warning(
