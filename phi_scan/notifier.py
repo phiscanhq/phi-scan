@@ -27,6 +27,8 @@ Design constraints:
 
 from __future__ import annotations
 
+import html
+import ipaddress
 import logging
 import os
 import smtplib
@@ -35,6 +37,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -74,6 +77,31 @@ _NO_RECIPIENTS_ERROR: str = "Email notification requires at least one recipient 
 _NO_SMTP_HOST_ERROR: str = "Email notification requires smtp_host to be set"
 _NO_SMTP_FROM_ERROR: str = "Email notification requires smtp_from to be set"
 _NO_WEBHOOK_URL_ERROR: str = "Webhook notification requires webhook_url to be set"
+_WEBHOOK_SCHEME_ERROR: str = (
+    "Webhook URL {url!r} uses scheme {scheme!r} — only 'https' is permitted. "
+    "Use an https:// endpoint to prevent credentials and findings metadata from "
+    "being transmitted in plaintext."
+)
+_WEBHOOK_PRIVATE_IP_ERROR: str = (
+    "Webhook URL {url!r} resolves to a private or reserved IP address {address!r}. "
+    "Requests to RFC1918, link-local, and cloud metadata ranges are blocked by default. "
+    "Set allow_private_webhook_urls=True in NotificationConfig to allow self-hosted targets."
+)
+
+# IP networks blocked by SSRF protection when allow_private_webhook_urls=False.
+# Covers RFC1918 private ranges, link-local, loopback, CGNAT, cloud metadata,
+# and IPv6 equivalents. Addresses not in these ranges are permitted.
+_BLOCKED_IP_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
+    ipaddress.ip_network("10.0.0.0/8"),  # RFC1918 class A
+    ipaddress.ip_network("172.16.0.0/12"),  # RFC1918 class B
+    ipaddress.ip_network("192.168.0.0/16"),  # RFC1918 class C
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local / AWS+GCP metadata
+    ipaddress.ip_network("100.64.0.0/10"),  # CGNAT (RFC6598)
+    ipaddress.ip_network("::1/128"),  # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),  # IPv6 unique local
+    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
+)
 
 # ---------------------------------------------------------------------------
 # Email template constants
@@ -209,10 +237,10 @@ def _build_findings_table_html(scan_result: ScanResult) -> str:
         rows.append(
             _HTML_FINDINGS_TABLE_ROW.format(
                 style=row_style,
-                file_path=str(finding.file_path),
+                file_path=html.escape(str(finding.file_path)),
                 line_number=finding.line_number,
-                category=finding.hipaa_category.value,
-                severity=finding.severity.value,
+                category=html.escape(finding.hipaa_category.value),
+                severity=html.escape(finding.severity.value),
             )
         )
     rows.append(_HTML_FINDINGS_TABLE_FOOTER)
@@ -254,11 +282,11 @@ def _build_email_html_body(
     """
     findings_table = _build_findings_table_html(scan_result)
     return _HTML_EMAIL_TEMPLATE.format(
-        risk_level=scan_result.risk_level.value.upper(),
+        risk_level=html.escape(scan_result.risk_level.value.upper()),
         findings_count=len(scan_result.findings),
-        repo=repo,
-        branch=branch,
-        scanner_version=scanner_version,
+        repo=html.escape(repo),
+        branch=html.escape(branch),
+        scanner_version=html.escape(scanner_version),
         files_scanned=scan_result.files_scanned,
         scan_duration=scan_result.scan_duration,
         findings_table=findings_table,
@@ -516,6 +544,41 @@ def _build_webhook_payload(
     return _build_generic_payload(scan_result, repo, branch, scanner_version)
 
 
+def _validate_webhook_url(url: str, allow_private: bool) -> None:
+    """Raise NotificationError if the webhook URL fails SSRF safety checks.
+
+    Enforces two guards when allow_private is False (the default):
+    1. Scheme must be 'https' — plaintext http is rejected.
+    2. Hostname must not resolve to a private, loopback, link-local, CGNAT,
+       or cloud metadata IP address.
+
+    The hostname check uses getaddrinfo indirectly via ipaddress — it validates
+    the literal hostname/IP only; it does not perform DNS resolution at
+    validation time. DNS-rebinding is a separate concern addressed by network
+    controls outside this application.
+
+    Args:
+        url: The webhook endpoint URL to validate.
+        allow_private: When True, skip the private-IP check (opt-out for
+            self-hosted targets on private networks).
+
+    Raises:
+        NotificationError: If the URL fails any enabled check.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise NotificationError(_WEBHOOK_SCHEME_ERROR.format(url=url, scheme=parsed.scheme))
+    if allow_private:
+        return
+    hostname = parsed.hostname or ""
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return
+    if any(address in network for network in _BLOCKED_IP_NETWORKS):
+        raise NotificationError(_WEBHOOK_PRIVATE_IP_ERROR.format(url=url, address=str(address)))
+
+
 def _post_with_retry(
     url: str,
     payload: dict[str, Any],
@@ -651,6 +714,7 @@ def send_webhook_notification(
     """
     if not config.webhook_url:
         raise NotificationError(_NO_WEBHOOK_URL_ERROR)
+    _validate_webhook_url(config.webhook_url, config.allow_private_webhook_urls)
     payload = _build_webhook_payload(
         config.webhook_type, scan_result, repo, branch, scanner_version
     )

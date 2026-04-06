@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/joeyessak/phi-scan/actions/workflows/ci.yml/badge.svg)](https://github.com/joeyessak/phi-scan/actions/workflows/ci.yml)
 
-**HIPAA & FHIR compliant PHI/PII scanner for CI/CD pipelines. Local execution only — no PHI ever leaves your infrastructure.**
+**HIPAA & FHIR compliant PHI/PII scanner for CI/CD pipelines. Local execution only — no PHI ever leaves your infrastructure (unless AI review is explicitly enabled).**
 
 PhiScan scans source code, configuration files, and structured data for Protected Health Information (PHI) and Personally Identifiable Information (PII) before it reaches your main branch. It integrates into any CI/CD pipeline and blocks pull requests that expose patient data.
 
@@ -30,7 +30,7 @@ PHI found → exit code 1 → commit blocked.
 
 ## Why PhiScan
 
-- **Local execution only.** All scanning runs inside your pipeline runner or developer machine. No data is sent to any external service — ever.
+- **Local execution only.** All scanning runs inside your pipeline runner or developer machine. No data is sent to any external service by default. The optional AI confidence review layer sends redacted code structure (never raw PHI values) to the configured AI provider only when explicitly enabled via `ai.enable_ai_review: true`.
 - **4 detection layers.** Regex (all 18 HIPAA Safe Harbor categories), NLP named entity recognition, FHIR R4 field scanning, and HL7 v2 segment parsing work together.
 - **Zero configuration required.** Sensible defaults work out of the box. Tune with a single YAML file.
 - **Baseline mode.** Adopt incrementally in existing codebases — only new findings block CI.

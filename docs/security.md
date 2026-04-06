@@ -1,25 +1,25 @@
 # Security and PHI Protection Model
 
 PhiScan is built on a single non-negotiable principle: **no PHI ever leaves your
-infrastructure.** This document explains exactly how that guarantee is implemented
-at every layer.
+infrastructure by default.** This document explains exactly how that guarantee is
+implemented at every layer, and where opt-in features extend the boundary.
 
 ---
 
 ## Core Guarantee: Local Execution Only
 
 All scanning executes inside your pipeline runner or developer machine. PhiScan
-makes zero outbound network connections during a scan. There is no telemetry, no
-cloud API, and no external service involved.
+makes zero outbound network connections during a scan by default. There is no
+telemetry, no cloud API, and no external service involved.
 
 This is enforced structurally, not by configuration:
 
 - The base install has no HTTP client used during scanning
-- `httpx` is a listed dependency for future webhook notifications (Phase 5) — it is
-  never called during the scan path
-- AI-assisted confidence scoring (`ai.enable_ai_review`) is disabled by default
+- `httpx` is used only for webhook notifications and CI integrations — it is
+  never called during the scan path itself
+- AI-assisted confidence scoring (`ai.enable_ai_review`) is **disabled by default**
   and requires explicit opt-in. Even when enabled, only redacted code structure is
-  sent — never raw PHI values
+  sent — never raw PHI values. See [AI Integration](#ai-integration-optional-disabled-by-default) below.
 
 ---
 
@@ -183,6 +183,79 @@ If you discover a security vulnerability in PhiScan, please report it privately 
 the GitHub Security Advisory process described in [SECURITY.md](../SECURITY.md).
 
 Do not open a public issue for security vulnerabilities.
+
+---
+
+## Archive Scanning Security
+
+### Decompression Bomb Protection
+
+PhiScan scans text members inside `.zip`, `.jar`, and `.war` files. Before reading
+any archive member into memory, two independent guards are applied:
+
+**1. Absolute size limit**
+
+Each member's uncompressed size (from `ZipInfo.file_size`) is checked before
+decompression. Members exceeding `ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES` (100 MB
+by default) are skipped with a `WARNING` log. The scan continues with remaining
+members.
+
+**2. Compression ratio limit**
+
+If the compression ratio (`uncompressed_size / compressed_size`) exceeds
+`ARCHIVE_MAX_COMPRESSION_RATIO` (200:1 by default), the member is skipped with a
+`WARNING` log. Classic ZIP bombs achieve ratios of 1000:1 or higher — the 200:1
+ceiling blocks all known bomb payloads while accepting all legitimate source files.
+
+Both limits are named constants in `constants.py` and can be tightened for
+high-security environments by overriding them in a custom build.
+
+ZIP-slip path traversal (members with `..` or absolute path components) is
+rejected separately — those members are skipped at path validation before the
+size check runs.
+
+---
+
+## Webhook Security
+
+### SSRF Protection
+
+Webhook URLs are validated before any HTTP request is made. Two checks are enforced
+by default (when `allow_private_webhook_urls: false`):
+
+**1. HTTPS scheme required**
+
+`http://` URLs are rejected with a `NotificationError`. All webhook endpoints must
+use TLS to prevent findings metadata from being transmitted in plaintext.
+
+**2. Private IP block list**
+
+Hostnames that are literal IP addresses are checked against a block list of
+reserved and private ranges:
+
+| Range | Block reason |
+|---|---|
+| `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` | RFC1918 private |
+| `127.0.0.0/8` | Loopback |
+| `169.254.0.0/16` | Link-local / AWS & GCP metadata endpoint |
+| `100.64.0.0/10` | CGNAT (RFC6598) |
+| `::1/128`, `fc00::/7`, `fe80::/10` | IPv6 private/loopback/link-local |
+
+Requests to these ranges are rejected with a `NotificationError` to prevent SSRF
+attacks in CI environments where an attacker could influence the webhook URL via a
+malicious PR.
+
+**Opt-out for self-hosted targets**
+
+If your webhook endpoint is on a private network (e.g., on-premise GitLab,
+internal Jenkins), set:
+
+```yaml
+notifications:
+  allow_private_webhook_urls: true
+```
+
+This disables the IP block list check while keeping the HTTPS requirement in place.
 
 ---
 

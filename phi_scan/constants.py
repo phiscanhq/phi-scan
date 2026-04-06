@@ -48,6 +48,8 @@ __all__ = [
     "HIPAA_AGE_RESTRICTION_THRESHOLD",
     "HIPAA_REMEDIATION_GUIDANCE",
     "ARCHIVE_EXTENSIONS",
+    "ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES",
+    "ARCHIVE_MAX_COMPRESSION_RATIO",
     "ARCHIVE_SCANNABLE_EXTENSIONS",
     "KNOWN_BINARY_EXTENSIONS",
     "BYTES_PER_MEGABYTE",
@@ -150,6 +152,17 @@ DEFAULT_TEXT_ENCODING: str = "utf-8"
 # that collect_scan_targets passes them to scan_file rather than skipping them.
 # ARCHIVE_EXTENSIONS must never overlap with KNOWN_BINARY_EXTENSIONS.
 ARCHIVE_EXTENSIONS: frozenset[str] = frozenset({".jar", ".war", ".zip"})
+
+# Decompression bomb protection — per-member limits applied before archive.read().
+# ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES: members whose ZipInfo.file_size exceeds
+# this value are skipped with a WARNING. 100 MB is well above any realistic source
+# file; text config/JSON/XML files in JARs/WARs are typically under 1 MB.
+ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES: int = 100 * 1024 * 1024  # 100 MB
+# ARCHIVE_MAX_COMPRESSION_RATIO: if compress_size > 0 and the ratio of
+# file_size / compress_size exceeds this threshold the member is skipped.
+# Classic ZIP bombs achieve ratios of 1032:1 or higher. 200:1 is a safe ceiling
+# for legitimate source files while blocking all known bomb payloads.
+ARCHIVE_MAX_COMPRESSION_RATIO: int = 200
 
 # Text resource extensions that are eligible for scanning inside archives.
 # Compiled bytecode (.class, .pyc), media, and other binary members are skipped.

@@ -89,6 +89,15 @@ target/
 # Synthetic PHI fixture corpus — contains intentional PHI-like patterns for
 # detection testing. Excluding prevents false positives when scanning this repo.
 tests/fixtures/phi/
+# Clean fixture corpus — contains version numbers, reserved SSN ranges (000-xx-xxxx,
+# xxx-00-xxxx), and quasi-identifier combinations deliberately crafted to exercise
+# the scanner's true-negative path. These patterns trigger AGE_OVER_THRESHOLD,
+# ZIP_CODE, and quasi-identifier combination detectors as false positives when the
+# scanner scans its own test fixtures.
+tests/fixtures/clean/
+# Fixture manifest — lists fixture file paths and expected finding counts; field
+# names like "unique_id" and "mrn" trigger the quasi-identifier combination detector.
+tests/fixtures/manifest.json
 # HL7 v2 test file — embeds a multi-segment synthetic HL7 message (_FAKE_HL7_MESSAGE)
 # that contains dates, MRN-like identifiers, and a synthetic patient name required
 # for segment-level scanner tests. The fixture values are provably fictional per
@@ -114,6 +123,15 @@ tests/test_compliance_4b.py
 # detector. Also imports PhiCategory and AIReviewConfig constants that combine to
 # produce quasi-identifier false positives when scanned as application source.
 tests/test_ai_review.py
+# Notifier unit test file — contains deliberate private/RFC1918/loopback IP
+# address literals required to test SSRF protection (7E.2). These addresses are
+# test inputs for _validate_webhook_url, not real endpoints.
+tests/test_notifier.py
+# Scanner unit test file — imports ARCHIVE_MAX_COMPRESSION_RATIO,
+# ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES, and defines ZipInfo helper constants
+# whose combinations trigger the quasi-identifier and health plan number detectors
+# when scanned as application source.
+tests/test_scanner.py
 
 # PhiScan project-level documentation and CI configuration.
 # These files are excluded to suppress false positives when phi-scan scans its

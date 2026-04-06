@@ -212,13 +212,19 @@ findings or be missed entirely.
 
 ### ZIP, JAR, WAR (`.zip`, `.jar`, `.war`)
 
-**Status:** Scanned in-memory. Text members only.
+**Status:** Scanned in-memory. Text members only. Decompression bomb protection active.
 
 PhiScan opens these files with `zipfile.ZipFile` and scans text-based members
 whose extension appears in `ARCHIVE_SCANNABLE_EXTENSIONS` (`.conf`, `.json`,
 `.properties`, `.xml`, `.yaml`, `.yml`). Binary members (`.class`, `.pyc`,
 media files) are skipped within the archive. Archive contents are never
 extracted to disk — the local-execution-only contract is preserved.
+
+**Decompression bomb protection:** Before reading any member, PhiScan checks
+`ZipInfo.file_size` and the compression ratio. Members exceeding
+`ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES` (100 MB) or a compression ratio above
+`ARCHIVE_MAX_COMPRESSION_RATIO` (200:1) are skipped with a `WARNING` log. The
+scan continues with remaining members. See [security.md](security.md) for details.
 
 ### TAR and Compressed Archives (`.tar`, `.tar.gz`, `.gz`)
 

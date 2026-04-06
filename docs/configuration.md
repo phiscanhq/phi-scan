@@ -284,6 +284,42 @@ ai:
 
 ---
 
+## `notifications` Section
+
+### `allow_private_webhook_urls`
+
+```yaml
+notifications:
+  allow_private_webhook_urls: false   # default
+```
+
+Controls whether webhook URLs pointing to private or reserved IP addresses are
+permitted. When `false` (the default), the following are blocked:
+
+- `http://` scheme (only `https://` is accepted)
+- RFC1918 ranges: `10.x.x.x`, `172.16–31.x.x`, `192.168.x.x`
+- Loopback: `127.x.x.x`, `::1`
+- Link-local / cloud metadata: `169.254.x.x` (AWS/GCP metadata endpoint)
+- CGNAT: `100.64.0.0/10`
+- IPv6 private/link-local: `fc00::/7`, `fe80::/10`
+
+This prevents SSRF attacks in CI environments where an attacker could influence
+the webhook URL through a malicious pull request.
+
+Set to `true` only if your webhook target is on a private network (e.g., an
+on-premise GitLab instance, an internal Jenkins server behind a private load
+balancer):
+
+```yaml
+notifications:
+  allow_private_webhook_urls: true   # only for self-hosted private targets
+```
+
+The HTTPS scheme requirement remains in effect even when `allow_private_webhook_urls`
+is `true`. `http://` URLs are always rejected.
+
+---
+
 ## CLI Flags That Override Config
 
 These CLI flags take precedence over the corresponding config file settings:

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **ZIP decompression bomb protection:** Archive members are now validated against
+  two guards before being read into memory: an absolute uncompressed size limit
+  (`ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES`, 100 MB) and a compression ratio ceiling
+  (`ARCHIVE_MAX_COMPRESSION_RATIO`, 200:1). Members that exceed either limit are
+  skipped with a `WARNING` log; scanning continues with remaining members.
+- **Webhook SSRF protection:** Webhook URLs are validated before any HTTP request.
+  `http://` scheme is rejected (only `https://` permitted). Requests to RFC1918,
+  loopback, link-local, CGNAT, and cloud metadata IP ranges are blocked by default.
+  Set `notifications.allow_private_webhook_urls: true` to permit self-hosted targets
+  on private networks.
+- **HTML email escaping:** All dynamic fields in email notification templates
+  (`repo`, `branch`, `file_path`, `category`, `severity`, `risk_level`) are now
+  escaped with `html.escape()` before interpolation, preventing XSS via crafted
+  branch or repository names.
+- **Corrected security documentation:** README tagline and Why PhiScan section now
+  accurately reflect that the "no external network calls" guarantee applies by
+  default; the optional AI review layer is explicitly qualified as an opt-in
+  exception.
+
 ### Added
 
 - **Multi-provider AI support:** AI confidence review now supports Anthropic, OpenAI, and

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import logging
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,6 +12,8 @@ import pathspec
 import pytest
 
 from phi_scan.constants import (
+    ARCHIVE_MAX_COMPRESSION_RATIO,
+    ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES,
     BINARY_CHECK_BYTE_COUNT,
     BYTES_PER_MEGABYTE,
     DEFAULT_TEXT_ENCODING,
@@ -22,6 +26,7 @@ from phi_scan.constants import (
 from phi_scan.exceptions import TraversalError
 from phi_scan.models import ScanConfig, ScanResult
 from phi_scan.scanner import (
+    _is_safe_archive_member_size,  # noqa: PLC2701
     collect_scan_targets,
     execute_scan,
     is_binary_file,
@@ -503,3 +508,97 @@ def test_execute_scan_category_counts_all_zero_for_clean_scan() -> None:
     scan_result = execute_scan([], _build_default_config())
 
     assert all(count == 0 for count in scan_result.category_counts.values())
+
+
+# ---------------------------------------------------------------------------
+# Decompression bomb protection — _is_safe_archive_member_size
+# ---------------------------------------------------------------------------
+
+_ARCHIVE_PATH: Path = Path("test.zip")
+_SMALL_MEMBER_SIZE: int = 1024  # 1 KB — well within limits
+_LARGE_MEMBER_SIZE: int = ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES + 1
+_BOMB_COMPRESS_SIZE: int = 100  # tiny compressed size
+_NORMAL_COMPRESS_SIZE: int = 512  # normal compressed size
+
+
+def _make_zip_info(
+    filename: str,
+    file_size: int,
+    compress_size: int,
+) -> zipfile.ZipInfo:
+    """Build a ZipInfo with controlled file_size and compress_size."""
+    info = zipfile.ZipInfo(filename)
+    info.file_size = file_size
+    info.compress_size = compress_size
+    return info
+
+
+def test_archive_member_size_accepts_small_member() -> None:
+    """_is_safe_archive_member_size must return True for a normal-sized member."""
+    info = _make_zip_info("config.json", _SMALL_MEMBER_SIZE, _NORMAL_COMPRESS_SIZE)
+    assert _is_safe_archive_member_size(info, _ARCHIVE_PATH) is True
+
+
+def test_archive_member_size_rejects_oversized_member(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_is_safe_archive_member_size must return False and log WARNING for oversized members."""
+    info = _make_zip_info("big.json", _LARGE_MEMBER_SIZE, _NORMAL_COMPRESS_SIZE)
+    with caplog.at_level(logging.WARNING, logger="phi_scan.scanner"):
+        result = _is_safe_archive_member_size(info, _ARCHIVE_PATH)
+    assert result is False
+    assert "decompression bomb" in caplog.text.lower()
+
+
+def test_archive_member_size_rejects_high_compression_ratio(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_is_safe_archive_member_size must return False for compression ratio > limit."""
+    bomb_size = (ARCHIVE_MAX_COMPRESSION_RATIO + 1) * _BOMB_COMPRESS_SIZE
+    info = _make_zip_info("bomb.json", bomb_size, _BOMB_COMPRESS_SIZE)
+    with caplog.at_level(logging.WARNING, logger="phi_scan.scanner"):
+        result = _is_safe_archive_member_size(info, _ARCHIVE_PATH)
+    assert result is False
+    assert "decompression bomb" in caplog.text.lower()
+
+
+def test_archive_member_size_accepts_zero_compress_size() -> None:
+    """_is_safe_archive_member_size must not divide by zero when compress_size is 0."""
+    info = _make_zip_info("empty.json", _SMALL_MEMBER_SIZE, 0)
+    assert _is_safe_archive_member_size(info, _ARCHIVE_PATH) is True
+
+
+def test_archive_member_size_accepts_ratio_at_limit() -> None:
+    """_is_safe_archive_member_size must accept a ratio exactly at the limit."""
+    exactly_at_limit = ARCHIVE_MAX_COMPRESSION_RATIO * _BOMB_COMPRESS_SIZE
+    info = _make_zip_info("ok.json", exactly_at_limit, _BOMB_COMPRESS_SIZE)
+    assert _is_safe_archive_member_size(info, _ARCHIVE_PATH) is True
+
+
+def test_scan_file_skips_bomb_member_in_real_zip(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """scan_file must skip archive members that fail the decompression bomb check."""
+    archive_path = tmp_path / "test.zip"
+    member_content = b"x" * _SMALL_MEMBER_SIZE
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr("config.json", member_content)
+    archive_path.write_bytes(buf.getvalue())
+
+    oversized = ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES + 1
+
+    def _fake_is_safe(member_info: zipfile.ZipInfo, path: Path) -> bool:
+        return member_info.file_size < oversized
+
+    with (
+        patch("phi_scan.scanner._is_safe_archive_member_size", side_effect=_fake_is_safe),
+        caplog.at_level(logging.WARNING, logger="phi_scan.scanner"),
+    ):
+        from phi_scan.scanner import scan_file as _scan_file
+
+        config = ScanConfig()
+        findings = _scan_file(archive_path, config)
+
+    assert findings == []

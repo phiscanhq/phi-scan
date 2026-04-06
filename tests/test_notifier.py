@@ -31,12 +31,14 @@ from phi_scan.constants import (
 from phi_scan.exceptions import NotificationError
 from phi_scan.models import NotificationConfig, ScanFinding, ScanResult
 from phi_scan.notifier import (
+    _build_email_html_body,  # noqa: PLC2701
     _build_email_subject,
     _build_generic_payload,
     _build_slack_payload,
     _build_teams_payload,
     _build_webhook_payload,
     _get_smtp_credentials,
+    _validate_webhook_url,  # noqa: PLC2701
     send_email_notification,
     send_webhook_notification,
 )
@@ -56,6 +58,16 @@ _SAMPLE_SMTP_FROM: str = "phi-scan@example.com"
 _SAMPLE_RECIPIENT_1: str = "secops@example.com"
 _SAMPLE_RECIPIENT_2: str = "compliance@example.com"
 _SAMPLE_WEBHOOK_URL: str = "https://hooks.example.com/notify"
+_HTTP_WEBHOOK_URL: str = "http://hooks.example.com/notify"
+_PRIVATE_IP_WEBHOOK_URL: str = "https://192.168.1.10/webhook"  # phi-scan:ignore[IPV4_ADDRESS]
+_LOOPBACK_WEBHOOK_URL: str = "https://127.0.0.1/webhook"  # phi-scan:ignore[IPV4_ADDRESS]
+_METADATA_WEBHOOK_URL: str = (
+    "https://169.254.169.254/latest/meta-data"  # phi-scan:ignore[IPV4_ADDRESS]
+)
+_RFC1918_CLASS_A_URL: str = "https://10.0.0.1/hook"  # phi-scan:ignore[IPV4_ADDRESS]
+_CGNAT_URL: str = "https://100.64.0.1/hook"  # phi-scan:ignore[IPV4_ADDRESS]
+_SCRIPT_INJECTION_BRANCH: str = "<script>alert(1)</script>"
+_SCRIPT_INJECTION_REPO: str = "<b>evil</b>"
 _SAMPLE_CONFIDENCE: float = 0.92
 _SAMPLE_LINE_NUMBER: int = 10
 _EMPTY_RECIPIENTS: tuple[str, ...] = ()
@@ -474,3 +486,113 @@ def test_notification_config_is_disabled_by_default() -> None:
     config = NotificationConfig()
     assert config.is_email_enabled is False
     assert config.is_webhook_enabled is False
+
+
+# ---------------------------------------------------------------------------
+# SSRF protection — _validate_webhook_url
+# ---------------------------------------------------------------------------
+
+
+def test_validate_webhook_url_accepts_https() -> None:
+    """_validate_webhook_url must not raise for a valid https URL."""
+    _validate_webhook_url(_SAMPLE_WEBHOOK_URL, allow_private=False)
+
+
+def test_validate_webhook_url_rejects_http_scheme() -> None:
+    """_validate_webhook_url must raise NotificationError for http:// URLs."""
+    with pytest.raises(NotificationError, match="https"):
+        _validate_webhook_url(_HTTP_WEBHOOK_URL, allow_private=False)
+
+
+def test_validate_webhook_url_rejects_rfc1918_class_c() -> None:
+    """_validate_webhook_url must block 192.168.x.x addresses."""
+    with pytest.raises(NotificationError, match="private"):
+        _validate_webhook_url(_PRIVATE_IP_WEBHOOK_URL, allow_private=False)
+
+
+def test_validate_webhook_url_rejects_loopback() -> None:
+    """_validate_webhook_url must block loopback 127.x.x.x addresses."""
+    with pytest.raises(NotificationError, match="private"):
+        _validate_webhook_url(_LOOPBACK_WEBHOOK_URL, allow_private=False)
+
+
+def test_validate_webhook_url_rejects_metadata_endpoint() -> None:
+    """_validate_webhook_url must block 169.254.169.254 (cloud metadata)."""
+    with pytest.raises(NotificationError, match="private"):
+        _validate_webhook_url(_METADATA_WEBHOOK_URL, allow_private=False)
+
+
+def test_validate_webhook_url_rejects_rfc1918_class_a() -> None:
+    """_validate_webhook_url must block 10.x.x.x addresses."""
+    with pytest.raises(NotificationError, match="private"):
+        _validate_webhook_url(_RFC1918_CLASS_A_URL, allow_private=False)
+
+
+def test_validate_webhook_url_rejects_cgnat() -> None:
+    """_validate_webhook_url must block 100.64.x.x CGNAT addresses."""
+    with pytest.raises(NotificationError, match="private"):
+        _validate_webhook_url(_CGNAT_URL, allow_private=False)
+
+
+def test_validate_webhook_url_allows_private_when_opted_in() -> None:
+    """_validate_webhook_url must skip the IP check when allow_private=True."""
+    _validate_webhook_url(_PRIVATE_IP_WEBHOOK_URL, allow_private=True)
+
+
+def test_validate_webhook_url_still_rejects_http_when_opted_in() -> None:
+    """_validate_webhook_url must still reject http:// even when allow_private=True."""
+    with pytest.raises(NotificationError, match="https"):
+        _validate_webhook_url(_HTTP_WEBHOOK_URL, allow_private=True)
+
+
+def test_send_webhook_rejects_http_url() -> None:
+    """send_webhook_notification must raise NotificationError for http:// webhook_url."""
+    config = NotificationConfig(
+        is_webhook_enabled=True,
+        webhook_url=_HTTP_WEBHOOK_URL,
+    )
+    with pytest.raises(NotificationError, match="https"):
+        send_webhook_notification(
+            config, _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+        )
+
+
+def test_send_webhook_rejects_private_ip_url() -> None:
+    """send_webhook_notification must raise NotificationError for RFC1918 webhook_url."""
+    config = NotificationConfig(
+        is_webhook_enabled=True,
+        webhook_url=_PRIVATE_IP_WEBHOOK_URL,
+    )
+    with pytest.raises(NotificationError, match="private"):
+        send_webhook_notification(
+            config, _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+        )
+
+
+# ---------------------------------------------------------------------------
+# HTML email escaping — XSS prevention
+# ---------------------------------------------------------------------------
+
+
+def test_email_html_body_escapes_branch_name() -> None:
+    """_build_email_html_body must HTML-escape the branch name."""
+    html_body = _build_email_html_body(
+        _make_dirty_result(),
+        _SAMPLE_REPO,
+        _SCRIPT_INJECTION_BRANCH,
+        _SAMPLE_SCANNER_VERSION,
+    )
+    assert "<script>" not in html_body
+    assert "&lt;script&gt;" in html_body
+
+
+def test_email_html_body_escapes_repo_name() -> None:
+    """_build_email_html_body must HTML-escape the repo name."""
+    html_body = _build_email_html_body(
+        _make_dirty_result(),
+        _SCRIPT_INJECTION_REPO,
+        _SAMPLE_BRANCH,
+        _SAMPLE_SCANNER_VERSION,
+    )
+    assert "<b>" not in html_body
+    assert "&lt;b&gt;" in html_body
