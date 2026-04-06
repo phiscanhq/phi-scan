@@ -605,13 +605,14 @@ def _is_safe_archive_member_path(member_name: str) -> bool:
     return _DOTDOT_PATH_COMPONENT not in member_path.parts
 
 
-def _check_archive_member_size(member_info: zipfile.ZipInfo, archive_path: Path) -> bool:
-    """Return True if the archive member passes decompression bomb checks; False (and log) if not.
+def _passes_decompression_bomb_guards(member_info: zipfile.ZipInfo, archive_path: Path) -> bool:
+    """Return True if the member passes both decompression bomb guards; False and log if not.
 
-    Checks two independent guards before the member is read into memory:
+    Applies two independent guards before the member is read into memory:
     1. Absolute uncompressed size must not exceed ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES.
-    2. Compression ratio (file_size / compress_size) must not exceed
-       ARCHIVE_MAX_COMPRESSION_RATIO when the compressed size is non-zero.
+    2. Uncompressed size must not exceed ARCHIVE_MAX_COMPRESSION_RATIO × compressed size.
+       Guard 2 uses multiplication (file_size > limit × compress_size) rather than division
+       to avoid floor-rounding ambiguity at the boundary and floating-point imprecision.
 
     Emits a WARNING log for each guard that triggers so operators can identify
     suspicious archive members without crashing the scan.
@@ -621,7 +622,7 @@ def _check_archive_member_size(member_info: zipfile.ZipInfo, archive_path: Path)
         archive_path: Path to the archive on disk (used for log messages only).
 
     Returns:
-        True if the member is safe to read, False if either guard triggers.
+        True if the member passes both guards, False if either guard triggers.
     """
     if member_info.file_size > ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES:
         _logger.warning(
@@ -634,15 +635,13 @@ def _check_archive_member_size(member_info: zipfile.ZipInfo, archive_path: Path)
         )
         return False
     if member_info.compress_size > 0:
-        # integer floor division is intentional — rounds down at the boundary, so a ratio of
-        # 200.9:1 becomes 200 and passes the > 200 guard (conservative: fewer false positives)
-        ratio = member_info.file_size // member_info.compress_size
-        if ratio > ARCHIVE_MAX_COMPRESSION_RATIO:
+        if member_info.file_size > ARCHIVE_MAX_COMPRESSION_RATIO * member_info.compress_size:
+            ratio = member_info.file_size / member_info.compress_size
             _logger.warning(
                 _ARCHIVE_MEMBER_RATIO_WARNING.format(
                     member=member_info.filename,
                     path=archive_path,
-                    ratio=ratio,
+                    ratio=f"{ratio:.1f}",
                     limit=ARCHIVE_MAX_COMPRESSION_RATIO,
                 )
             )
@@ -675,7 +674,7 @@ def _scan_archive_members(
             continue
         if Path(member_name).suffix.lower() not in ARCHIVE_SCANNABLE_EXTENSIONS:
             continue
-        if not _check_archive_member_size(member_info, archive_path):
+        if not _passes_decompression_bomb_guards(member_info, archive_path):
             continue
         try:
             member_bytes = archive.read(member_name)

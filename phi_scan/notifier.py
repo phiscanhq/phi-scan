@@ -86,7 +86,7 @@ _WEBHOOK_SCHEME_ERROR: str = (
     "being transmitted in plaintext."
 )
 _WEBHOOK_PRIVATE_IP_ERROR: str = (
-    "Webhook URL sha256:{url_hash} resolves to private or reserved IP address {address!r}. "
+    "Webhook URL sha256:{url_hash} resolves to a blocked IP range (sha256:{address_hash}). "
     "Requests to RFC1918, link-local, and cloud metadata ranges are blocked by default. "
     "Set is_private_webhook_url_allowed=True in NotificationConfig to allow self-hosted targets."
 )
@@ -552,10 +552,10 @@ def _build_webhook_payload(
     return _build_generic_payload(scan_result, repo, branch, scanner_version)
 
 
-def _validate_webhook_url(url: str, is_private_allowed: bool) -> None:
+def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> None:
     """Raise NotificationError if the webhook URL fails SSRF safety checks.
 
-    Enforces two guards when is_private_allowed is False (the default):
+    Enforces two guards when is_private_webhook_url_allowed is False (the default):
     1. Scheme must be 'https' — plaintext http is rejected.
     2. Hostname, if a literal IP address, must not fall in a private, loopback,
        link-local, CGNAT, or cloud metadata range.
@@ -567,8 +567,8 @@ def _validate_webhook_url(url: str, is_private_allowed: bool) -> None:
 
     Args:
         url: The webhook endpoint URL to validate.
-        is_private_allowed: When True, skip the private-IP check (opt-out for
-            self-hosted targets on private networks).
+        is_private_webhook_url_allowed: When True, skip the private-IP check (opt-out
+            for self-hosted targets on private networks).
 
     Raises:
         NotificationError: If the URL fails any enabled check.
@@ -580,7 +580,7 @@ def _validate_webhook_url(url: str, is_private_allowed: bool) -> None:
                 url_hash=compute_value_hash(url), scheme=parsed.scheme
             )
         )
-    if is_private_allowed:
+    if is_private_webhook_url_allowed:
         return
     hostname = parsed.hostname or ""
     try:
@@ -593,7 +593,7 @@ def _validate_webhook_url(url: str, is_private_allowed: bool) -> None:
     if any(address in network for network in _BLOCKED_IP_NETWORKS):
         raise NotificationError(
             _WEBHOOK_PRIVATE_IP_ERROR.format(
-                url_hash=compute_value_hash(url), address=str(address)
+                url_hash=compute_value_hash(url), address_hash=compute_value_hash(str(address))
             )
         )
 

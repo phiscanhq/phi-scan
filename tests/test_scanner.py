@@ -26,7 +26,7 @@ from phi_scan.constants import (
 from phi_scan.exceptions import TraversalError
 from phi_scan.models import ScanConfig, ScanResult
 from phi_scan.scanner import (
-    _check_archive_member_size,  # noqa: PLC2701
+    _passes_decompression_bomb_guards,  # noqa: PLC2701
     collect_scan_targets,
     execute_scan,
     is_binary_file,
@@ -511,7 +511,7 @@ def test_execute_scan_category_counts_all_zero_for_clean_scan() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Decompression bomb protection — _check_archive_member_size
+# Decompression bomb protection — _passes_decompression_bomb_guards
 # ---------------------------------------------------------------------------
 
 _ARCHIVE_PATH: Path = Path("test.zip")
@@ -534,18 +534,18 @@ def _make_zip_info(
 
 
 def test_archive_member_size_accepts_small_member() -> None:
-    """_check_archive_member_size must return True for a normal-sized member."""
+    """_passes_decompression_bomb_guards must return True for a normal-sized member."""
     info = _make_zip_info("config.json", _SMALL_MEMBER_SIZE, _NORMAL_COMPRESS_SIZE)
-    assert _check_archive_member_size(info, _ARCHIVE_PATH) is True
+    assert _passes_decompression_bomb_guards(info, _ARCHIVE_PATH) is True
 
 
 def test_archive_member_size_rejects_oversized_member(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """_check_archive_member_size must return False and log WARNING for oversized members."""
+    """_passes_decompression_bomb_guards must return False and log WARNING for oversized members."""
     info = _make_zip_info("big.json", _LARGE_MEMBER_SIZE, _NORMAL_COMPRESS_SIZE)
     with caplog.at_level(logging.WARNING, logger="phi_scan.scanner"):
-        result = _check_archive_member_size(info, _ARCHIVE_PATH)
+        result = _passes_decompression_bomb_guards(info, _ARCHIVE_PATH)
     assert result is False
     assert "decompression bomb" in caplog.text.lower()
 
@@ -553,26 +553,26 @@ def test_archive_member_size_rejects_oversized_member(
 def test_archive_member_size_rejects_high_compression_ratio(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """_check_archive_member_size must return False for compression ratio > limit."""
+    """_passes_decompression_bomb_guards must return False for compression ratio > limit."""
     bomb_size = (ARCHIVE_MAX_COMPRESSION_RATIO + 1) * _BOMB_COMPRESS_SIZE
     info = _make_zip_info("bomb.json", bomb_size, _BOMB_COMPRESS_SIZE)
     with caplog.at_level(logging.WARNING, logger="phi_scan.scanner"):
-        result = _check_archive_member_size(info, _ARCHIVE_PATH)
+        result = _passes_decompression_bomb_guards(info, _ARCHIVE_PATH)
     assert result is False
     assert "decompression bomb" in caplog.text.lower()
 
 
 def test_archive_member_size_accepts_zero_compress_size() -> None:
-    """_check_archive_member_size must not divide by zero when compress_size is 0."""
+    """_passes_decompression_bomb_guards must not divide by zero when compress_size is 0."""
     info = _make_zip_info("empty.json", _SMALL_MEMBER_SIZE, 0)
-    assert _check_archive_member_size(info, _ARCHIVE_PATH) is True
+    assert _passes_decompression_bomb_guards(info, _ARCHIVE_PATH) is True
 
 
 def test_archive_member_size_accepts_ratio_at_limit() -> None:
-    """_check_archive_member_size must accept a ratio exactly at the limit."""
+    """_passes_decompression_bomb_guards must accept a ratio exactly at the limit."""
     exactly_at_limit = ARCHIVE_MAX_COMPRESSION_RATIO * _BOMB_COMPRESS_SIZE
     info = _make_zip_info("ok.json", exactly_at_limit, _BOMB_COMPRESS_SIZE)
-    assert _check_archive_member_size(info, _ARCHIVE_PATH) is True
+    assert _passes_decompression_bomb_guards(info, _ARCHIVE_PATH) is True
 
 
 def test_scan_file_skips_bomb_member_in_real_zip(
@@ -593,7 +593,7 @@ def test_scan_file_skips_bomb_member_in_real_zip(
         return member_info.file_size < oversized
 
     with (
-        patch("phi_scan.scanner._check_archive_member_size", side_effect=_fake_is_safe),
+        patch("phi_scan.scanner._passes_decompression_bomb_guards", side_effect=_fake_is_safe),
         caplog.at_level(logging.WARNING, logger="phi_scan.scanner"),
     ):
         from phi_scan.scanner import scan_file as _scan_file
