@@ -48,6 +48,7 @@ __all__ = [
     "HIPAA_AGE_RESTRICTION_THRESHOLD",
     "HIPAA_REMEDIATION_GUIDANCE",
     "ARCHIVE_EXTENSIONS",
+    "ARCHIVE_MAX_MEMBER_UNCOMPRESSED_MB",
     "ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES",
     "ARCHIVE_MAX_COMPRESSION_RATIO",
     "ARCHIVE_SCANNABLE_EXTENSIONS",
@@ -157,7 +158,8 @@ ARCHIVE_EXTENSIONS: frozenset[str] = frozenset({".jar", ".war", ".zip"})
 # ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES: members whose ZipInfo.file_size exceeds
 # this value are skipped with a WARNING. 100 MB is well above any realistic source
 # file; text config/JSON/XML files in JARs/WARs are typically under 1 MB.
-ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES: int = 100 * 1024 * 1024  # 100 MB
+ARCHIVE_MAX_MEMBER_UNCOMPRESSED_MB: int = 100
+ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES: int = ARCHIVE_MAX_MEMBER_UNCOMPRESSED_MB * 1024 * 1024
 # ARCHIVE_MAX_COMPRESSION_RATIO: if compress_size > 0 and the ratio of
 # file_size / compress_size exceeds this threshold the member is skipped.
 # Classic ZIP bombs achieve ratios of 1032:1 or higher. 200:1 is a safe ceiling

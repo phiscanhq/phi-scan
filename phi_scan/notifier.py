@@ -78,6 +78,8 @@ _NO_RECIPIENTS_ERROR: str = "Email notification requires at least one recipient 
 _NO_SMTP_HOST_ERROR: str = "Email notification requires smtp_host to be set"
 _NO_SMTP_FROM_ERROR: str = "Email notification requires smtp_from to be set"
 _NO_WEBHOOK_URL_ERROR: str = "Webhook notification requires webhook_url to be set"
+_REQUIRED_WEBHOOK_SCHEME: str = "https"
+_EMPTY_HOSTNAME: str = ""
 # URL and hostname values in these messages are SHA-256 hashed before interpolation —
 # webhook URLs may contain path segments with PHI-like content (e.g. /patient/123456789).
 _WEBHOOK_SCHEME_ERROR: str = (
@@ -574,13 +576,13 @@ def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> Non
         NotificationError: If the URL fails any enabled check.
     """
     parsed = urlparse(url)
-    if parsed.scheme != "https":
+    if parsed.scheme != _REQUIRED_WEBHOOK_SCHEME:
         raise NotificationError(
             _WEBHOOK_SCHEME_ERROR.format(url_hash=compute_value_hash(url), scheme=parsed.scheme)
         )
     if is_private_webhook_url_allowed:
         return
-    hostname = parsed.hostname or ""
+    hostname = parsed.hostname or _EMPTY_HOSTNAME
     try:
         address = ipaddress.ip_address(hostname)
     except ValueError:

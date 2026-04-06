@@ -58,6 +58,7 @@ _YAML_KEY_WEBHOOK_TYPE: str = "webhook_type"
 _YAML_KEY_WEBHOOK_RETRY_COUNT: str = "webhook_retry_count"
 _YAML_KEY_NOTIFY_ON_VIOLATION_ONLY: str = "notify_on_violation_only"
 _YAML_KEY_PRIVATE_WEBHOOK_ALLOWED: str = "is_private_webhook_url_allowed"
+_DEFAULT_PRIVATE_WEBHOOK_ALLOWED: bool = False
 _YAML_SECTION_AI: str = "ai"
 _YAML_KEY_ENABLE_AI_REVIEW: str = "enable_ai_review"
 _YAML_KEY_AI_MODEL: str = "model"
@@ -524,7 +525,9 @@ def _parse_notification_config(notifications_section: dict[str, Any]) -> Notific
             notifications_section.get(_YAML_KEY_NOTIFY_ON_VIOLATION_ONLY, True)
         ),
         is_private_webhook_url_allowed=bool(
-            notifications_section.get(_YAML_KEY_PRIVATE_WEBHOOK_ALLOWED, False)
+            notifications_section.get(
+                _YAML_KEY_PRIVATE_WEBHOOK_ALLOWED, _DEFAULT_PRIVATE_WEBHOOK_ALLOWED
+            )
         ),
     )
 

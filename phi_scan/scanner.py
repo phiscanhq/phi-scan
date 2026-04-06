@@ -605,17 +605,39 @@ def _is_safe_archive_member_path(member_name: str) -> bool:
     return _DOTDOT_PATH_COMPONENT not in member_path.parts
 
 
+def _warn_member_too_large(member_info: zipfile.ZipInfo, archive_path: Path) -> None:
+    """Emit a WARNING log when a member exceeds the absolute size limit."""
+    _logger.warning(
+        _ARCHIVE_MEMBER_TOO_LARGE_WARNING.format(
+            member=member_info.filename,
+            path=archive_path,
+            size=member_info.file_size,
+            limit=ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES,
+        )
+    )
+
+
+def _warn_member_ratio_exceeded(member_info: zipfile.ZipInfo, archive_path: Path) -> None:
+    """Emit a WARNING log when a member's compression ratio exceeds the limit."""
+    ratio = member_info.file_size / member_info.compress_size
+    _logger.warning(
+        _ARCHIVE_MEMBER_RATIO_WARNING.format(
+            member=member_info.filename,
+            path=archive_path,
+            ratio=f"{ratio:.1f}",
+            limit=ARCHIVE_MAX_COMPRESSION_RATIO,
+        )
+    )
+
+
 def _passes_decompression_bomb_guards(member_info: zipfile.ZipInfo, archive_path: Path) -> bool:
     """Return True if the member passes both decompression bomb guards; False and log if not.
 
     Applies two independent guards before the member is read into memory:
     1. Absolute uncompressed size must not exceed ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES.
     2. Uncompressed size must not exceed ARCHIVE_MAX_COMPRESSION_RATIO × compressed size.
-       Guard 2 uses multiplication (file_size > limit × compress_size) rather than division
-       to avoid floor-rounding ambiguity at the boundary and floating-point imprecision.
-
-    Emits a WARNING log for each guard that triggers so operators can identify
-    suspicious archive members without crashing the scan.
+       Uses multiplication (file_size > limit × compress_size) to avoid floor-rounding
+       ambiguity at the boundary and floating-point imprecision.
 
     Args:
         member_info: ZipInfo metadata for the member (read before decompression).
@@ -625,27 +647,14 @@ def _passes_decompression_bomb_guards(member_info: zipfile.ZipInfo, archive_path
         True if the member passes both guards, False if either guard triggers.
     """
     if member_info.file_size > ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES:
-        _logger.warning(
-            _ARCHIVE_MEMBER_TOO_LARGE_WARNING.format(
-                member=member_info.filename,
-                path=archive_path,
-                size=member_info.file_size,
-                limit=ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES,
-            )
-        )
+        _warn_member_too_large(member_info, archive_path)
         return False
-    if member_info.compress_size > 0:
-        if member_info.file_size > ARCHIVE_MAX_COMPRESSION_RATIO * member_info.compress_size:
-            ratio = member_info.file_size / member_info.compress_size
-            _logger.warning(
-                _ARCHIVE_MEMBER_RATIO_WARNING.format(
-                    member=member_info.filename,
-                    path=archive_path,
-                    ratio=f"{ratio:.1f}",
-                    limit=ARCHIVE_MAX_COMPRESSION_RATIO,
-                )
-            )
-            return False
+    if (
+        member_info.compress_size > 0
+        and member_info.file_size > ARCHIVE_MAX_COMPRESSION_RATIO * member_info.compress_size
+    ):
+        _warn_member_ratio_exceeded(member_info, archive_path)
+        return False
     return True
 
 
