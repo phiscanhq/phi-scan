@@ -880,17 +880,19 @@ def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> No
         "tool_name": "phi-scan",
     }
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=url,
-        operation_label="GitHub SARIF upload",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        json_body=sarif_upload_payload,
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=url,
+            operation_label="GitHub SARIF upload",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json_body=sarif_upload_payload,
+        )
+    )
 
     _LOG.debug("GitHub: SARIF uploaded to Code Scanning for %s", sha[:8])
 
@@ -954,13 +956,15 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
         ],
     }
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.PUT,
-        url=report_url,
-        operation_label="Bitbucket Code Insights report",
-        headers=headers,
-        json_body=report_payload,
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.PUT,
+            url=report_url,
+            operation_label="Bitbucket Code Insights report",
+            headers=headers,
+            json_body=report_payload,
+        )
+    )
 
     if not scan_result.findings:
         return
@@ -987,13 +991,15 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
         for idx, finding in enumerate(scan_result.findings[:1000])
     ]
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=annotations_url,
-        operation_label="Bitbucket Code Insights annotations",
-        headers=headers,
-        json_body=annotations,
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=annotations_url,
+            operation_label="Bitbucket Code Insights annotations",
+            headers=headers,
+            json_body=annotations,
+        )
+    )
 
     _LOG.debug(
         "Bitbucket: Code Insights report + %d annotation(s) posted for %s",
@@ -1042,13 +1048,15 @@ def set_azure_build_tag(scan_result: ScanResult, pr_context: PRContext) -> None:
         api_version=_AZURE_API_VERSION,
     )
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.PUT,
-        url=url,
-        operation_label="Azure DevOps build tag",
-        binary_body=b"",
-        auth=("", token),
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.PUT,
+            url=url,
+            operation_label="Azure DevOps build tag",
+            binary_body=b"",
+            auth=("", token),
+        )
+    )
 
     _LOG.debug("Azure DevOps: build tagged with %s", tag)
 
@@ -1103,13 +1111,15 @@ def set_azure_pr_status(scan_result: ScanResult, pr_context: PRContext) -> None:
         },
     }
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=url,
-        operation_label="Azure DevOps PR status",
-        json_body=payload,
-        auth=("", token),
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=url,
+            operation_label="Azure DevOps PR status",
+            json_body=payload,
+            auth=("", token),
+        )
+    )
 
     _LOG.debug("Azure DevOps: PR status set to %s for PR #%s", state, pr_id)
 
@@ -1186,14 +1196,16 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
         {"op": "add", "path": "/fields/System.Tags", "value": "phi-scan;security;phi-pii"},
     ]
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=url,
-        operation_label="Azure Boards work item",
-        headers={"Content-Type": _AZURE_PATCH_CONTENT_TYPE},
-        json_body=patch_payload,
-        auth=("", token),
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=url,
+            operation_label="Azure Boards work item",
+            headers={"Content-Type": _AZURE_PATCH_CONTENT_TYPE},
+            json_body=patch_payload,
+            auth=("", token),
+        )
+    )
 
     _LOG.debug(
         "Azure Boards: work item created for PR #%s (%d HIGH findings)",
@@ -1544,13 +1556,15 @@ def _post_gitlab_mr_comment(comment_body: str, pr_context: PRContext) -> None:
     headers = {"PRIVATE-TOKEN": token, "Content-Type": _JSON_CONTENT_TYPE}
     payload = {"body": comment_body}
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=url,
-        operation_label="GitLab MR comment",
-        headers=headers,
-        json_body=payload,
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=url,
+            operation_label="GitLab MR comment",
+            headers=headers,
+            json_body=payload,
+        )
+    )
 
     _LOG.debug("GitLab: MR note posted to !%s", mr_iid)
 
@@ -1597,13 +1611,15 @@ def _post_azure_pr_comment(comment_body: str, pr_context: PRContext) -> None:
         "status": "active",
     }
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=url,
-        operation_label="Azure DevOps PR comment",
-        json_body=payload,
-        auth=("", token),
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=url,
+            operation_label="Azure DevOps PR comment",
+            json_body=payload,
+            auth=("", token),
+        )
+    )
 
     _LOG.debug("Azure DevOps: PR thread comment posted to PR #%s", pr_id)
 
@@ -1639,13 +1655,15 @@ def _post_bitbucket_pr_comment(comment_body: str, pr_context: PRContext) -> None
         pr_id=pr_id,
     )
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=url,
-        operation_label="Bitbucket PR comment",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": _JSON_CONTENT_TYPE},
-        json_body={"content": {"raw": comment_body}},
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=url,
+            operation_label="Bitbucket PR comment",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": _JSON_CONTENT_TYPE},
+            json_body={"content": {"raw": comment_body}},
+        )
+    )
 
     _LOG.debug("Bitbucket: PR comment posted to PR #%s", pr_id)
 
@@ -1804,17 +1822,19 @@ def _set_github_commit_status(scan_result: ScanResult, pr_context: PRContext) ->
         "context": _COMMIT_STATUS_CONTEXT,
     }
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=url,
-        operation_label="GitHub commit status",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        json_body=payload,
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=url,
+            operation_label="GitHub commit status",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json_body=payload,
+        )
+    )
 
     _LOG.debug("GitHub: commit status set to %s for %s", github_state, sha[:8])
 
@@ -1856,13 +1876,15 @@ def _set_gitlab_commit_status(scan_result: ScanResult, pr_context: PRContext) ->
         ),
     }
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=url,
-        operation_label="GitLab commit status",
-        headers={"PRIVATE-TOKEN": token},
-        json_body=payload,
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=url,
+            operation_label="GitLab commit status",
+            headers={"PRIVATE-TOKEN": token},
+            json_body=payload,
+        )
+    )
 
     _LOG.debug("GitLab: commit status set to %s for %s", state, sha[:8])
 
@@ -1906,13 +1928,15 @@ def _set_bitbucket_commit_status(scan_result: ScanResult, pr_context: PRContext)
         ),
     }
 
-    _execute_http_request(_HttpRequestConfig(
-        method=_HttpMethod.POST,
-        url=url,
-        operation_label="Bitbucket commit status",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": _JSON_CONTENT_TYPE},
-        json_body=payload,
-    ))
+    _execute_http_request(
+        _HttpRequestConfig(
+            method=_HttpMethod.POST,
+            url=url,
+            operation_label="Bitbucket commit status",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": _JSON_CONTENT_TYPE},
+            json_body=payload,
+        )
+    )
 
     _LOG.debug("Bitbucket: commit status set to %s for %s", state, sha[:8])
 
