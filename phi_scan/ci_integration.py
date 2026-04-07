@@ -335,6 +335,16 @@ class BaselineComparison:
 # ---------------------------------------------------------------------------
 
 
+class _HttpMethod(enum.StrEnum):
+    """HTTP methods used by CI/CD platform API calls in this module."""
+
+    GET = "GET"
+    POST = "POST"
+    PUT = "PUT"
+    PATCH = "PATCH"
+    DELETE = "DELETE"
+
+
 @dataclass(frozen=True)
 class _HttpRequestConfig:
     """Parameters for a single outbound HTTP request.
@@ -344,13 +354,36 @@ class _HttpRequestConfig:
     ``_execute_http_request`` can centralise the try/except scaffolding.
     """
 
-    method: str
+    method: _HttpMethod
     url: str
     operation_label: str
     headers: dict[str, str] | None = None
-    json_payload: Any | None = None
+    json_body: Any | None = None
     content: bytes | None = None
     auth: tuple[str, str] | None = None
+
+
+def _build_httpx_kwargs(request_config: _HttpRequestConfig) -> dict[str, Any]:
+    """Build the keyword-argument dict for ``httpx.request`` from a config object.
+
+    Omits keys whose config value is ``None`` so httpx uses its own defaults.
+
+    Args:
+        request_config: Populated request configuration.
+
+    Returns:
+        Dict ready to unpack into ``httpx.request(..., **kwargs)``.
+    """
+    request_kwargs: dict[str, Any] = {"timeout": _HTTP_TIMEOUT_SECONDS}
+    if request_config.headers is not None:
+        request_kwargs["headers"] = request_config.headers
+    if request_config.json_body is not None:
+        request_kwargs["json"] = request_config.json_body
+    if request_config.content is not None:
+        request_kwargs["content"] = request_config.content
+    if request_config.auth is not None:
+        request_kwargs["auth"] = request_config.auth
+    return request_kwargs
 
 
 def _execute_http_request(request_config: _HttpRequestConfig) -> httpx.Response:
@@ -369,17 +402,9 @@ def _execute_http_request(request_config: _HttpRequestConfig) -> httpx.Response:
     Raises:
         CIIntegrationError: On HTTP 4xx/5xx or any network error.
     """
-    kwargs: dict[str, Any] = {"timeout": _HTTP_TIMEOUT_SECONDS}
-    if request_config.headers is not None:
-        kwargs["headers"] = request_config.headers
-    if request_config.json_payload is not None:
-        kwargs["json"] = request_config.json_payload
-    if request_config.content is not None:
-        kwargs["content"] = request_config.content
-    if request_config.auth is not None:
-        kwargs["auth"] = request_config.auth
+    request_kwargs = _build_httpx_kwargs(request_config)
     try:
-        response = httpx.request(request_config.method, request_config.url, **kwargs)
+        response = httpx.request(request_config.method, request_config.url, **request_kwargs)
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
@@ -852,7 +877,7 @@ def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> No
     }
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=url,
         operation_label="GitHub SARIF upload",
         headers={
@@ -860,7 +885,7 @@ def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> No
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         },
-        json_payload=sarif_upload_payload,
+        json_body=sarif_upload_payload,
     ))
 
     _LOG.debug("GitHub: SARIF uploaded to Code Scanning for %s", sha[:8])
@@ -926,11 +951,11 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
     }
 
     _execute_http_request(_HttpRequestConfig(
-        method="PUT",
+        method=_HttpMethod.PUT,
         url=report_url,
         operation_label="Bitbucket Code Insights report",
         headers=headers,
-        json_payload=report_payload,
+        json_body=report_payload,
     ))
 
     if not scan_result.findings:
@@ -959,11 +984,11 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
     ]
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=annotations_url,
         operation_label="Bitbucket Code Insights annotations",
         headers=headers,
-        json_payload=annotations,
+        json_body=annotations,
     ))
 
     _LOG.debug(
@@ -1014,7 +1039,7 @@ def set_azure_build_tag(scan_result: ScanResult, pr_context: PRContext) -> None:
     )
 
     _execute_http_request(_HttpRequestConfig(
-        method="PUT",
+        method=_HttpMethod.PUT,
         url=url,
         operation_label="Azure DevOps build tag",
         content=b"",
@@ -1075,10 +1100,10 @@ def set_azure_pr_status(scan_result: ScanResult, pr_context: PRContext) -> None:
     }
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=url,
         operation_label="Azure DevOps PR status",
-        json_payload=payload,
+        json_body=payload,
         auth=("", token),
     ))
 
@@ -1158,11 +1183,11 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
     ]
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=url,
         operation_label="Azure Boards work item",
         headers={"Content-Type": "application/json-patch+json"},
-        json_payload=patch_payload,
+        json_body=patch_payload,
         auth=("", token),
     ))
 
@@ -1516,11 +1541,11 @@ def _post_gitlab_mr_comment(comment_body: str, pr_context: PRContext) -> None:
     payload = {"body": comment_body}
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=url,
         operation_label="GitLab MR comment",
         headers=headers,
-        json_payload=payload,
+        json_body=payload,
     ))
 
     _LOG.debug("GitLab: MR note posted to !%s", mr_iid)
@@ -1569,10 +1594,10 @@ def _post_azure_pr_comment(comment_body: str, pr_context: PRContext) -> None:
     }
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=url,
         operation_label="Azure DevOps PR comment",
-        json_payload=payload,
+        json_body=payload,
         auth=("", token),
     ))
 
@@ -1611,11 +1636,11 @@ def _post_bitbucket_pr_comment(comment_body: str, pr_context: PRContext) -> None
     )
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=url,
         operation_label="Bitbucket PR comment",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json_payload={"content": {"raw": comment_body}},
+        json_body={"content": {"raw": comment_body}},
     ))
 
     _LOG.debug("Bitbucket: PR comment posted to PR #%s", pr_id)
@@ -1776,7 +1801,7 @@ def _set_github_commit_status(scan_result: ScanResult, pr_context: PRContext) ->
     }
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=url,
         operation_label="GitHub commit status",
         headers={
@@ -1784,7 +1809,7 @@ def _set_github_commit_status(scan_result: ScanResult, pr_context: PRContext) ->
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         },
-        json_payload=payload,
+        json_body=payload,
     ))
 
     _LOG.debug("GitHub: commit status set to %s for %s", github_state, sha[:8])
@@ -1828,11 +1853,11 @@ def _set_gitlab_commit_status(scan_result: ScanResult, pr_context: PRContext) ->
     }
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=url,
         operation_label="GitLab commit status",
         headers={"PRIVATE-TOKEN": token},
-        json_payload=payload,
+        json_body=payload,
     ))
 
     _LOG.debug("GitLab: commit status set to %s for %s", state, sha[:8])
@@ -1878,11 +1903,11 @@ def _set_bitbucket_commit_status(scan_result: ScanResult, pr_context: PRContext)
     }
 
     _execute_http_request(_HttpRequestConfig(
-        method="POST",
+        method=_HttpMethod.POST,
         url=url,
         operation_label="Bitbucket commit status",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json_payload=payload,
+        json_body=payload,
     ))
 
     _LOG.debug("Bitbucket: commit status set to %s for %s", state, sha[:8])
