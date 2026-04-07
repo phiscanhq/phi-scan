@@ -2060,9 +2060,9 @@ Baseline commands repeat similar try/except + exit handling + baseline path reso
 - [x] All public symbols still importable from `phi_scan.output` (backwards-compatible)
 - [x] `ci_integration.py` HTTP call pattern appears exactly once (in the helper)
 - [x] All 1694 existing tests pass after each sub-task
-- [ ] All doc references to `output.py` updated to `phi_scan/output/`
-- [ ] `CONTRIBUTING.md` module map reflects new package structure
-- [ ] `CHANGELOG.md` updated for all shipped 7E and 7F items
+- [x] All doc references to `output.py` updated to `phi_scan/output/`
+- [x] `CONTRIBUTING.md` module map reflects new package structure
+- [x] `CHANGELOG.md` updated for all shipped 7E and 7F items
 
 ---
 
