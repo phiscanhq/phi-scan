@@ -40,7 +40,7 @@ from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 # which is correct per the no-color.org specification.
 # ---------------------------------------------------------------------------
 
-_console: Console = Console()
+_rich_console: Console = Console()
 
 
 def get_console() -> Console:
@@ -50,7 +50,7 @@ def get_console() -> Console:
     constructing their own Console instance — a single instance ensures
     consistent output buffering and colour detection across the CLI.
     """
-    return _console
+    return _rich_console
 
 
 # ---------------------------------------------------------------------------
@@ -623,7 +623,7 @@ def _build_ascii_banner_text() -> str:
 
         return str(pyfiglet.figlet_format(_BANNER_TEXT, font=_BANNER_FONT))
     except ImportError:
-        _console.print(_BANNER_PYFIGLET_MISSING_NOTE, style=_STYLE_DIM)
+        _rich_console.print(_BANNER_PYFIGLET_MISSING_NOTE, style=_STYLE_DIM)
         return _BANNER_TEXT
 
 
@@ -799,7 +799,7 @@ def _count_files_by_extension(scan_targets: list[Path]) -> dict[str, int]:
     return counts
 
 
-def _entry_label(count: int) -> str:
+def _format_entry_label(count: int) -> str:
     """Return 'entry' for exactly 1, 'entries' otherwise."""
     return _BASELINE_ENTRY_LABEL if count == _ENTRY_PLURAL_THRESHOLD else _BASELINE_ENTRIES_LABEL
 
@@ -828,12 +828,12 @@ def format_table(scan_result: ScanResult) -> Table:
 
 def display_banner() -> None:
     """Render the PhiScan ASCII art banner with a cyan→blue→magenta gradient, tagline, and rule."""
-    _console.print(_build_banner_gradient_text(_build_ascii_banner_text()))
-    _console.print(
+    _rich_console.print(_build_banner_gradient_text(_build_ascii_banner_text()))
+    _rich_console.print(
         _BANNER_TAGLINE_TEMPLATE.format(version=__version__),
         style=_BANNER_TAGLINE_STYLE,
     )
-    _console.rule(style=_RULE_STYLE)
+    _rich_console.rule(style=_RULE_STYLE)
 
 
 def display_phase_separator(title: str) -> None:
@@ -846,7 +846,7 @@ def display_phase_separator(title: str) -> None:
     Args:
         title: Short human-readable phase name to embed in the rule line.
     """
-    _console.rule(title, style=_PHASE_SEPARATOR_STYLE)
+    _rich_console.rule(title, style=_PHASE_SEPARATOR_STYLE)
 
 
 def display_phase_collecting() -> None:
@@ -884,7 +884,7 @@ def display_status_spinner(message: str, is_active: bool) -> Generator[None, Non
         None — caller wraps the work block.
     """
     if is_active:
-        with _console.status(message, spinner=_SPINNER_STYLE):
+        with _rich_console.status(message, spinner=_SPINNER_STYLE):
             yield
     else:
         yield
@@ -902,7 +902,7 @@ def display_file_type_summary(scan_targets: list[Path]) -> None:
         scan_targets: Collected file paths, as returned by _resolve_scan_targets.
     """
     if not scan_targets:
-        _console.print(_FILE_TYPE_SUMMARY_ZERO_FILES_MESSAGE, style=_FILE_TYPE_SUMMARY_STYLE)
+        _rich_console.print(_FILE_TYPE_SUMMARY_ZERO_FILES_MESSAGE, style=_FILE_TYPE_SUMMARY_STYLE)
         return
     counts = _count_files_by_extension(scan_targets)
     sorted_extensions = sorted(
@@ -921,7 +921,7 @@ def display_file_type_summary(scan_targets: list[Path]) -> None:
                 ext=_FILE_TYPE_SUMMARY_OTHER_LABEL, count=overflow_count
             )
         )
-    _console.print(
+    _rich_console.print(
         _FILE_TYPE_SUMMARY_SEPARATOR.join(extension_entries), style=_FILE_TYPE_SUMMARY_STYLE
     )
 
@@ -935,7 +935,7 @@ def display_scan_header(path: Path, config: ScanConfig) -> None:
     """
     timestamp = datetime.now().isoformat(timespec=_TIMESTAMP_TIMESPEC)
     scan_header_markup = _build_scan_header_markup(path, config, timestamp)
-    _console.print(
+    _rich_console.print(
         Panel(scan_header_markup, title=_SCAN_HEADER_TITLE, border_style=_PANEL_BORDER_STYLE)
     )
 
@@ -966,7 +966,7 @@ def create_scan_progress(total_files: int) -> Generator[tuple[Progress, TaskID],
             table_column=Column(min_width=_PROGRESS_CURRENT_FILE_WIDTH, no_wrap=True),
         ),
         TimeElapsedColumn(),
-        console=_console,
+        console=_rich_console,
     ) as progress:
         task_id = progress.add_task(_PROGRESS_DESCRIPTION, total=total_files)
         yield progress, task_id
@@ -978,7 +978,7 @@ def display_findings_table(findings: tuple[ScanFinding, ...]) -> None:
     Args:
         findings: Findings to display, ordered by file path then line number.
     """
-    _console.print(_build_findings_table(findings, _FINDINGS_TABLE_TITLE))
+    _rich_console.print(_build_findings_table(findings, _FINDINGS_TABLE_TITLE))
 
 
 def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
@@ -1004,7 +1004,7 @@ def display_file_tree(findings: tuple[ScanFinding, ...]) -> None:
                 f"[{style}]{_LINE_LABEL} {finding.line_number}[/{style}]"
                 f"{_EM_DASH_SEPARATOR}{finding.entity_type}"
             )
-    _console.print(tree)
+    _rich_console.print(tree)
 
 
 def display_summary_panel(scan_result: ScanResult) -> None:
@@ -1018,7 +1018,7 @@ def display_summary_panel(scan_result: ScanResult) -> None:
         scan_result: The completed scan result to summarise.
     """
     risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
-    _console.print(
+    _rich_console.print(
         Panel(
             _build_summary_panel_markup(scan_result),
             title=_SUMMARY_PANEL_TITLE,
@@ -1029,13 +1029,13 @@ def display_summary_panel(scan_result: ScanResult) -> None:
 
 def display_clean_result() -> None:
     """Render a large green checkmark and CLEAN headline for zero-finding scans."""
-    _console.print()
-    _console.print(_CLEAN_RESULT_ICON, justify=_JUSTIFY_CENTER)
-    _console.print(
+    _rich_console.print()
+    _rich_console.print(_CLEAN_RESULT_ICON, justify=_JUSTIFY_CENTER)
+    _rich_console.print(
         f"[{_CLEAN_RESULT_STYLE}]{_CLEAN_RESULT_TEXT}[/{_CLEAN_RESULT_STYLE}]",
         justify=_JUSTIFY_CENTER,
     )
-    _console.print()
+    _rich_console.print()
 
 
 def display_clean_summary_panel(scan_result: ScanResult) -> None:
@@ -1044,7 +1044,7 @@ def display_clean_summary_panel(scan_result: ScanResult) -> None:
     Args:
         scan_result: A completed scan result with zero findings.
     """
-    _console.print(
+    _rich_console.print(
         Panel(
             _build_clean_summary_panel_markup(scan_result),
             title=_CLEAN_SUMMARY_PANEL_TITLE,
@@ -1060,9 +1060,9 @@ def display_exit_code_message(is_clean: bool) -> None:
         is_clean: True for a clean scan (exit 0), False for violations (exit 1).
     """
     if is_clean:
-        _console.print(_EXIT_CODE_CLEAN_MESSAGE, style=_EXIT_CODE_CLEAN_STYLE)
+        _rich_console.print(_EXIT_CODE_CLEAN_MESSAGE, style=_EXIT_CODE_CLEAN_STYLE)
     else:
-        _console.print(_EXIT_CODE_VIOLATION_MESSAGE, style=_EXIT_CODE_VIOLATION_STYLE)
+        _rich_console.print(_EXIT_CODE_VIOLATION_MESSAGE, style=_EXIT_CODE_VIOLATION_STYLE)
 
 
 def display_violation_alert(scan_result: ScanResult) -> None:
@@ -1074,7 +1074,7 @@ def display_violation_alert(scan_result: ScanResult) -> None:
     Args:
         scan_result: The completed scan result that contains violations.
     """
-    _console.print(
+    _rich_console.print(
         Panel(
             f"[{_VIOLATION_ALERT_BOX_STYLE}]{_build_violation_alert_text(scan_result)}"
             f"[/{_VIOLATION_ALERT_BOX_STYLE}]",
@@ -1099,7 +1099,7 @@ def display_risk_level_badge(scan_result: ScanResult) -> None:
     """
     level_name = scan_result.risk_level.value
     badge_style = _RISK_LEVEL_BADGE_STYLE.get(scan_result.risk_level, _STYLE_BOLD)
-    _console.print(f"[{badge_style}] {level_name} [/{badge_style}]")
+    _rich_console.print(f"[{badge_style}] {level_name} [/{badge_style}]")
 
 
 def display_severity_inline(scan_result: ScanResult) -> None:
@@ -1108,7 +1108,7 @@ def display_severity_inline(scan_result: ScanResult) -> None:
     Args:
         scan_result: The completed scan result.
     """
-    _console.print(_build_severity_inline_text(scan_result.severity_counts))
+    _rich_console.print(_build_severity_inline_text(scan_result.severity_counts))
 
 
 def display_violation_summary_panel(scan_result: ScanResult) -> None:
@@ -1118,7 +1118,7 @@ def display_violation_summary_panel(scan_result: ScanResult) -> None:
         scan_result: The completed scan result with findings.
     """
     risk_style = _RISK_LEVEL_STYLE[scan_result.risk_level]
-    _console.print(
+    _rich_console.print(
         Panel(
             _build_violation_summary_panel_markup(scan_result),
             title=_VIOLATION_SUMMARY_PANEL_TITLE,
@@ -1152,7 +1152,7 @@ def display_code_context_panel(finding: ScanFinding) -> None:
             f"{finding.remediation_hint}[/{severity_style}]",
         ]
     )
-    _console.print(Panel(content, title=title, border_style=severity_style))
+    _rich_console.print(Panel(content, title=title, border_style=severity_style))
 
 
 def display_category_breakdown(scan_result: ScanResult) -> None:
@@ -1173,7 +1173,7 @@ def display_category_breakdown(scan_result: ScanResult) -> None:
         count = scan_result.category_counts.get(category, _ZERO_FINDINGS)
         if count > _ZERO_FINDINGS:
             table.add_row(category.value, str(count), _build_count_bar(count, max_count))
-    _console.print(table)
+    _rich_console.print(table)
 
 
 # ---------------------------------------------------------------------------
@@ -1207,7 +1207,7 @@ def display_baseline_summary(summary: BaselineSummary) -> None:
             summary.severity_counts.items(), key=lambda item: item[0].value
         ):
             lines.append(f"    {severity.value.upper():<8} {count}")
-    _console.print(
+    _rich_console.print(
         Panel(
             "\n".join(lines),
             title=_BASELINE_SUMMARY_TITLE,
@@ -1254,7 +1254,7 @@ def display_baseline_diff(diff: BaselineDiff) -> None:
         "",
         _BASELINE_PERSISTING_SECTION_HEADER.format(count=len(diff.persisting_findings)),
     ]
-    _console.print(Panel("\n".join(lines), title=_BASELINE_DIFF_TITLE))
+    _rich_console.print(Panel("\n".join(lines), title=_BASELINE_DIFF_TITLE))
 
 
 def display_baseline_drift_warning(old_count: int, new_count: int, drift_percent: int) -> None:
@@ -1268,7 +1268,7 @@ def display_baseline_drift_warning(old_count: int, new_count: int, drift_percent
         new_count: Entry count in the updated baseline.
         drift_percent: Percent increase, as returned by detect_baseline_drift.
     """
-    _console.print(
+    _rich_console.print(
         Panel(
             _BASELINE_DRIFT_MESSAGE.format(percent=drift_percent, old=old_count, new=new_count),
             title=_BASELINE_DRIFT_TITLE,
@@ -1293,6 +1293,6 @@ def display_baseline_scan_notice(new_count: int, baselined_count: int) -> None:
         message = _BASELINE_SCAN_NOTICE_MESSAGE.format(
             new_count=new_count, baselined_count=baselined_count
         )
-    _console.print(
+    _rich_console.print(
         Panel(message, title=_BASELINE_NOTICE_TITLE, border_style=_BASELINE_NOTICE_BORDER_STYLE)
     )
