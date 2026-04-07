@@ -194,13 +194,13 @@ def test_upload_sarif_to_github_posts_to_code_scanning_api(
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
     captured_urls: list[str] = []
 
-    def fake_post(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         captured_urls.append(url)
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         upload_sarif_to_github(_make_violation_result(), _github_context())
 
     assert any("code-scanning/sarifs" in url for url in captured_urls)
@@ -216,13 +216,13 @@ def test_upload_sarif_to_github_payload_contains_base64_encoded_sarif(
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
     captured_payloads: list[dict] = []
 
-    def fake_post(url: str, json: dict, **kwargs: object) -> MagicMock:
-        captured_payloads.append(json)
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        captured_payloads.append(kwargs.get("json", {}))
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         upload_sarif_to_github(_make_violation_result(), _github_context())
 
     assert captured_payloads
@@ -236,12 +236,12 @@ def test_upload_sarif_skips_when_no_token(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     call_count = 0
 
-    def fake_post(*args: object, **kwargs: object) -> MagicMock:
+    def fake_request(*args: object, **kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
         return MagicMock()
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         upload_sarif_to_github(_make_violation_result(), _github_context())
 
     assert call_count == 0
@@ -252,12 +252,12 @@ def test_upload_sarif_skips_when_no_sha(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
     call_count = 0
 
-    def fake_post(*args: object, **kwargs: object) -> MagicMock:
+    def fake_request(*args: object, **kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
         return MagicMock()
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         upload_sarif_to_github(_make_violation_result(), _github_context(sha=None))
 
     assert call_count == 0
@@ -269,7 +269,7 @@ def test_upload_sarif_raises_ci_integration_error_on_http_failure(
     """CIIntegrationError raised when GitHub Code Scanning API returns an error."""
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
 
-    def fake_post(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         mock_response = MagicMock()
         mock_response.status_code = 422
         mock_response.reason_phrase = "Unprocessable Entity"
@@ -278,7 +278,7 @@ def test_upload_sarif_raises_ci_integration_error_on_http_failure(
         )
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         with pytest.raises(CIIntegrationError, match="GitHub SARIF upload failed"):
             upload_sarif_to_github(_make_violation_result(), _github_context())
 
@@ -290,7 +290,7 @@ def test_upload_sarif_http_error_excludes_response_body(
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
     sentinel_body = "SENTINEL_RESPONSE_BODY_MUST_NOT_APPEAR"
 
-    def fake_post(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         mock_response = MagicMock()
         mock_response.status_code = 422
         mock_response.reason_phrase = "Unprocessable Entity"
@@ -300,7 +300,7 @@ def test_upload_sarif_http_error_excludes_response_body(
         )
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         with pytest.raises(CIIntegrationError) as exc_info:
             upload_sarif_to_github(_make_violation_result(), _github_context())
     assert sentinel_body not in str(exc_info.value)
@@ -350,13 +350,13 @@ def test_set_azure_pr_status_posts_succeeded_when_clean(
     monkeypatch.setenv("SYSTEM_ACCESSTOKEN", "azure_token_abc")
     captured_payloads: list[dict] = []
 
-    def fake_post(url: str, json: dict, **kwargs: object) -> MagicMock:
-        captured_payloads.append(json)
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        captured_payloads.append(kwargs.get("json", {}))
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         set_azure_pr_status(_make_clean_result(), _azure_context())
 
     assert any(p.get("state") == "succeeded" for p in captured_payloads)
@@ -369,13 +369,13 @@ def test_set_azure_pr_status_posts_failed_when_violations(
     monkeypatch.setenv("SYSTEM_ACCESSTOKEN", "azure_token_abc")
     captured_payloads: list[dict] = []
 
-    def fake_post(url: str, json: dict, **kwargs: object) -> MagicMock:
-        captured_payloads.append(json)
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        captured_payloads.append(kwargs.get("json", {}))
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         set_azure_pr_status(_make_violation_result(), _azure_context())
 
     assert any(p.get("state") == "failed" for p in captured_payloads)
@@ -388,13 +388,13 @@ def test_set_azure_build_tag_uses_clean_tag_when_no_violations(
     monkeypatch.setenv("SYSTEM_ACCESSTOKEN", "azure_token_abc")
     captured_urls: list[str] = []
 
-    def fake_put(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         captured_urls.append(url)
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.put", side_effect=fake_put):
+    with patch("httpx.request", side_effect=fake_request):
         set_azure_build_tag(_make_clean_result(), _azure_context())
 
     assert any("phi-scan%3Aclean" in url or "phi-scan:clean" in url for url in captured_urls)
@@ -407,13 +407,13 @@ def test_set_azure_build_tag_uses_violations_tag_when_violations_found(
     monkeypatch.setenv("SYSTEM_ACCESSTOKEN", "azure_token_abc")
     captured_urls: list[str] = []
 
-    def fake_put(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         captured_urls.append(url)
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.put", side_effect=fake_put):
+    with patch("httpx.request", side_effect=fake_request):
         set_azure_build_tag(_make_violation_result(), _azure_context())
 
     assert any("violations-found" in url for url in captured_urls)
@@ -426,12 +426,12 @@ def test_set_azure_pr_status_skips_when_no_token(
     monkeypatch.delenv("SYSTEM_ACCESSTOKEN", raising=False)
     call_count = 0
 
-    def fake_post(*args: object, **kwargs: object) -> MagicMock:
+    def fake_request(*args: object, **kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
         return MagicMock()
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         set_azure_pr_status(_make_clean_result(), _azure_context())
 
     assert call_count == 0
@@ -448,7 +448,7 @@ def test_set_azure_build_tag_http_error_excludes_response_body(
     monkeypatch.setenv("SYSTEM_ACCESSTOKEN", "azure_token_abc")
     sentinel_body = "SENTINEL_AZURE_BUILD_TAG_RESPONSE_BODY_MUST_NOT_APPEAR"
 
-    def fake_put(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         mock_response = MagicMock()
         mock_response.status_code = 403
         mock_response.reason_phrase = "Forbidden"
@@ -458,7 +458,7 @@ def test_set_azure_build_tag_http_error_excludes_response_body(
         )
         return mock_response
 
-    with patch("httpx.put", side_effect=fake_put):
+    with patch("httpx.request", side_effect=fake_request):
         with pytest.raises(CIIntegrationError) as exc_info:
             set_azure_build_tag(_make_violation_result(), _azure_context())
 
@@ -472,7 +472,7 @@ def test_set_azure_pr_status_http_error_excludes_response_body(
     monkeypatch.setenv("SYSTEM_ACCESSTOKEN", "azure_token_abc")
     sentinel_body = "SENTINEL_AZURE_PR_STATUS_RESPONSE_BODY_MUST_NOT_APPEAR"
 
-    def fake_post(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         mock_response = MagicMock()
         mock_response.status_code = 422
         mock_response.reason_phrase = "Unprocessable Entity"
@@ -482,7 +482,7 @@ def test_set_azure_pr_status_http_error_excludes_response_body(
         )
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         with pytest.raises(CIIntegrationError) as exc_info:
             set_azure_pr_status(_make_violation_result(), _azure_context())
 
@@ -501,12 +501,12 @@ def test_create_azure_boards_work_item_skips_when_not_enabled(
     monkeypatch.delenv("AZURE_BOARDS_INTEGRATION", raising=False)
     call_count = 0
 
-    def fake_post(*args: object, **kwargs: object) -> MagicMock:
+    def fake_request(*args: object, **kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
         return MagicMock()
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         create_azure_boards_work_item(_make_violation_result(), _azure_context())
 
     assert call_count == 0
@@ -520,12 +520,12 @@ def test_create_azure_boards_work_item_skips_when_no_high_findings(
     monkeypatch.setenv("SYSTEM_ACCESSTOKEN", "azure_token_abc")
     call_count = 0
 
-    def fake_post(*args: object, **kwargs: object) -> MagicMock:
+    def fake_request(*args: object, **kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
         return MagicMock()
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         create_azure_boards_work_item(
             _make_violation_result(severity=SeverityLevel.LOW),
             _azure_context(),
@@ -542,13 +542,13 @@ def test_create_azure_boards_work_item_posts_when_enabled_with_high_findings(
     monkeypatch.setenv("SYSTEM_ACCESSTOKEN", "azure_token_abc")
     captured_urls: list[str] = []
 
-    def fake_post(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         captured_urls.append(url)
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         create_azure_boards_work_item(_make_violation_result(), _azure_context())
 
     assert any("workitems" in url for url in captured_urls)
@@ -568,13 +568,13 @@ def test_create_azure_boards_work_item_payload_excludes_phi_fields(
     monkeypatch.setenv("SYSTEM_ACCESSTOKEN", "azure_token_abc")
     captured_json: list[list] = []
 
-    def fake_post(url: str, json: list, **kwargs: object) -> MagicMock:
-        captured_json.append(json)
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        captured_json.append(kwargs.get("json", []))
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         create_azure_boards_work_item(_make_violation_result(), _azure_context())
 
     assert captured_json, "expected a POST to Azure Boards"
@@ -607,19 +607,16 @@ def test_post_bitbucket_code_insights_creates_report_and_annotations(
     put_urls: list[str] = []
     post_urls: list[str] = []
 
-    def fake_put(url: str, **kwargs: object) -> MagicMock:
-        put_urls.append(url)
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        if method == "PUT":
+            put_urls.append(url)
+        else:
+            post_urls.append(url)
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    def fake_post(url: str, **kwargs: object) -> MagicMock:
-        post_urls.append(url)
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        return mock_response
-
-    with patch("httpx.put", side_effect=fake_put), patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         post_bitbucket_code_insights(_make_violation_result(), _bitbucket_context())
 
     assert any("reports" in url for url in put_urls)
@@ -633,13 +630,14 @@ def test_post_bitbucket_code_insights_report_result_passed_when_clean(
     monkeypatch.setenv("BITBUCKET_TOKEN", "bb_testtoken")
     captured_payloads: list[dict] = []
 
-    def fake_put(url: str, json: dict, **kwargs: object) -> MagicMock:
-        captured_payloads.append(json)
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        if method == "PUT":
+            captured_payloads.append(kwargs.get("json", {}))
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.put", side_effect=fake_put):
+    with patch("httpx.request", side_effect=fake_request):
         post_bitbucket_code_insights(_make_clean_result(), _bitbucket_context())
 
     assert any(p.get("result") == "PASSED" for p in captured_payloads)
@@ -652,14 +650,14 @@ def test_post_bitbucket_code_insights_report_result_failed_when_violations(
     monkeypatch.setenv("BITBUCKET_TOKEN", "bb_testtoken")
     captured_payloads: list[dict] = []
 
-    def fake_put(url: str, json: dict, **kwargs: object) -> MagicMock:
-        captured_payloads.append(json)
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        if method == "PUT":
+            captured_payloads.append(kwargs.get("json", {}))
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    mock_post = MagicMock(raise_for_status=MagicMock())
-    with patch("httpx.put", side_effect=fake_put), patch("httpx.post", return_value=mock_post):
+    with patch("httpx.request", side_effect=fake_request):
         post_bitbucket_code_insights(_make_violation_result(), _bitbucket_context())
 
     assert any(p.get("result") == "FAILED" for p in captured_payloads)
@@ -672,18 +670,14 @@ def test_post_bitbucket_code_insights_annotations_include_file_and_line(
     monkeypatch.setenv("BITBUCKET_TOKEN", "bb_testtoken")
     captured_annotation_payloads: list[list] = []
 
-    def fake_put(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        if method == "POST":
+            captured_annotation_payloads.append(kwargs.get("json", []))
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    def fake_post(url: str, json: list, **kwargs: object) -> MagicMock:
-        captured_annotation_payloads.append(json)
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        return mock_response
-
-    with patch("httpx.put", side_effect=fake_put), patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         post_bitbucket_code_insights(_make_violation_result(), _bitbucket_context())
 
     assert captured_annotation_payloads
@@ -699,12 +693,12 @@ def test_post_bitbucket_code_insights_skips_when_no_token(
     monkeypatch.delenv("BITBUCKET_TOKEN", raising=False)
     call_count = 0
 
-    def fake_put(*args: object, **kwargs: object) -> MagicMock:
+    def fake_request(*args: object, **kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
         return MagicMock()
 
-    with patch("httpx.put", side_effect=fake_put):
+    with patch("httpx.request", side_effect=fake_request):
         post_bitbucket_code_insights(_make_clean_result(), _bitbucket_context())
 
     assert call_count == 0
@@ -717,7 +711,7 @@ def test_post_bitbucket_code_insights_http_error_excludes_response_body(
     monkeypatch.setenv("BITBUCKET_TOKEN", "bb_testtoken")
     sentinel_body = "SENTINEL_BITBUCKET_INSIGHTS_RESPONSE_BODY_MUST_NOT_APPEAR"
 
-    def fake_put(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         mock_response = MagicMock()
         mock_response.status_code = 401
         mock_response.reason_phrase = "Unauthorized"
@@ -727,7 +721,7 @@ def test_post_bitbucket_code_insights_http_error_excludes_response_body(
         )
         return mock_response
 
-    with patch("httpx.put", side_effect=fake_put):
+    with patch("httpx.request", side_effect=fake_request):
         with pytest.raises(CIIntegrationError) as exc_info:
             post_bitbucket_code_insights(_make_violation_result(), _bitbucket_context())
 

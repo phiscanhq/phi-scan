@@ -2011,24 +2011,24 @@ phi_scan/output/
     dashboard.py         build_dashboard_layout, dashboard panel builders
 ```
 
-- [ ] **7F.1a** Create `phi_scan/output/` package; move serializer functions to `serializers.py`
-- [ ] **7F.1b** Move Rich terminal UI functions (`display_*`, `build_*_panel`, banner) to `console.py`
-- [ ] **7F.1c** Move watch UI (`WatchEvent`, `build_watch_layout`, watch builders) to `watch.py`
-- [ ] **7F.1d** Move dashboard builders to `dashboard.py`
-- [ ] **7F.1e** `__init__.py` re-exports all previously public symbols — zero import breakage
-- [ ] **7F.1f** Update all import sites (`cli.py`, `report.py`, tests) to use new paths
-- [ ] **7F.1g** Verify all existing tests pass unchanged after split
+- [x] **7F.1a** Create `phi_scan/output/` package; move serializer functions to `serializers.py`
+- [x] **7F.1b** Move Rich terminal UI functions (`display_*`, `build_*_panel`, banner) to `console.py`
+- [x] **7F.1c** Move watch UI (`WatchEvent`, `build_watch_layout`, watch builders) to `watch.py`
+- [x] **7F.1d** Move dashboard builders to `dashboard.py`
+- [x] **7F.1e** `__init__.py` re-exports all previously public symbols — zero import breakage
+- [x] **7F.1f** Update all import sites (`cli.py`, `report.py`, tests) to use new paths
+- [x] **7F.1g** Verify all existing tests pass unchanged after split
 
 #### 7F.2 — Deduplicate CI HTTP call scaffolding in `ci_integration.py` (1953 LOC)
 
 The `httpx.verb → raise_for_status → HTTPStatusError → RequestError → CIIntegrationError`
 pattern repeats 12+ times verbatim.
 
-- [ ] **7F.2a** Extract `_execute_http_request(method, url, headers, payload, platform)` private
+- [x] **7F.2a** Extract `_execute_http_request(method, url, headers, payload, platform)` private
   helper that handles timeout, `raise_for_status`, and both exception types; returns
   the `httpx.Response`
-- [ ] **7F.2b** Replace all 12+ call-site duplicates with calls to the helper
-- [ ] **7F.2c** Verify all existing CI integration tests pass unchanged
+- [x] **7F.2b** Replace all 12+ call-site duplicates with calls to the helper
+- [x] **7F.2c** Verify all existing CI integration tests pass unchanged
 
 #### 7F.3 — Deduplicate CLI baseline command error handling in `cli.py` (2295 LOC)
 
@@ -2056,8 +2056,8 @@ Baseline commands repeat similar try/except + exit handling + baseline path reso
 
 ### 7F Verification Checklist
 
-- [ ] `output.py` no longer exists as a monolith — replaced by `phi_scan/output/` package
-- [ ] All public symbols still importable from `phi_scan.output` (backwards-compatible)
+- [x] `output.py` no longer exists as a monolith — replaced by `phi_scan/output/` package
+- [x] All public symbols still importable from `phi_scan.output` (backwards-compatible)
 - [ ] `ci_integration.py` HTTP call pattern appears exactly once (in the helper)
 - [ ] All 1694 existing tests pass after each sub-task
 - [ ] All doc references to `output.py` updated to `phi_scan/output/`

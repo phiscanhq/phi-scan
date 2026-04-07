@@ -545,13 +545,13 @@ def test_post_pr_comment_gitlab_posts_to_notes_api(
     )
     captured_urls: list[str] = []
 
-    def fake_post(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         captured_urls.append(url)
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         post_pr_comment(_make_violation_result(), gitlab_context)
 
     assert any(
@@ -575,16 +575,17 @@ def test_post_pr_comment_gitlab_raises_on_http_error(
         extras={"ci_server_url": "https://gitlab.com"},
     )
 
-    def fake_post(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         mock_response = MagicMock()
         mock_response.status_code = 403
+        mock_response.reason_phrase = "Forbidden"
         mock_response.text = "Forbidden"
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "403 Forbidden", request=MagicMock(), response=mock_response
         )
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         with pytest.raises(CIIntegrationError, match="GitLab MR comment failed"):
             post_pr_comment(_make_violation_result(), gitlab_context)
 
@@ -613,13 +614,13 @@ def test_post_pr_comment_bitbucket_posts_to_pr_comments_api(
     )
     captured_urls: list[str] = []
 
-    def fake_post(url: str, **kwargs: object) -> MagicMock:
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
         captured_urls.append(url)
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         post_pr_comment(_make_clean_result(), bb_context)
 
     assert any(f"pullrequests/{_BITBUCKET_PR_ID}/comments" in url for url in captured_urls)
@@ -645,13 +646,13 @@ def test_set_commit_status_github_calls_statuses_api(
     )
     captured_payloads: list[dict] = []
 
-    def fake_post(url: str, json: dict, **kwargs: object) -> MagicMock:
-        captured_payloads.append(json)
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        captured_payloads.append(kwargs.get("json", {}))
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         set_commit_status(_make_clean_result(), github_context)
 
     assert any(payload.get("state") == "success" for payload in captured_payloads)
@@ -672,13 +673,13 @@ def test_set_commit_status_github_posts_failure_for_violations(
     )
     captured_payloads: list[dict] = []
 
-    def fake_post(url: str, json: dict, **kwargs: object) -> MagicMock:
-        captured_payloads.append(json)
+    def fake_request(method: str, url: str, **kwargs: object) -> MagicMock:
+        captured_payloads.append(kwargs.get("json", {}))
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         set_commit_status(_make_violation_result(), github_context)
 
     assert any(payload.get("state") == "failure" for payload in captured_payloads)
@@ -699,12 +700,12 @@ def test_set_commit_status_skips_when_no_sha(
     )
     call_count = 0
 
-    def fake_post(*args: object, **kwargs: object) -> MagicMock:
+    def fake_request(*args: object, **kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
         return MagicMock()
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         set_commit_status(_make_clean_result(), no_sha_context)
 
     assert call_count == 0
@@ -724,12 +725,12 @@ def test_set_commit_status_unknown_platform_does_nothing(
     )
     call_count = 0
 
-    def fake_post(*args: object, **kwargs: object) -> MagicMock:
+    def fake_request(*args: object, **kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
         return MagicMock()
 
-    with patch("httpx.post", side_effect=fake_post):
+    with patch("httpx.request", side_effect=fake_request):
         set_commit_status(_make_clean_result(), unknown_context)
 
     assert call_count == 0
