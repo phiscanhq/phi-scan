@@ -1151,6 +1151,61 @@ def _load_baseline_or_warn(baseline_path: Path) -> BaselineSnapshot | None:
         return None
 
 
+def _load_baseline_or_exit(baseline_path: Path) -> BaselineSnapshot:
+    """Load a baseline snapshot, exiting with an error message on any failure.
+
+    Centralises the try/except + None-check pattern repeated across
+    ``baseline show`` and ``baseline diff``.
+
+    Args:
+        baseline_path: Path to the .phi-scanbaseline file.
+
+    Returns:
+        Loaded snapshot (never None — exits instead).
+
+    Raises:
+        typer.Exit: With EXIT_CODE_ERROR on BaselineError, or EXIT_CODE_CLEAN
+            when no baseline file exists yet.
+    """
+    try:
+        snapshot = load_baseline(baseline_path=baseline_path)
+    except BaselineError as error:
+        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR)
+    if snapshot is None:
+        typer.echo(_BASELINE_NO_FILE_WARNING.format(path=baseline_path), err=True)
+        raise typer.Exit(code=EXIT_CODE_CLEAN)
+    return snapshot
+
+
+def _write_baseline_or_exit(
+    scan_result: ScanResult,
+    max_age_days: int,
+    baseline_path: Path,
+) -> BaselineSnapshot:
+    """Create and write a baseline snapshot, exiting with an error message on failure.
+
+    Centralises the try/except pattern repeated across ``baseline create``
+    and ``baseline update``.
+
+    Args:
+        scan_result:    Completed scan whose findings become the new baseline.
+        max_age_days:   Maximum age in days before a baseline entry expires.
+        baseline_path:  Path to write the .phi-scanbaseline file.
+
+    Returns:
+        The newly written snapshot.
+
+    Raises:
+        typer.Exit: With EXIT_CODE_ERROR when the file cannot be written.
+    """
+    try:
+        return create_baseline(scan_result, max_age_days, baseline_path=baseline_path)
+    except BaselineError as error:
+        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
+        raise typer.Exit(code=EXIT_CODE_ERROR)
+
+
 def _display_rich_baseline_results(
     scan_result: ScanResult,
     new_findings: list[ScanFinding],
@@ -2172,11 +2227,7 @@ def baseline_create(
     """
     console = get_console()
     scan_result = _run_scan_for_baseline(path)
-    try:
-        snapshot = create_baseline(scan_result, max_age_days, baseline_path=baseline_path)
-    except BaselineError as error:
-        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR)
+    snapshot = _write_baseline_or_exit(scan_result, max_age_days, baseline_path)
     count = len(snapshot.entries)
     console.print(
         _BASELINE_CREATED_MESSAGE.format(
@@ -2195,14 +2246,7 @@ def baseline_show(
     ] = Path(DEFAULT_BASELINE_FILENAME),
 ) -> None:
     """Display summary statistics for the current baseline."""
-    try:
-        snapshot = load_baseline(baseline_path=baseline_path)
-    except BaselineError as error:
-        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR)
-    if snapshot is None:
-        typer.echo(_BASELINE_NO_FILE_WARNING.format(path=baseline_path), err=True)
-        raise typer.Exit(code=EXIT_CODE_CLEAN)
+    snapshot = _load_baseline_or_exit(baseline_path)
     summary = get_baseline_summary(snapshot, baseline_path)
     display_baseline_summary(summary)
 
@@ -2248,11 +2292,7 @@ def baseline_update(
     console = get_console()
     old_snapshot = _load_baseline_or_warn(baseline_path)
     scan_result = _run_scan_for_baseline(path)
-    try:
-        new_snapshot = create_baseline(scan_result, max_age_days, baseline_path=baseline_path)
-    except BaselineError as error:
-        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR)
+    new_snapshot = _write_baseline_or_exit(scan_result, max_age_days, baseline_path)
     if old_snapshot is not None:
         drift = detect_baseline_drift(old_snapshot, new_snapshot)
         if drift > BASELINE_DRIFT_WARNING_PERCENT:
@@ -2282,14 +2322,7 @@ def baseline_diff(
     Shows new findings (not in baseline), resolved findings (in baseline but no
     longer detected), and persisting findings (still present and still baselined).
     """
-    try:
-        snapshot = load_baseline(baseline_path=baseline_path)
-    except BaselineError as error:
-        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR)
-    if snapshot is None:
-        typer.echo(_BASELINE_NO_FILE_WARNING.format(path=baseline_path), err=True)
-        raise typer.Exit(code=EXIT_CODE_CLEAN)
+    snapshot = _load_baseline_or_exit(baseline_path)
     scan_result = _run_scan_for_baseline(path)
     diff = compute_baseline_diff(snapshot, scan_result)
     display_baseline_diff(diff)

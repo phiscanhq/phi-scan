@@ -2034,10 +2034,10 @@ pattern repeats 12+ times verbatim.
 
 Baseline commands repeat similar try/except + exit handling + baseline path resolution.
 
-- [ ] **7F.3a** Extract `_load_baseline_or_exit(baseline_path)` helper that handles
+- [x] **7F.3a** Extract `_load_baseline_or_exit(baseline_path)` helper that handles
   `BaselineNotFoundError`, `BaselineSchemaError`, and `typer.Exit` consistently
-- [ ] **7F.3b** Replace duplicated patterns across `baseline create/show/update/diff` commands
-- [ ] **7F.3c** Verify all existing baseline CLI tests pass unchanged
+- [x] **7F.3b** Replace duplicated patterns across `baseline create/show/update/diff` commands
+- [x] **7F.3c** Verify all existing baseline CLI tests pass unchanged
 
 #### 7F.4 — Documentation
 
@@ -2058,7 +2058,7 @@ Baseline commands repeat similar try/except + exit handling + baseline path reso
 
 - [x] `output.py` no longer exists as a monolith — replaced by `phi_scan/output/` package
 - [x] All public symbols still importable from `phi_scan.output` (backwards-compatible)
-- [ ] `ci_integration.py` HTTP call pattern appears exactly once (in the helper)
+- [x] `ci_integration.py` HTTP call pattern appears exactly once (in the helper)
 - [ ] All 1694 existing tests pass after each sub-task
 - [ ] All doc references to `output.py` updated to `phi_scan/output/`
 - [ ] `CONTRIBUTING.md` module map reflects new package structure
