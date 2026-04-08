@@ -70,25 +70,25 @@ jobs:
       - name: Verify compensating controls for glob ignore rules
         shell: bash
         run: |
-          # .phi-scanignore uses tests/test_*.py to exclude all test files from
-          # full-repo push scans. The compensating control is that every PR scan
-          # is diff-based, so new test files are scanned before they reach main.
-          # This step enforces that invariant at the YAML-key level.
-          #
-          # The pattern ^\s+diff_ref:\s+ matches only the actual YAML 'with:' key.
-          # It does NOT match comment lines, echo statements, or grep commands that
-          # contain the string "diff_ref" — those do not start with whitespace
-          # followed immediately by the key name and a colon-space pair.
-          # This avoids the self-referential false-positive that a broader pattern
-          # like 'diff_ref.*origin/main' would produce when grepping this file.
+          # .phi-scanignore excludes tests/test_*.py via glob. The compensating
+          # control is diff-based PR scanning (diff_ref: origin/main on the Scan
+          # step). This step enforces that invariant by parsing only the with: block
+          # of the 'Scan for PHI/PII' step — not the entire file — so the check
+          # cannot be satisfied by a matching string anywhere else in ci.yml
+          # (including inside this step's own run block or comments).
           if grep -qE '^tests/test_\*\.py' .phi-scanignore; then
-            if ! grep -qE '^\s+diff_ref:\s+.*origin/main' .github/workflows/ci.yml; then
+            if ! awk '
+              /name: Scan for PHI\/PII/ { in_step=1; next }
+              in_step && /^[[:space:]]+-[[:space:]]+name:/ { exit }
+              in_step && /diff_ref:.*origin\/main/ { found=1; exit }
+              END { exit !found }
+            ' .github/workflows/ci.yml; then
               echo "FAIL: .phi-scanignore excludes tests/test_*.py via glob but"
-              echo "no 'diff_ref:' YAML key referencing origin/main was found in ci.yml."
+              echo "the 'Scan for PHI/PII' step has no diff_ref referencing origin/main."
               echo "Either restore explicit per-file entries or re-add the diff_ref key."
               exit 1
             fi
-            echo "OK: diff_ref compensating control is present in ci.yml"
+            echo "OK: diff_ref compensating control present in Scan for PHI/PII step"
           fi
 
       - name: Scan for PHI/PII
