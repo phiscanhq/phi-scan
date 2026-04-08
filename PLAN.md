@@ -2084,7 +2084,7 @@ template, `docs/configuration.md`, `docs/security.md`) uses
 `is_private_webhook_url_allowed`. A user copying from the changelog gets a
 silent no-op.
 
-- [ ] **7G.1a** `CHANGELOG.md` — replace `notifications.allow_private_webhook_urls`
+- [x] **7G.1a** `CHANGELOG.md` — replace `notifications.allow_private_webhook_urls`
   with `notifications.is_private_webhook_url_allowed` on the SSRF entry under
   `[Unreleased] ### Security`
 
@@ -2208,7 +2208,7 @@ The `_rich_console` instance lives in `core.py`. All other submodules call
 
 ### 7G Verification Checklist
 
-- [ ] `CHANGELOG.md` uses `is_private_webhook_url_allowed` consistently — no
+- [x] `CHANGELOG.md` uses `is_private_webhook_url_allowed` consistently — no
   reference to `allow_private_webhook_urls`
 - [ ] A hostname resolving to `127.0.0.1` is blocked by SSRF validation
 - [ ] A hostname resolving to `169.254.169.254` is blocked by SSRF validation
