@@ -67,6 +67,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check PHI scan configuration invariants
+        shell: bash
+        run: bash scripts/verify_phi_scan_config.sh
+
       - name: Scan for PHI/PII
         uses: joeyessak/phi-scan-action@b17418799d4cf730cf57676b49d4828a579930ed  # v0.1.0
         with:

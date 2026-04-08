@@ -37,6 +37,38 @@ release).
   disclosure to give us time to develop and release a fix.
 - Once a fix is released, we will publish a security advisory on GitHub.
 
+## CI/CD Configuration Requirements
+
+PhiScan's CI pipeline relies on the following configuration to maintain full PHI
+detection coverage. Deviating from these requirements weakens the security posture.
+
+### Branch protection (required)
+
+The `main` branch must have branch protection rules enabled with:
+
+- **Require pull request before merging** — prevents direct commits to `main` that
+  bypass the diff-based PHI/PII scan
+- **Require status checks to pass** — the `PHI/PII scan` check must be required
+- **Do not allow bypassing the above settings** — admin bypass must be disabled
+
+**Why this matters:** `.phi-scanignore` excludes `tests/test_*.py` via a glob
+pattern. The compensating control is the diff-based PR scan (`diff_ref: origin/main`
+in `ci.yml`), which scans new and modified test files before they reach `main`. A
+CI enforcement step verifies that `diff_ref` remains configured. However, if an
+admin can push directly to `main` bypassing branch protection, new test files
+containing real PHI would reach `main` unscanned and then be silently excluded from
+all future full-repo push scans. Branch protection with admin-bypass disabled is
+the only mechanism that closes this gap.
+
+### Diff-based PR scan (enforced by CI)
+
+`ci.yml` must configure `diff_ref: origin/main` on the `Scan for PHI/PII` step for
+pull request events. A dedicated CI step (`Verify compensating controls for glob
+ignore rules`) fails the build if this key is removed while the test glob exclusion
+remains in `.phi-scanignore`.
+
+---
+
 ## Security Design Principles
 
 PhiScan is designed to handle sensitive data environments. Key security properties:

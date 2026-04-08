@@ -88,54 +88,48 @@ target/
 
 # Synthetic PHI fixture corpus — contains intentional PHI-like patterns for
 # detection testing. Excluding prevents false positives when scanning this repo.
-tests/fixtures/phi/
-# Clean fixture corpus — contains version numbers, reserved SSN ranges (000-xx-xxxx,
-# xxx-00-xxxx), and quasi-identifier combinations deliberately crafted to exercise
-# the scanner's true-negative path. These patterns trigger AGE_OVER_THRESHOLD,
-# ZIP_CODE, and quasi-identifier combination detectors as false positives when the
-# scanner scans its own test fixtures.
-tests/fixtures/clean/
-# Fixture manifest — lists fixture file paths and expected finding counts; field
-# names like "unique_id" and "mrn" trigger the quasi-identifier combination detector.
-tests/fixtures/manifest.json
-# HL7 v2 test file — embeds a multi-segment synthetic HL7 message (_FAKE_HL7_MESSAGE)
-# that contains dates, MRN-like identifiers, and a synthetic patient name required
-# for segment-level scanner tests. The fixture values are provably fictional per
-# CLAUDE.md§FixtureCorpusException but reside in the test file rather than the
-# fixtures directory because they are tightly coupled to the HL7 scanner unit tests.
-tests/test_hl7_scanner.py
-# Audit unit test file — imports HIPAA category names and remediation constants
-# (PhiCategory, HIPAA_REMEDIATION_GUIDANCE, ACCOUNT_NUMBER) as test identifiers.
-# These produce false positives against the quasi-identifier combination detector
-# when scanned as application source.
-tests/test_audit.py
-# CLI unit test file — contains SARIF output keys, date literals used as test
-# inputs, and constants like _JSON_FINDINGS_KEY that combine with surrounding
-# context to trigger quasi-identifier and date detectors as false positives.
-tests/test_cli.py
-# Compliance unit test file — imports ComplianceFramework, PhiCategory, and
-# ComplianceControl constants whose combinations trigger the quasi-identifier
-# combination detector when scanned as application source.
-tests/test_compliance_4b.py
-# AI review unit test file — contains a synthetic SSN value (`'123-45-6789'`) used
-# to verify that ScanFinding rejects unredacted code_context at construction time.
-# The value is intentionally fictional (555-01-0000 style) but triggers the SSN
-# detector. Also imports PhiCategory and AIReviewConfig constants that combine to
-# produce quasi-identifier false positives when scanned as application source.
-tests/test_ai_review.py
-# Notifier unit test file — contains deliberate private/RFC1918/loopback IP
-# address literals required to test SSRF protection (7E.2). These addresses are
-# test inputs for _validate_webhook_url, not real endpoints.
-tests/test_notifier.py
-# Scanner unit test file — imports ARCHIVE_MAX_COMPRESSION_RATIO,
-# ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES, and defines ZipInfo helper constants
-# whose combinations trigger the quasi-identifier and health plan number detectors
-# when scanned as application source.
-tests/test_scanner.py
-# Output unit test file — imports display constants (WATCH_RESULT_CLEAN_TEXT,
-# WatchEvent) and format function names whose surrounding context triggers the
-# quasi-identifier combination detector when scanned as application source.
-tests/test_output.py
+# This glob covers all current fixture sub-paths and any new fixture directories
+# or file types added in future (e.g. tests/fixtures/hl7/, tests/fixtures/dicom/).
+# The same trust-boundary and compensating-control notes for tests/test_*.py apply
+# here: new fixture subdirectories are excluded by default; PR diff scans are the
+# primary gate.
+#   tests/fixtures/phi/          — realistic SSN, MRN, DOB, name, and address values
+#   tests/fixtures/clean/        — reserved SSN ranges (000-xx, xxx-00), version
+#                                  numbers, and quasi-identifier combinations for
+#                                  true-negative path tests
+#   tests/fixtures/manifest.json — fixture paths + expected finding counts; field
+#                                  names like "unique_id" and "mrn" trigger detectors
+tests/fixtures/
+
+# Unit test files — excluded from full-repo push scans only.
+#
+# TRUST BOUNDARY: This glob excludes all current and future tests/test_*.py files
+# from full-repo push scans. New test files are excluded by default, not scanned
+# by default. A developer who accidentally commits real PHI into a new test file
+# will NOT be caught by the push-to-main full-repo scan.
+#
+# COMPENSATING CONTROL (machine-enforced): Every PR scan runs diff-based
+# (diff_ref: origin/main in ci.yml), so any new or modified test file is scanned
+# before it reaches main. The "Verify compensating controls" CI step enforces this
+# — it fails the build if the diff_ref YAML key is removed while this glob remains,
+# converting the trust assumption into a hard contract. For environments where
+# direct pushes to main by admins are possible, enabling branch protection rules
+# that require the PHI/PII scan to pass (and disabling admin bypass) provides a
+# stronger guarantee than CI alone.
+#
+# WHY these files trigger false positives:
+#   test_ai_review.py       — synthetic SSN '123-45-6789' (fictional, not real)
+#   test_notifier.py        — RFC1918 / loopback IP literals for SSRF tests
+#   test_hl7_scanner.py     — multi-segment HL7 message with dates and MRN-like IDs
+#   test_fhir_recognizer.py — FHIR JSON with birthDate, family name fields
+#   test_regex_detector.py  — DEA, SSN, MBI, MRN, VIN, ZIP synthetic values
+#   test_suppression.py     — SSN patterns required to test inline suppression
+#   test_compliance_*.py    — PhiCategory / ComplianceFramework constant combos
+#   test_audit.py           — HIPAA category names trigger quasi-identifier detector
+#   test_scanner.py         — ARCHIVE_MAX_* constants + numeric combos
+#   remaining test_*.py     — variable names containing 'name', 'address', 'mrn'
+#                             trigger HEALTH_PLAN_NUMBER and combination detectors
+tests/test_*.py
 
 # PhiScan project-level documentation and CI configuration.
 # These files are excluded to suppress false positives when phi-scan scans its
@@ -170,3 +164,17 @@ phi_scan/
 .phi-scanner.yml
 .phi-scanignore
 .gitignore
+
+# Project root files — legal text, build scripts, and pre-commit configuration
+# contain word patterns (e.g. "coverage", "version", hook names) that trigger
+# HEALTH_PLAN_NUMBER and combination detectors as false positives.
+LICENSE
+Makefile
+.pre-commit-hooks.yaml
+.pre-commit-config.yaml
+
+# Generated build artifacts — coverage.xml contains class names, method names,
+# and line counts from the test suite. Attribute names like "name" and "branch"
+# combined with numeric values trigger multiple detectors as false positives.
+coverage.xml
+coverage/
