@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Webhook SSRF protection:** Webhook URLs are validated before any HTTP request.
   `http://` scheme is rejected (only `https://` permitted). Requests to RFC1918,
   loopback, link-local, CGNAT, and cloud metadata IP ranges are blocked by default.
-  Set `notifications.allow_private_webhook_urls: true` to permit self-hosted targets
+  Set `notifications.is_private_webhook_url_allowed: true` to permit self-hosted targets
   on private networks.
 - **HTML email escaping:** All dynamic fields in email notification templates
   (`repo`, `branch`, `file_path`, `category`, `severity`, `risk_level`) are now
