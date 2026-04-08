@@ -88,22 +88,16 @@ target/
 
 # Synthetic PHI fixture corpus — contains intentional PHI-like patterns for
 # detection testing. Excluding prevents false positives when scanning this repo.
-tests/fixtures/phi/
-# Clean fixture corpus — contains version numbers, reserved SSN ranges (000-xx-xxxx,
-# xxx-00-xxxx), and quasi-identifier combinations deliberately crafted to exercise
-# the scanner's true-negative path. These patterns trigger AGE_OVER_THRESHOLD,
-# ZIP_CODE, and quasi-identifier combination detectors as false positives when the
-# scanner scans its own test fixtures.
-tests/fixtures/clean/
-# Fixture manifest — lists fixture file paths and expected finding counts; field
-# names like "unique_id" and "mrn" trigger the quasi-identifier combination detector.
-tests/fixtures/manifest.json
-# All test files — unit tests contain intentional synthetic PHI patterns (SSNs,
-# MRNs, SSN-like values, IP addresses, FHIR fixtures, HL7 messages) required to
-# exercise the detection engine. These are false positives when scanned as
-# application source. Test files are covered by diff-based PR scans; excluding
-# them on full-repo push scans prevents noise without reducing coverage.
-tests/
+tests/fixtures/
+# Unit test files — contain intentional synthetic PHI patterns (SSNs, MRNs,
+# IP addresses, FHIR fixtures, HL7 messages, loopback addresses) required to
+# exercise the detection engine. Tests are covered by diff-based PR scans;
+# excluding test_*.py on full-repo push scans prevents noise without reducing
+# coverage. tests/fixtures/ and any future tests/data/ or tests/integration/
+# subdirectories are excluded separately so non-test subdirectories (helpers,
+# utilities) remain scannable.
+tests/test_*.py
+tests/conftest.py
 
 # PhiScan project-level documentation and CI configuration.
 # These files are excluded to suppress false positives when phi-scan scans its
