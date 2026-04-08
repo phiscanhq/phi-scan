@@ -1,7 +1,7 @@
 # PLAN.md — PhiScan Master Project Plan
 
 **PHI/PII Scanner for CI/CD Pipelines**
-Created: March 15, 2026 | Updated: March 29, 2026 | Python 3.12.3 | uv 0.10.9
+Created: March 15, 2026 | Updated: April 7, 2026 | Python 3.12.3 | uv 0.10.9
 
 ---
 
@@ -2063,6 +2063,162 @@ Baseline commands repeat similar try/except + exit handling + baseline path reso
 - [x] All doc references to `output.py` updated to `phi_scan/output/`
 - [x] `CONTRIBUTING.md` module map reflects new package structure
 - [x] `CHANGELOG.md` updated for all shipped 7E and 7F items
+
+---
+
+### 7G — Post-Review Quality Fixes
+
+**Goal:** Close three issues surfaced in the external post-7F code review: a docs
+key-name mismatch that will confuse users, a real SSRF bypass via DNS rebinding
+that the current IP-only check does not catch, and a phase-2 split of
+`console.py` to finish the job started in 7F.1. All three are independent and
+shippable as separate PRs.
+
+**Dependencies:** 7F complete.
+
+#### 7G.1 — Fix CHANGELOG key-name mismatch
+
+`CHANGELOG.md` documents the SSRF opt-out key as
+`notifications.allow_private_webhook_urls` but every other file (code, config
+template, `docs/configuration.md`, `docs/security.md`) uses
+`is_private_webhook_url_allowed`. A user copying from the changelog gets a
+silent no-op.
+
+- [ ] **7G.1a** `CHANGELOG.md` — replace `notifications.allow_private_webhook_urls`
+  with `notifications.is_private_webhook_url_allowed` on the SSRF entry under
+  `[Unreleased] ### Security`
+
+#### 7G.2 — SSRF DNS rebinding protection
+
+The current `_validate_webhook_url` in `notifier.py` blocks literal IP
+addresses in the URL but does not resolve hostnames. A webhook URL of
+`https://internal.attacker.com/hook` where `internal.attacker.com` resolves
+to `169.254.169.254` (or any RFC1918 / metadata range) passes every existing
+check. This is a real bypass path for a healthcare PHI scanner.
+
+**Implementation approach:**
+
+After the existing scheme and literal-IP checks, resolve the hostname via
+`socket.getaddrinfo` and validate every returned address against
+`_SSRF_BLOCKED_NETWORKS`. Raise `SSRFProtectionError` if any resolved address
+falls in a blocked range. Skip the DNS check when
+`is_private_webhook_url_allowed=True` (consistent with existing literal-IP
+bypass). Let DNS resolution failure raise `SSRFProtectionError` with an
+informative message — an unresolvable hostname should not be trusted.
+
+New private helpers:
+
+```
+_resolve_hostname_addresses(hostname: str) -> list[IPv4Address | IPv6Address]
+_reject_ssrf_resolved_addresses(hostname: str, addresses: list[...]) -> None
+```
+
+- [ ] **7G.2a** `notifier.py` — add `_resolve_hostname_addresses(hostname)`:
+  calls `socket.getaddrinfo(hostname, None)`, extracts address strings from
+  `sockaddr` tuples, converts each to `IPv4Address | IPv6Address`; raises
+  `SSRFProtectionError` with message `"Webhook hostname '{hostname}' could not
+  be resolved: {error}"` on `socket.gaierror`
+- [ ] **7G.2b** `notifier.py` — add `_reject_ssrf_resolved_addresses(hostname,
+  addresses)`: iterates addresses, checks each against every network in
+  `_SSRF_BLOCKED_NETWORKS`; raises `SSRFProtectionError` with message
+  `"Webhook hostname '{hostname}' resolves to a blocked IP range:
+  {resolved_address}"` on first match
+- [ ] **7G.2c** `notifier.py` — call the two new helpers from
+  `_validate_webhook_url`, after the existing literal-IP check, guarded by
+  `if not is_private_webhook_url_allowed`; import `socket` at module level
+- [ ] **7G.2d** `tests/test_notifier.py` — add sentinel tests:
+  - hostname resolving to `127.0.0.1` raises `SSRFProtectionError`
+  - hostname resolving to `169.254.169.254` (metadata) raises `SSRFProtectionError`
+  - hostname resolving to `10.0.0.1` (RFC1918) raises `SSRFProtectionError`
+  - DNS resolution failure (`socket.gaierror`) raises `SSRFProtectionError`
+  - `is_private_webhook_url_allowed=True` skips DNS check entirely
+  - all existing SSRF literal-IP tests continue to pass
+- [ ] **7G.2e** `docs/security.md` — update the Webhook Security section to
+  document that hostname resolution is validated: resolved IPs are checked
+  against the same blocked ranges as literal IPs, and that
+  `is_private_webhook_url_allowed=True` opts out of both checks
+- [ ] **7G.2f** `docs/configuration.md` — update the `is_private_webhook_url_allowed`
+  entry to note it bypasses both the literal-IP check and the DNS resolution
+  check, and warn that enabling it on public-internet webhooks weakens the
+  SSRF protection model
+
+#### 7G.3 — Phase-2 split of `console.py` (1 307 LOC)
+
+`console.py` remains a 1 307-line multi-responsibility file after 7F.1. It
+mixes four distinct concerns: shared infrastructure, findings display, scan
+summary/violation UI, and baseline UI. Convert it to a `console/` sub-package
+using the same backwards-compatible re-export pattern established in 7F.1.
+
+**Target structure:**
+
+```
+phi_scan/output/console/
+    __init__.py     re-exports all public symbols — zero import breakage
+    core.py         _rich_console, get_console(), _detect_unicode_support,
+                    _resolve_symbol, create_scan_progress, display_status_spinner
+    findings.py     display_findings_table, display_file_tree, format_table,
+                    display_code_context_panel, display_category_breakdown,
+                    _build_findings_table, _group_findings_by_file,
+                    _build_confidence_dots, _highest_severity_icon
+    summary.py      display_banner, display_phase_*, display_scan_header,
+                    display_file_type_summary, display_summary_panel,
+                    display_clean_result, display_clean_summary_panel,
+                    display_violation_alert, display_risk_level_badge,
+                    display_severity_inline, display_violation_summary_panel,
+                    display_exit_code_message, and all their private builders
+    baseline.py     display_baseline_summary, display_baseline_diff,
+                    display_baseline_drift_warning, display_baseline_scan_notice,
+                    and their private builders
+```
+
+The `_rich_console` instance lives in `core.py`. All other submodules call
+`get_console()` from `core` — no submodule constructs its own `Console`.
+
+- [ ] **7G.3a** Create `phi_scan/output/console/` package; copy current
+  `console.py` content into `console/__init__.py` as a baseline — verify all
+  tests still pass before any code moves
+- [ ] **7G.3b** Extract shared infrastructure into `console/core.py`:
+  `_rich_console`, `get_console()`, `_detect_unicode_support()`,
+  `_resolve_symbol()`, `create_scan_progress()`, `display_status_spinner()`;
+  update `__init__.py` to import from `core`
+- [ ] **7G.3c** Extract findings display into `console/findings.py`:
+  `display_findings_table`, `display_file_tree`, `format_table`,
+  `display_code_context_panel`, `display_category_breakdown`, and all private
+  builders those functions depend on; each function calls `get_console()` from
+  `core`; update `__init__.py`
+- [ ] **7G.3d** Extract summary/violation/phase UI into `console/summary.py`:
+  `display_banner`, `display_phase_*`, `display_scan_header`,
+  `display_file_type_summary`, `display_summary_panel`,
+  `display_clean_result`, `display_clean_summary_panel`,
+  `display_violation_alert`, `display_risk_level_badge`,
+  `display_severity_inline`, `display_violation_summary_panel`,
+  `display_exit_code_message`, and all private builders; update `__init__.py`
+- [ ] **7G.3e** Extract baseline UI into `console/baseline.py`:
+  `display_baseline_summary`, `display_baseline_diff`,
+  `display_baseline_drift_warning`, `display_baseline_scan_notice`, and their
+  private builders; update `__init__.py`
+- [ ] **7G.3f** Delete the now-empty `phi_scan/output/console.py` monolith;
+  confirm `phi_scan/output/__init__.py` imports from `console/` package
+- [ ] **7G.3g** Verify all existing tests pass unchanged after the split
+- [ ] **7G.3h** `CONTRIBUTING.md` — update module map to reflect
+  `phi_scan/output/console/` sub-package and document where to add new display
+  functions
+- [ ] **7G.3i** `CHANGELOG.md` — add entries under `[Unreleased]` for 7G.1,
+  7G.2, and 7G.3 as each ships
+
+### 7G Verification Checklist
+
+- [ ] `CHANGELOG.md` uses `is_private_webhook_url_allowed` consistently — no
+  reference to `allow_private_webhook_urls`
+- [ ] A hostname resolving to `127.0.0.1` is blocked by SSRF validation
+- [ ] A hostname resolving to `169.254.169.254` is blocked by SSRF validation
+- [ ] A hostname resolving to `10.0.0.1` (RFC1918) is blocked by SSRF validation
+- [ ] DNS resolution failure raises `SSRFProtectionError` (not a silent pass)
+- [ ] `is_private_webhook_url_allowed=True` skips DNS resolution check
+- [ ] `console.py` monolith no longer exists — replaced by `console/` sub-package
+- [ ] All public symbols importable from `phi_scan.output.console` (backwards-compatible)
+- [ ] All existing tests pass after each sub-task
+- [ ] `CONTRIBUTING.md` module map reflects `console/` sub-package
 
 ---
 
