@@ -2113,31 +2113,31 @@ _resolve_hostname_addresses(hostname: str) -> list[IPv4Address | IPv6Address]
 _reject_ssrf_resolved_addresses(hostname: str, addresses: list[...]) -> None
 ```
 
-- [ ] **7G.2a** `notifier.py` — add `_resolve_hostname_addresses(hostname)`:
+- [x] **7G.2a** `notifier.py` — add `_resolve_hostname_addresses(hostname)`:
   calls `socket.getaddrinfo(hostname, None)`, extracts address strings from
   `sockaddr` tuples, converts each to `IPv4Address | IPv6Address`; raises
   `SSRFProtectionError` with message `"Webhook hostname '{hostname}' could not
   be resolved: {error}"` on `socket.gaierror`
-- [ ] **7G.2b** `notifier.py` — add `_reject_ssrf_resolved_addresses(hostname,
+- [x] **7G.2b** `notifier.py` — add `_reject_ssrf_resolved_addresses(hostname,
   addresses)`: iterates addresses, checks each against every network in
   `_SSRF_BLOCKED_NETWORKS`; raises `SSRFProtectionError` with message
   `"Webhook hostname '{hostname}' resolves to a blocked IP range:
   {resolved_address}"` on first match
-- [ ] **7G.2c** `notifier.py` — call the two new helpers from
+- [x] **7G.2c** `notifier.py` — call the two new helpers from
   `_validate_webhook_url`, after the existing literal-IP check, guarded by
   `if not is_private_webhook_url_allowed`; import `socket` at module level
-- [ ] **7G.2d** `tests/test_notifier.py` — add sentinel tests:
+- [x] **7G.2d** `tests/test_notifier.py` — add sentinel tests:
   - hostname resolving to `127.0.0.1` raises `SSRFProtectionError`
   - hostname resolving to `169.254.169.254` (metadata) raises `SSRFProtectionError`
   - hostname resolving to `10.0.0.1` (RFC1918) raises `SSRFProtectionError`
   - DNS resolution failure (`socket.gaierror`) raises `SSRFProtectionError`
   - `is_private_webhook_url_allowed=True` skips DNS check entirely
   - all existing SSRF literal-IP tests continue to pass
-- [ ] **7G.2e** `docs/security.md` — update the Webhook Security section to
+- [x] **7G.2e** `docs/security.md` — update the Webhook Security section to
   document that hostname resolution is validated: resolved IPs are checked
   against the same blocked ranges as literal IPs, and that
   `is_private_webhook_url_allowed=True` opts out of both checks
-- [ ] **7G.2f** `docs/configuration.md` — update the `is_private_webhook_url_allowed`
+- [x] **7G.2f** `docs/configuration.md` — update the `is_private_webhook_url_allowed`
   entry to note it bypasses both the literal-IP check and the DNS resolution
   check, and warn that enabling it on public-internet webhooks weakens the
   SSRF protection model
@@ -2210,11 +2210,11 @@ The `_rich_console` instance lives in `core.py`. All other submodules call
 
 - [x] `CHANGELOG.md` uses `is_private_webhook_url_allowed` consistently — no
   reference to `allow_private_webhook_urls`
-- [ ] A hostname resolving to `127.0.0.1` is blocked by SSRF validation
-- [ ] A hostname resolving to `169.254.169.254` is blocked by SSRF validation
-- [ ] A hostname resolving to `10.0.0.1` (RFC1918) is blocked by SSRF validation
-- [ ] DNS resolution failure raises `SSRFProtectionError` (not a silent pass)
-- [ ] `is_private_webhook_url_allowed=True` skips DNS resolution check
+- [x] A hostname resolving to `127.0.0.1` is blocked by SSRF validation
+- [x] A hostname resolving to `169.254.169.254` is blocked by SSRF validation
+- [x] A hostname resolving to `10.0.0.1` (RFC1918) is blocked by SSRF validation
+- [x] DNS resolution failure raises `SSRFProtectionError` (not a silent pass)
+- [x] `is_private_webhook_url_allowed=True` skips DNS resolution check
 - [ ] `console.py` monolith no longer exists — replaced by `console/` sub-package
 - [ ] All public symbols importable from `phi_scan.output.console` (backwards-compatible)
 - [ ] All existing tests pass after each sub-task

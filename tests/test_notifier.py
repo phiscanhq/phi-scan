@@ -14,6 +14,7 @@ Verifies that:
 from __future__ import annotations
 
 import smtplib
+import socket
 from pathlib import Path
 from types import MappingProxyType
 from unittest.mock import MagicMock, patch
@@ -38,6 +39,8 @@ from phi_scan.notifier import (
     _build_teams_payload,
     _build_webhook_payload,
     _get_smtp_credentials,
+    _reject_ssrf_resolved_addresses,  # noqa: PLC2701
+    _resolve_hostname_addresses,  # noqa: PLC2701
     _validate_webhook_url,  # noqa: PLC2701
     send_email_notification,
     send_webhook_notification,
@@ -408,10 +411,18 @@ def test_send_webhook_raises_when_url_empty() -> None:
 
 def test_send_webhook_succeeds_on_http_200() -> None:
     """send_webhook_notification must succeed without error when httpx returns 200."""
+    import ipaddress
+
     config = _make_webhook_config(retry_count=1)
     mock_response = MagicMock()
     mock_response.is_success = True
-    with patch("httpx.post", return_value=mock_response):
+    with (
+        patch(
+            "phi_scan.notifier._resolve_hostname_addresses",
+            return_value=[ipaddress.ip_address("93.184.216.34")],
+        ),
+        patch("httpx.post", return_value=mock_response),
+    ):
         send_webhook_notification(
             config,
             _make_dirty_result(),
@@ -454,11 +465,19 @@ def test_send_webhook_raises_on_network_error() -> None:
 
 def test_send_webhook_retries_on_failure() -> None:
     """send_webhook_notification must POST retry_count times before giving up."""
+    import ipaddress
+
     config = _make_webhook_config(retry_count=3)
     mock_response = MagicMock()
     mock_response.is_success = False
     mock_response.status_code = 500
-    with patch("httpx.post", return_value=mock_response) as mock_post:
+    with (
+        patch(
+            "phi_scan.notifier._resolve_hostname_addresses",
+            return_value=[ipaddress.ip_address("93.184.216.34")],
+        ),
+        patch("httpx.post", return_value=mock_response) as mock_post,
+    ):
         with pytest.raises(NotificationError):
             send_webhook_notification(
                 config,
@@ -494,8 +513,14 @@ def test_notification_config_is_disabled_by_default() -> None:
 
 
 def test_validate_webhook_url_accepts_https() -> None:
-    """_validate_webhook_url must not raise for a valid https URL."""
-    _validate_webhook_url(_SAMPLE_WEBHOOK_URL, is_private_webhook_url_allowed=False)
+    """_validate_webhook_url must not raise for a valid https URL with a public IP."""
+    import ipaddress
+
+    with patch(
+        "phi_scan.notifier._resolve_hostname_addresses",
+        return_value=[ipaddress.ip_address("93.184.216.34")],
+    ):
+        _validate_webhook_url(_SAMPLE_WEBHOOK_URL, is_private_webhook_url_allowed=False)
 
 
 def test_validate_webhook_url_rejects_http_scheme() -> None:
@@ -573,6 +598,83 @@ def test_validate_webhook_url_private_ip_error_does_not_expose_raw_url() -> None
     error_message = str(exc_info.value)
     assert _PRIVATE_IP_WEBHOOK_URL not in error_message
     assert "sha256:" in error_message
+
+
+# ---------------------------------------------------------------------------
+# SSRF DNS rebinding protection — _resolve_hostname_addresses and
+# _reject_ssrf_resolved_addresses
+# ---------------------------------------------------------------------------
+
+_DOMAIN_WEBHOOK_URL: str = "https://internal.example.com/hook"
+
+
+def test_validate_webhook_url_blocks_hostname_resolving_to_loopback() -> None:
+    """_validate_webhook_url must block a hostname that resolves to 127.0.0.1."""
+    import ipaddress
+
+    with patch("phi_scan.notifier._resolve_hostname_addresses") as stub_resolve:
+        stub_resolve.return_value = [ipaddress.ip_address("127.0.0.1")]
+        with pytest.raises(NotificationError, match="blocked"):
+            _validate_webhook_url(_DOMAIN_WEBHOOK_URL, is_private_webhook_url_allowed=False)
+
+
+def test_validate_webhook_url_blocks_hostname_resolving_to_metadata_ip() -> None:
+    """_validate_webhook_url must block a hostname that resolves to 169.254.169.254."""
+    import ipaddress
+
+    with patch("phi_scan.notifier._resolve_hostname_addresses") as stub_resolve:
+        stub_resolve.return_value = [ipaddress.ip_address("169.254.169.254")]
+        with pytest.raises(NotificationError, match="blocked"):
+            _validate_webhook_url(_DOMAIN_WEBHOOK_URL, is_private_webhook_url_allowed=False)
+
+
+def test_validate_webhook_url_blocks_hostname_resolving_to_rfc1918() -> None:
+    """_validate_webhook_url must block a hostname that resolves to 10.0.0.1."""
+    import ipaddress
+
+    with patch("phi_scan.notifier._resolve_hostname_addresses") as stub_resolve:
+        stub_resolve.return_value = [ipaddress.ip_address("10.0.0.1")]
+        with pytest.raises(NotificationError, match="blocked"):
+            _validate_webhook_url(_DOMAIN_WEBHOOK_URL, is_private_webhook_url_allowed=False)
+
+
+def test_validate_webhook_url_blocks_dns_resolution_failure() -> None:
+    """_validate_webhook_url must raise NotificationError when hostname cannot be resolved."""
+    with patch("phi_scan.notifier._resolve_hostname_addresses") as stub_resolve:
+        stub_resolve.side_effect = NotificationError("could not be resolved")
+        with pytest.raises(NotificationError, match="resolved"):
+            _validate_webhook_url(_DOMAIN_WEBHOOK_URL, is_private_webhook_url_allowed=False)
+
+
+def test_validate_webhook_url_skips_dns_when_private_allowed() -> None:
+    """_validate_webhook_url must skip DNS resolution when is_private_webhook_url_allowed=True."""
+    with patch("phi_scan.notifier._resolve_hostname_addresses") as stub_resolve:
+        _validate_webhook_url(_DOMAIN_WEBHOOK_URL, is_private_webhook_url_allowed=True)
+        stub_resolve.assert_not_called()
+
+
+def test_resolve_hostname_addresses_raises_on_gaierror() -> None:
+    """_resolve_hostname_addresses must raise NotificationError on socket.gaierror."""
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("name not found")):
+        with pytest.raises(NotificationError, match="resolved"):
+            _resolve_hostname_addresses("unresolvable.invalid")
+
+
+def test_reject_ssrf_resolved_addresses_passes_for_public_ip() -> None:
+    """_reject_ssrf_resolved_addresses must not raise for a public IP address."""
+    import ipaddress
+
+    _reject_ssrf_resolved_addresses("example.com", [ipaddress.ip_address("93.184.216.34")])
+
+
+def test_reject_ssrf_resolved_addresses_blocks_private_ip() -> None:
+    """_reject_ssrf_resolved_addresses must raise for an RFC1918 address."""
+    import ipaddress
+
+    with pytest.raises(NotificationError, match="blocked"):
+        _reject_ssrf_resolved_addresses(
+            "internal.example.com", [ipaddress.ip_address("192.168.1.1")]
+        )
 
 
 def test_send_webhook_rejects_http_url() -> None:

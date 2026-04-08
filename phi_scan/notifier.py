@@ -32,6 +32,7 @@ import ipaddress
 import logging
 import os
 import smtplib
+import socket
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -95,10 +96,15 @@ _WEBHOOK_MISSING_HOSTNAME_ERROR: str = (
     "Webhook URL sha256:{url_hash} contains no hostname — the URL is malformed or empty. "
     "Provide a valid https:// endpoint with a resolvable hostname."
 )
-_WEBHOOK_DOMAIN_BYPASS_DEBUG: str = (
-    "Webhook hostname sha256:{hostname_hash} is not a literal IP — SSRF IP block list skipped. "
-    "DNS-based SSRF (e.g. a domain resolving to 169.254.169.254) is not covered by this check; "
-    "enforce network-level egress controls to block metadata endpoint access."
+_WEBHOOK_DNS_RESOLUTION_ERROR: str = (
+    "Webhook hostname sha256:{hostname_hash} could not be resolved: {error}. "
+    "Unresolvable hostnames are rejected to prevent DNS-based SSRF bypasses."
+)
+_WEBHOOK_DNS_BLOCKED_ADDRESS_ERROR: str = (
+    "Webhook hostname sha256:{hostname_hash} resolves to a blocked IP range "
+    "(sha256:{address_hash}). Requests to RFC1918, link-local, and cloud metadata "
+    "ranges are blocked by default. "
+    "Set is_private_webhook_url_allowed=True in NotificationConfig to allow self-hosted targets."
 )
 
 # IP networks blocked by SSRF protection when is_private_webhook_url_allowed=False.
@@ -557,24 +563,70 @@ def _build_webhook_payload(
     return _build_generic_payload(scan_result, repo, branch, scanner_version)
 
 
+def _resolve_hostname_addresses(
+    hostname: str,
+) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """Resolve a hostname to all of its IP addresses.
+
+    Args:
+        hostname: The hostname to resolve (must not be a literal IP string).
+
+    Returns:
+        List of resolved IPv4Address or IPv6Address objects.
+
+    Raises:
+        NotificationError: If the hostname cannot be resolved.
+    """
+    try:
+        address_infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as error:
+        raise NotificationError(
+            _WEBHOOK_DNS_RESOLUTION_ERROR.format(
+                hostname_hash=compute_value_hash(hostname), error=error
+            )
+        ) from error
+    return [ipaddress.ip_address(sockaddr[0]) for _, _, _, _, sockaddr in address_infos]
+
+
+def _reject_ssrf_resolved_addresses(
+    hostname: str,
+    addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address],
+) -> None:
+    """Raise NotificationError if any resolved address falls in a blocked IP range.
+
+    Args:
+        hostname: The hostname that was resolved (used only for hashing in the error).
+        addresses: Resolved IP addresses to validate.
+
+    Raises:
+        NotificationError: If any address falls in a blocked range.
+    """
+    for address in addresses:
+        if any(address in network for network in _BLOCKED_IP_NETWORKS):
+            raise NotificationError(
+                _WEBHOOK_DNS_BLOCKED_ADDRESS_ERROR.format(
+                    hostname_hash=compute_value_hash(hostname),
+                    address_hash=compute_value_hash(str(address)),
+                )
+            )
+
+
 def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> None:
     """Raise NotificationError if the webhook URL fails SSRF safety checks.
 
-    Enforces three guards (1–2 always, 3 when is_private_webhook_url_allowed is False):
+    Enforces four guards (1–2 always, 3–4 when is_private_webhook_url_allowed is False):
     1. Scheme must be 'https' — plaintext http is rejected.
     2. Hostname must be present — a URL with no hostname (e.g. 'https://') is always rejected.
     3. Hostname, if a literal IP address, must not fall in a private, loopback,
        link-local, CGNAT, or cloud metadata range.
-
-    Limitation: only literal IP addresses are checked. Domain names that resolve
-    to blocked ranges (DNS-rebinding / SSRF via hostname) are not covered. Enforce
-    network-level egress controls to block metadata endpoint access in CI environments
-    where the webhook URL may be influenced by untrusted input.
+    4. Hostname, if a domain name, is resolved via DNS and every returned address
+       is validated against the same blocked ranges (closes DNS-rebinding bypass).
 
     Args:
         url: The webhook endpoint URL to validate.
-        is_private_webhook_url_allowed: When True, skip the private-IP check (opt-out
-            for self-hosted targets on private networks).
+        is_private_webhook_url_allowed: When True, skip both the literal-IP check
+            and the DNS resolution check (opt-out for self-hosted targets on private
+            networks).
 
     Raises:
         NotificationError: If the URL fails any enabled check.
@@ -594,9 +646,8 @@ def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> Non
     try:
         address = ipaddress.ip_address(hostname)
     except ValueError:
-        _logger.debug(
-            _WEBHOOK_DOMAIN_BYPASS_DEBUG.format(hostname_hash=compute_value_hash(hostname))
-        )
+        resolved_addresses = _resolve_hostname_addresses(hostname)
+        _reject_ssrf_resolved_addresses(hostname, resolved_addresses)
         return
     if any(address in network for network in _BLOCKED_IP_NETWORKS):
         raise NotificationError(

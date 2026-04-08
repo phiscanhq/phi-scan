@@ -220,7 +220,7 @@ size check runs.
 
 ### SSRF Protection
 
-Webhook URLs are validated before any HTTP request is made. Two checks are enforced
+Webhook URLs are validated before any HTTP request is made. Three checks are enforced
 by default (when `is_private_webhook_url_allowed: false`):
 
 **1. HTTPS scheme required**
@@ -245,6 +245,16 @@ Requests to these ranges are rejected with a `NotificationError` to prevent SSRF
 attacks in CI environments where an attacker could influence the webhook URL via a
 malicious PR.
 
+**3. DNS resolution check**
+
+Domain names that are not literal IPs are resolved via DNS before the request is
+made. Every returned address is validated against the same block list above. This
+closes the DNS rebinding bypass: a hostname like `internal.attacker.com` that
+resolves to `169.254.169.254` is rejected even though the URL contains no literal IP.
+
+If the hostname cannot be resolved at all, the request is also rejected — an
+unresolvable hostname is not trusted.
+
 **Opt-out for self-hosted targets**
 
 If your webhook endpoint is on a private network (e.g., on-premise GitLab,
@@ -255,14 +265,14 @@ notifications:
   is_private_webhook_url_allowed: true
 ```
 
-This disables the IP block list check while keeping the HTTPS requirement in place.
+This disables both the IP block list check and the DNS resolution check while
+keeping the HTTPS requirement in place.
 
-**Limitation:** The IP block list covers only literal IP addresses in the URL hostname.
-Domain names that resolve to blocked ranges at runtime (DNS rebinding, internal DNS aliases
-such as `metadata.internal`) bypass this check. In CI environments where the webhook URL
-may be influenced by untrusted input (e.g., a malicious pull request setting an environment
-variable), enforce network-level egress controls — firewall rules or VPC policies — to
-prevent access to cloud metadata endpoints.
+> **Security note:** Enabling `is_private_webhook_url_allowed` on a system where
+> webhook URLs can be influenced by untrusted input (e.g., a malicious PR setting
+> an environment variable) removes SSRF protection entirely. Only enable it in
+> environments with network-level egress controls (firewall rules, VPC policies)
+> restricting access to metadata endpoints.
 
 ---
 

@@ -294,14 +294,18 @@ notifications:
 ```
 
 Controls whether webhook URLs pointing to private or reserved IP addresses are
-permitted. When `false` (the default), the following are blocked:
+permitted. When `false` (the default), three checks are enforced:
 
-- `http://` scheme (only `https://` is accepted)
-- RFC1918 ranges: `10.x.x.x`, `172.16–31.x.x`, `192.168.x.x`
-- Loopback: `127.x.x.x`, `::1`
-- Link-local / cloud metadata: `169.254.x.x` (AWS/GCP metadata endpoint)
-- CGNAT: `100.64.0.0/10`
-- IPv6 private/link-local: `fc00::/7`, `fe80::/10`
+- `http://` scheme is rejected (only `https://` is accepted)
+- Literal IP addresses in the hostname are checked against a block list:
+  - RFC1918 ranges: `10.x.x.x`, `172.16–31.x.x`, `192.168.x.x`
+  - Loopback: `127.x.x.x`, `::1`
+  - Link-local / cloud metadata: `169.254.x.x` (AWS/GCP metadata endpoint)
+  - CGNAT: `100.64.0.0/10`
+  - IPv6 private/link-local: `fc00::/7`, `fe80::/10`
+- Domain names are resolved via DNS and every returned address is validated
+  against the same block list — this prevents DNS rebinding bypasses where a
+  hostname like `internal.attacker.com` resolves to `169.254.169.254`
 
 This prevents SSRF attacks in CI environments where an attacker could influence
 the webhook URL through a malicious pull request.
@@ -315,14 +319,13 @@ notifications:
   is_private_webhook_url_allowed: true   # only for self-hosted private targets
 ```
 
-The HTTPS scheme requirement remains in effect even when `is_private_webhook_url_allowed`
-is `true`. `http://` URLs are always rejected.
+Setting this to `true` bypasses **both** the literal-IP block list and the DNS
+resolution check. The HTTPS scheme requirement remains in effect regardless.
 
-> **Limitation:** The IP block list only covers literal IP addresses in the URL hostname.
-> Domain names that resolve to blocked ranges (DNS rebinding, internal DNS aliases such as
-> `metadata.internal`) are **not** blocked by this check. Enforce network-level egress
-> controls (firewall rules, VPC policies) in CI environments where the webhook URL may
-> be influenced by untrusted input such as pull request metadata.
+> **Security note:** Only enable `is_private_webhook_url_allowed` in environments
+> with network-level egress controls (firewall rules, VPC policies) restricting
+> access to cloud metadata endpoints. Enabling it where webhook URLs can be
+> influenced by untrusted input removes SSRF protection entirely.
 
 ---
 
