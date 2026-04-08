@@ -88,16 +88,38 @@ target/
 
 # Synthetic PHI fixture corpus — contains intentional PHI-like patterns for
 # detection testing. Excluding prevents false positives when scanning this repo.
+# tests/fixtures/phi/   — realistic SSN, MRN, DOB, name, and address values
+# tests/fixtures/clean/ — reserved SSN ranges (000-xx, xxx-00), version numbers,
+#                         and quasi-identifier combinations for true-negative tests
+# tests/fixtures/manifest.json — lists fixture paths and expected finding counts;
+#                         field names like "unique_id" and "mrn" trigger detectors
 tests/fixtures/
-# Unit test files — contain intentional synthetic PHI patterns (SSNs, MRNs,
-# IP addresses, FHIR fixtures, HL7 messages, loopback addresses) required to
-# exercise the detection engine. Tests are covered by diff-based PR scans;
-# excluding test_*.py on full-repo push scans prevents noise without reducing
-# coverage. tests/fixtures/ and any future tests/data/ or tests/integration/
-# subdirectories are excluded separately so non-test subdirectories (helpers,
-# utilities) remain scannable.
+
+# Unit test files — excluded from full-repo push scans only.
+#
+# TRUST BOUNDARY: This glob excludes all current and future tests/test_*.py files
+# from full-repo push scans. New test files are excluded by default, not scanned
+# by default. A developer who accidentally commits real PHI into a new test file
+# will NOT be caught by the push-to-main scan.
+#
+# COMPENSATING CONTROL: Every PR scan runs diff-based (diff_ref: origin/main in
+# ci.yml), so any new or modified test file is scanned before it reaches main.
+# The push-to-main full-repo scan is a belt-and-suspenders check for non-diff
+# code paths, not the primary gate for test files.
+#
+# WHY these files trigger false positives:
+#   test_ai_review.py      — synthetic SSN '123-45-6789' (fictional, not real)
+#   test_notifier.py       — RFC1918 / loopback IP literals for SSRF tests
+#   test_hl7_scanner.py    — multi-segment HL7 message with dates and MRN-like IDs
+#   test_fhir_recognizer.py — FHIR JSON with birthDate, family name fields
+#   test_regex_detector.py  — DEA, SSN, MBI, MRN, VIN, ZIP synthetic values
+#   test_suppression.py    — SSN patterns required to test inline suppression
+#   test_compliance_*.py   — PhiCategory / ComplianceFramework constant combos
+#   test_audit.py          — HIPAA category names trigger quasi-identifier detector
+#   test_scanner.py        — ARCHIVE_MAX_* constants + numeric combos
+#   remaining test_*.py    — variable names containing 'name', 'address', 'mrn'
+#                            trigger HEALTH_PLAN_NUMBER and combination detectors
 tests/test_*.py
-tests/conftest.py
 
 # PhiScan project-level documentation and CI configuration.
 # These files are excluded to suppress false positives when phi-scan scans its
