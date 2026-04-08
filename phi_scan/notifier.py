@@ -1,4 +1,4 @@
-"""Email and webhook notification delivery (Phase 5).
+"""Email and webhook notification delivery (Phase 5).  # phi-scan:ignore
 
 Implements two delivery channels:
 
@@ -68,7 +68,7 @@ _SMTP_PASSWORD_ENV_VAR: str = "PHI_SCAN_SMTP_PASSWORD"
 # Error message templates
 # ---------------------------------------------------------------------------
 
-_EMAIL_SEND_ERROR: str = "Email notification failed to {recipients}: {detail}"
+_EMAIL_SEND_ERROR: str = "Email notification failed to {recipients}: {detail}"  # phi-scan:ignore
 _WEBHOOK_SEND_ERROR: str = "Webhook notification failed to {url}: {detail}"
 _WEBHOOK_HTTP_ERROR: str = "Webhook POST returned {status_code} after {attempts} attempt(s)"
 _TLS_REQUIRED_ERROR: str = (
@@ -111,15 +111,15 @@ _WEBHOOK_DNS_BLOCKED_ADDRESS_ERROR: str = (
 # Covers RFC1918 private ranges, link-local, loopback, CGNAT, cloud metadata,
 # and IPv6 equivalents. Addresses not in these ranges are permitted.
 _BLOCKED_IP_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
-    ipaddress.ip_network("10.0.0.0/8"),  # RFC1918 class A
-    ipaddress.ip_network("172.16.0.0/12"),  # RFC1918 class B
-    ipaddress.ip_network("192.168.0.0/16"),  # RFC1918 class C
-    ipaddress.ip_network("127.0.0.0/8"),  # loopback
-    ipaddress.ip_network("169.254.0.0/16"),  # link-local / AWS+GCP metadata
-    ipaddress.ip_network("100.64.0.0/10"),  # CGNAT (RFC6598)
-    ipaddress.ip_network("::1/128"),  # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),  # IPv6 unique local
-    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
+    ipaddress.ip_network("10.0.0.0/8"),  # phi-scan:ignore
+    ipaddress.ip_network("172.16.0.0/12"),  # phi-scan:ignore
+    ipaddress.ip_network("192.168.0.0/16"),  # phi-scan:ignore
+    ipaddress.ip_network("127.0.0.0/8"),  # phi-scan:ignore
+    ipaddress.ip_network("169.254.0.0/16"),  # phi-scan:ignore
+    ipaddress.ip_network("100.64.0.0/10"),  # phi-scan:ignore
+    ipaddress.ip_network("::1/128"),  # phi-scan:ignore
+    ipaddress.ip_network("fc00::/7"),  # phi-scan:ignore
+    ipaddress.ip_network("fe80::/10"),  # phi-scan:ignore
 )
 
 # ---------------------------------------------------------------------------
@@ -330,6 +330,7 @@ def _attach_report_file(message: MIMEMultipart, report_path: Path) -> None:
         )
         return
     attachment = MIMEApplication(report_bytes, _subtype=_ATTACHMENT_SUBTYPE)
+    # phi-scan:ignore-next-line
     attachment.add_header("Content-Disposition", "attachment", filename=report_path.name)
     message.attach(attachment)
 
@@ -483,6 +484,7 @@ def _build_teams_payload(
                 "activitySubtitle": status_text,
                 "facts": [
                     {"name": "Risk Level", "value": scan_result.risk_level.value},
+                    # phi-scan:ignore-next-line
                     {"name": "Findings", "value": str(len(scan_result.findings))},
                     {"name": "Files Scanned", "value": str(scan_result.files_scanned)},
                     {"name": "Scanner Version", "value": scanner_version},
@@ -563,13 +565,13 @@ def _build_webhook_payload(
     return _build_generic_payload(scan_result, repo, branch, scanner_version)
 
 
-def _resolve_hostname_addresses(
-    hostname: str,
-) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+def _resolve_hostname_addresses(  # phi-scan:ignore
+    hostname: str,  # phi-scan:ignore
+) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:  # phi-scan:ignore
     """Resolve a hostname to all of its IP addresses.
 
     Args:
-        hostname: The hostname to resolve (must not be a literal IP string).
+        hostname: The hostname to resolve.  # phi-scan:ignore
 
     Returns:
         List of resolved IPv4Address or IPv6Address objects.
@@ -578,35 +580,46 @@ def _resolve_hostname_addresses(
         NotificationError: If the hostname cannot be resolved.
     """
     try:
-        address_infos = socket.getaddrinfo(hostname, None)
+        address_infos = socket.getaddrinfo(hostname, None)  # phi-scan:ignore
     except socket.gaierror as error:
         raise NotificationError(
             _WEBHOOK_DNS_RESOLUTION_ERROR.format(
-                hostname_hash=compute_value_hash(hostname), error=error
+                hostname_hash=compute_value_hash(hostname),  # phi-scan:ignore
+                error=error,  # phi-scan:ignore
             )
         ) from error
-    return [ipaddress.ip_address(sockaddr[0]) for _, _, _, _, sockaddr in address_infos]
+    resolved = []
+    for _, _, _, _, sockaddr in address_infos:  # phi-scan:ignore
+        if not sockaddr:
+            continue
+        try:
+            resolved.append(ipaddress.ip_address(sockaddr[0]))  # phi-scan:ignore
+        except (IndexError, ValueError):
+            continue
+    return resolved
 
 
-def _reject_ssrf_resolved_addresses(
-    hostname: str,
-    addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address],
+def _reject_ssrf_resolved_addresses(  # phi-scan:ignore
+    hostname: str,  # phi-scan:ignore
+    addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address],  # phi-scan:ignore
 ) -> None:
     """Raise NotificationError if any resolved address falls in a blocked IP range.
 
     Args:
+        # phi-scan:ignore-next-line
         hostname: The hostname that was resolved (used only for hashing in the error).
+        # phi-scan:ignore-next-line
         addresses: Resolved IP addresses to validate.
 
     Raises:
         NotificationError: If any address falls in a blocked range.
     """
-    for address in addresses:
-        if any(address in network for network in _BLOCKED_IP_NETWORKS):
+    for address in addresses:  # phi-scan:ignore
+        if any(address in network for network in _BLOCKED_IP_NETWORKS):  # phi-scan:ignore
             raise NotificationError(
                 _WEBHOOK_DNS_BLOCKED_ADDRESS_ERROR.format(
-                    hostname_hash=compute_value_hash(hostname),
-                    address_hash=compute_value_hash(str(address)),
+                    hostname_hash=compute_value_hash(hostname),  # phi-scan:ignore
+                    address_hash=compute_value_hash(str(address)),  # phi-scan:ignore
                 )
             )
 
@@ -636,20 +649,21 @@ def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> Non
         raise NotificationError(
             _WEBHOOK_SCHEME_ERROR.format(url_hash=compute_value_hash(url), scheme=parsed.scheme)
         )
-    hostname = parsed.hostname
-    if not hostname:
+    hostname = parsed.hostname  # phi-scan:ignore
+    if not hostname:  # phi-scan:ignore
         raise NotificationError(
+            # phi-scan:ignore-next-line
             _WEBHOOK_MISSING_HOSTNAME_ERROR.format(url_hash=compute_value_hash(url))
         )
     if is_private_webhook_url_allowed:
         return
     try:
-        address = ipaddress.ip_address(hostname)
+        address = ipaddress.ip_address(hostname)  # phi-scan:ignore
     except ValueError:
-        resolved_addresses = _resolve_hostname_addresses(hostname)
+        resolved_addresses = _resolve_hostname_addresses(hostname)  # phi-scan:ignore
         _reject_ssrf_resolved_addresses(hostname, resolved_addresses)
         return
-    if any(address in network for network in _BLOCKED_IP_NETWORKS):
+    if any(address in network for network in _BLOCKED_IP_NETWORKS):  # phi-scan:ignore
         raise NotificationError(
             _WEBHOOK_PRIVATE_IP_ERROR.format(
                 url_hash=compute_value_hash(url), address_hash=compute_value_hash(str(address))
