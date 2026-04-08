@@ -67,29 +67,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify compensating controls for glob ignore rules
+      - name: Check PHI scan configuration invariants
         shell: bash
-        run: |
-          # .phi-scanignore excludes tests/test_*.py via glob. The compensating
-          # control is diff-based PR scanning (diff_ref: origin/main on the Scan
-          # step). This step enforces that invariant by parsing only the with: block
-          # of the 'Scan for PHI/PII' step — not the entire file — so the check
-          # cannot be satisfied by a matching string anywhere else in ci.yml
-          # (including inside this step's own run block or comments).
-          if grep -qE '^tests/test_\*\.py' .phi-scanignore; then
-            if ! awk '
-              /name: Scan for PHI\/PII/ { in_step=1; next }
-              in_step && /^[[:space:]]+-[[:space:]]+name:/ { exit }
-              in_step && /diff_ref:.*origin\/main/ { found=1; exit }
-              END { exit !found }
-            ' .github/workflows/ci.yml; then
-              echo "FAIL: .phi-scanignore excludes tests/test_*.py via glob but"
-              echo "the 'Scan for PHI/PII' step has no diff_ref referencing origin/main."
-              echo "Either restore explicit per-file entries or re-add the diff_ref key."
-              exit 1
-            fi
-            echo "OK: diff_ref compensating control present in Scan for PHI/PII step"
-          fi
+        run: bash scripts/verify_phi_scan_config.sh
 
       - name: Scan for PHI/PII
         uses: joeyessak/phi-scan-action@b17418799d4cf730cf57676b49d4828a579930ed  # v0.1.0
