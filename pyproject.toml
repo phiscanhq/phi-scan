@@ -101,6 +101,9 @@ select = ["E", "F", "I", "N", "W", "UP"]
 [tool.ruff.lint.per-file-ignores]
 # HTML/CSS template strings in report.py contain intentionally long lines
 "phi_scan/report.py" = ["E501"]
+# Late re-exports use `name as name` aliases; isort splits these into individual
+# blocks, which conflicts with the intentional consolidated style used here.
+"phi_scan/output/console/__init__.py" = ["I001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
