@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import logging
@@ -48,16 +47,15 @@ from phi_scan.ci_integration import (
 from phi_scan.cli_baseline import baseline_app
 from phi_scan.cli_config import config_app
 from phi_scan.cli_explain import explain_app
+from phi_scan.cli_scan_config import load_scan_config
 from phi_scan.compliance import (
     ComplianceFramework,
     InvalidFrameworkError,
     annotate_findings,
     parse_framework_flag,
 )
-from phi_scan.config import load_config
 from phi_scan.constants import (
     DEFAULT_BASELINE_FILENAME,
-    DEFAULT_CONFIG_FILENAME,
     DEFAULT_DATABASE_PATH,
     DEFAULT_IGNORE_FILENAME,
     DEFAULT_TEXT_ENCODING,
@@ -67,14 +65,12 @@ from phi_scan.constants import (
     IMPLEMENTED_OUTPUT_FORMATS,
     OutputFormat,
     PathspecMatchStyle,
-    SeverityLevel,
 )
 from phi_scan.diff import get_changed_files_from_diff
 from phi_scan.exceptions import (
     AuditKeyMissingError,
     AuditLogError,
     BaselineError,
-    ConfigurationError,
     MissingOptionalDependencyError,
     NotificationError,
 )
@@ -222,6 +218,7 @@ _VERBOSE_PHASE_COLLECTING: str = "collecting scan targets"
 _VERBOSE_PHASE_SCANNING: str = "scanning {count} file(s)"
 _VERBOSE_PHASE_AUDIT: str = "writing audit record"
 _VERBOSE_PHASE_REPORT: str = "rendering report"
+_BASELINE_LOAD_ERROR_MESSAGE: str = "Could not load baseline: {error}"
 
 # ---------------------------------------------------------------------------
 # Watch command
@@ -358,7 +355,6 @@ _SCAN_UPLOAD_SARIF_HELP: str = (
     "Requires --output sarif and GITHUB_TOKEN. "
     "Each finding appears as an inline annotation on the exact line in the PR diff."
 )
-_BASELINE_LOAD_ERROR_MESSAGE: str = "Could not load baseline: {error}"
 
 # Maximum characters of a file path shown in the progress bar description column.
 # Longer paths are truncated with a leading ellipsis so the bar layout stays stable.
@@ -369,9 +365,6 @@ _PROGRESS_FILENAME_ELLIPSIS: str = "…"
 # Error and warning messages
 # ---------------------------------------------------------------------------
 
-_CONFIG_LOAD_FAILURE_WARNING: str = (
-    "Config file {path!r} exists but could not be loaded — using defaults: {error}"
-)
 _AUDIT_WRITE_FAILURE_WARNING: str = "Audit log write failed — scan result not persisted: {error}"
 _AUDIT_KEY_MISSING_DEBUG: str = (
     "Audit log skipped — encryption key not found. Run 'phi-scan setup' to generate it."
@@ -399,14 +392,6 @@ _UNSUPPORTED_OUTPUT_FORMAT_ERROR: str = (
     f"Currently supported: {_IMPLEMENTED_FORMAT_NAMES}. "
     "Additional formats are not yet available."
 )
-_INVALID_SEVERITY_THRESHOLD_ERROR: str = (
-    "Invalid severity threshold {value!r}. Accepted values: info, low, medium, high."
-)
-_NO_CONFIG_FILE_HINT: str = (
-    "No {filename} found — using built-in defaults. "
-    "Run `phi-scan config init` to create a config file."
-)
-
 # ---------------------------------------------------------------------------
 # Log level configuration
 # ---------------------------------------------------------------------------
@@ -588,45 +573,6 @@ def _configure_logging(log_level: str, log_file: Path | None, is_quiet: bool) ->
     """
     level = _LOG_LEVEL_MAP.get(log_level.lower(), logging.WARNING)
     replace_logger_handlers(console_level=level, log_file_path=log_file, is_quiet=is_quiet)
-
-
-def _load_scan_config(config_path: Path | None, severity_threshold: str | None) -> ScanConfig:
-    """Load ScanConfig from file, applying a CLI severity override if provided.
-
-    A missing or unreadable config file is not an error — defaults are used so
-    `phi-scan scan .` works out of the box without any config file.
-
-    Args:
-        config_path: Path to .phi-scanner.yml, or None to use the default name.
-        severity_threshold: CLI override for the minimum severity level, or None.
-
-    Returns:
-        A fully populated ScanConfig with any CLI overrides applied.
-
-    Raises:
-        typer.Exit: If severity_threshold is not a valid SeverityLevel value.
-    """
-    resolved_config_path = config_path or Path(DEFAULT_CONFIG_FILENAME)
-    try:
-        scan_config = load_config(resolved_config_path)
-    except ConfigurationError as config_error:
-        if resolved_config_path.exists():
-            _logger.warning(
-                _CONFIG_LOAD_FAILURE_WARNING.format(
-                    path=str(resolved_config_path), error=config_error
-                )
-            )
-        else:
-            typer.echo(_NO_CONFIG_FILE_HINT.format(filename=resolved_config_path.name), err=True)
-        scan_config = ScanConfig()
-    if severity_threshold is None:
-        return scan_config
-    try:
-        parsed_severity = SeverityLevel(severity_threshold.lower())
-    except ValueError:
-        typer.echo(_INVALID_SEVERITY_THRESHOLD_ERROR.format(value=severity_threshold), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR)
-    return dataclasses.replace(scan_config, severity_threshold=parsed_severity)
 
 
 def _load_combined_ignore_patterns(scan_config: ScanConfig) -> list[str]:
@@ -1603,7 +1549,7 @@ def scan(
     enabled_frameworks = _resolve_framework_flag(framework)
     is_rich_mode = not is_quiet and output_format_enum is OutputFormat.TABLE
     with display_status_spinner(_SPINNER_CONFIG_LOAD_MESSAGE, is_active=is_rich_mode):
-        scan_config = _load_scan_config(config_path, severity_threshold)
+        scan_config = load_scan_config(config_path, severity_threshold)
     if is_rich_mode:
         display_banner()
         display_scan_header(path, scan_config)

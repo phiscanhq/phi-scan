@@ -15,6 +15,7 @@ from phi_scan.baseline import (
     get_baseline_summary,
     load_baseline,
 )
+from phi_scan.cli_scan_config import load_scan_config
 from phi_scan.constants import (
     BASELINE_DRIFT_WARNING_PERCENT,
     DEFAULT_BASELINE_FILENAME,
@@ -65,6 +66,9 @@ _BASELINE_CLEAR_ABORTED_MESSAGE: str = "Baseline clear aborted."
 _BASELINE_ERROR_MESSAGE: str = "Baseline error: {error}"
 _BASELINE_LOAD_ERROR_MESSAGE: str = "Could not load baseline: {error}"
 _BASELINE_CONFIRM_YES: str = "y"
+_ENTRY_LABEL_SINGULAR: str = "entry"
+_ENTRY_LABEL_PLURAL: str = "entries"
+_SINGULAR_COUNT: int = 1
 
 # ---------------------------------------------------------------------------
 # Private helpers
@@ -144,9 +148,7 @@ def _write_baseline_or_exit(
 
 def _entry_count_label(count: int) -> str:
     """Return 'entry' for 1 item, 'entries' otherwise."""
-    _single_label: str = "entry"
-    _plural_label: str = "entries"
-    return _single_label if count == 1 else _plural_label
+    return _ENTRY_LABEL_SINGULAR if count == _SINGULAR_COUNT else _ENTRY_LABEL_PLURAL
 
 
 def _run_scan_for_baseline(scan_root: Path) -> ScanResult:
@@ -158,9 +160,7 @@ def _run_scan_for_baseline(scan_root: Path) -> ScanResult:
     Returns:
         Aggregated ScanResult from execute_scan.
     """
-    from phi_scan.cli import _load_scan_config  # avoid circular at module level
-
-    scan_config = _load_scan_config(None, None)
+    scan_config = load_scan_config(None, None)
     ignore_patterns = load_ignore_patterns(Path(DEFAULT_IGNORE_FILENAME))
     if scan_config.exclude_paths:
         ignore_patterns.extend(scan_config.exclude_paths)
