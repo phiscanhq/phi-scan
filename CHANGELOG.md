@@ -61,6 +61,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_write_baseline_or_exit` helpers extracted from `cli.py`; replace repeated
   `try/except BaselineError → echo + raise typer.Exit` blocks in `baseline show`,
   `baseline diff`, `baseline create`, and `baseline update`.
+- **`phi_scan/output/console/` sub-package (7G.3):** `phi_scan/output/console.py`
+  (1307 LOC) split into five focused modules — `core.py` (console instance, progress,
+  spinner), `findings.py` (findings table, file tree, code context, category breakdown),
+  `summary.py` (banner, phase separators, scan header, clean/violation panels),
+  `baseline.py` (baseline summary, diff, drift warning, scan notice). All public symbols
+  remain importable from `phi_scan.output.console` unchanged. `_UNICODE_SUPPORTED` and
+  `_resolve_symbol` remain in `__init__.py` to preserve `monkeypatch` compatibility in
+  existing tests.
 
 ## [0.5.0] - 2026-04-04
 
