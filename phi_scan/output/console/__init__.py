@@ -154,6 +154,7 @@ _BANNER_TAGLINE_STYLE: str = _STYLE_DIM
 _BANNER_PYFIGLET_MISSING_NOTE: str = (
     "note: install pyfiglet for ASCII art banner (pip install pyfiglet)"
 )
+_BANNER_MIN_LINE_COUNT: int = 1  # floor for gradient line-count division safety
 
 # ---------------------------------------------------------------------------
 # Panel and table titles
@@ -340,7 +341,7 @@ _BASELINE_PERSISTING_SECTION_HEADER_FORMAT: str = (
     f"[/{_BASELINE_PERSISTING_STYLE}]"
 )
 _BASELINE_DIFF_FINDING_ROW: str = "  {file_path}:{line}  {entity_type}  {severity}"
-_BASELINE_DIFF_ENTRY_ROW: str = "  {file_path}:{line}  {entity_type}  {severity}"
+_BASELINE_DIFF_ENTRY_ROW: str = _BASELINE_DIFF_FINDING_ROW  # same format; alias avoids duplication
 _BASELINE_DRIFT_MESSAGE: str = (
     "Baseline entry count increased by [bold yellow]{percent}%[/bold yellow] "
     "({old} → {new} entries).\n"

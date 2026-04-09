@@ -16,6 +16,7 @@ from phi_scan.models import ScanConfig, ScanResult
 from phi_scan.output.console import (
     _BANNER_FONT,
     _BANNER_GRADIENT_COLORS,
+    _BANNER_MIN_LINE_COUNT,
     _BANNER_PYFIGLET_MISSING_NOTE,
     _BANNER_TAGLINE_STYLE,
     _BANNER_TAGLINE_TEMPLATE,
@@ -120,7 +121,7 @@ def _build_banner_gradient_text(banner_str: str) -> Text:
     """
     gradient_text = Text()
     lines = banner_str.splitlines()
-    total_lines = max(len(lines), 1)
+    total_lines = max(len(lines), _BANNER_MIN_LINE_COUNT)
     for index, line in enumerate(lines):
         color = _select_banner_gradient_color(index, total_lines)
         gradient_text.append(line + "\n", style=color)

@@ -89,9 +89,12 @@ def _build_count_bar(count: int, max_count: int) -> str:
     """
     if max_count < _MIN_VALID_MAX_COUNT:
         raise ValueError(_ZERO_MAX_COUNT_ERROR)
-    filled = round(count / max_count * _CATEGORY_BAR_MAX_WIDTH)
-    empty = _CATEGORY_BAR_MAX_WIDTH - filled
-    return _CATEGORY_BAR_FILLED_CHAR * filled + _CATEGORY_BAR_EMPTY_CHAR * empty
+    filled_block_count = round(count / max_count * _CATEGORY_BAR_MAX_WIDTH)
+    empty_block_count = _CATEGORY_BAR_MAX_WIDTH - filled_block_count
+    return (
+        _CATEGORY_BAR_FILLED_CHAR * filled_block_count
+        + _CATEGORY_BAR_EMPTY_CHAR * empty_block_count
+    )
 
 
 def _group_findings_by_file(
