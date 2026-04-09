@@ -1918,5 +1918,3 @@ def fix_command(
             typer.echo(_FIX_FAKER_MISSING_MESSAGE, err=True)
             raise typer.Exit(code=EXIT_CODE_ERROR) from None
         _print_fix_result(fix_result, fix_mode)
-
-
