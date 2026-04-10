@@ -87,6 +87,7 @@ _SMTP_ENV_USER: str = "PHI_SCAN_SMTP_USER"
 _SMTP_ENV_PASSWORD: str = "PHI_SCAN_SMTP_PASSWORD"
 _TEST_PINNED_IP: str = "93.184.216.34"  # example.com public IP — safe for test use
 _DOMAIN_WEBHOOK_HOST: str = "hooks.example.com"
+_HOOKS_WEBHOOK_URL: str = f"https://{_DOMAIN_WEBHOOK_HOST}/notify"
 
 
 # ---------------------------------------------------------------------------
@@ -804,25 +805,22 @@ def test_validate_webhook_url_returns_none_when_private_allowed() -> None:
 
 def test_build_pinned_url_replaces_hostname_with_ip() -> None:
     """_build_pinned_url must substitute the hostname with the pinned IP."""
-    original_url = f"https://{_DOMAIN_WEBHOOK_HOST}/notify"
-    pinned = _build_pinned_url(original_url, _TEST_PINNED_IP)
+    pinned = _build_pinned_url(_HOOKS_WEBHOOK_URL, _TEST_PINNED_IP)
     assert _TEST_PINNED_IP in pinned
     assert _DOMAIN_WEBHOOK_HOST not in pinned
 
 
 def test_build_pinned_request_args_sets_host_header() -> None:
     """_build_pinned_request_args must set Host header to the original hostname."""
-    original_url = f"https://{_DOMAIN_WEBHOOK_HOST}/notify"
-    request_args = _build_pinned_request_args(original_url, _TEST_PINNED_IP)
+    request_args = _build_pinned_request_args(_HOOKS_WEBHOOK_URL, _TEST_PINNED_IP)
     assert request_args.headers.get("Host") == _DOMAIN_WEBHOOK_HOST
     assert _TEST_PINNED_IP in request_args.target_url
 
 
 def test_build_pinned_request_args_returns_original_url_when_no_pin() -> None:
     """_build_pinned_request_args must return the original URL unchanged when pinned_ip is None."""
-    original_url = f"https://{_DOMAIN_WEBHOOK_HOST}/notify"
-    request_args = _build_pinned_request_args(original_url, None)
-    assert request_args.target_url == original_url
+    request_args = _build_pinned_request_args(_HOOKS_WEBHOOK_URL, None)
+    assert request_args.target_url == _HOOKS_WEBHOOK_URL
     assert "Host" not in request_args.headers
 
 
@@ -838,7 +836,7 @@ def test_post_with_retry_pins_connection_to_resolved_ip() -> None:
 
     with patch("phi_scan.notifier.httpx.post", side_effect=stub_post):
         _post_with_retry(
-            f"https://{_DOMAIN_WEBHOOK_HOST}/notify",
+            _HOOKS_WEBHOOK_URL,
             payload={"text": "test"},
             retry_count=1,
             pinned_ip=_TEST_PINNED_IP,

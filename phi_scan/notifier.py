@@ -41,7 +41,7 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -112,7 +112,7 @@ _WEBHOOK_DNS_BLOCKED_ADDRESS_ERROR: str = (
 # Transport URL format used to pin the TCP connection to the IP resolved during
 # SSRF validation, preventing DNS rebinding between validation and request.
 _PINNED_HOST_HEADER: str = "Host"
-_PINNED_URL_SCHEME_HOST_TEMPLATE: str = "{scheme}://{hostname}"
+_CONTENT_TYPE_HEADER: str = "Content-Type"
 
 # IP networks blocked by SSRF protection when is_private_webhook_url_allowed=False.
 # Covers RFC1918 private ranges, link-local, loopback, CGNAT, cloud metadata,
@@ -796,13 +796,8 @@ def _build_pinned_url(url: str, pinned_ip: str) -> str:
         URL with hostname replaced by ``pinned_ip``.
     """
     parsed = urlparse(url)
-    original_prefix = _PINNED_URL_SCHEME_HOST_TEMPLATE.format(
-        scheme=parsed.scheme, hostname=parsed.hostname
-    )
-    pinned_prefix = _PINNED_URL_SCHEME_HOST_TEMPLATE.format(
-        scheme=parsed.scheme, hostname=pinned_ip
-    )
-    return url.replace(original_prefix, pinned_prefix, 1)
+    pinned_netloc = parsed.netloc.replace(parsed.hostname or "", pinned_ip, 1)
+    return urlunparse(parsed._replace(netloc=pinned_netloc))
 
 
 def _build_pinned_request_args(url: str, pinned_ip: str | None) -> _PinnedRequestArgs:
@@ -822,13 +817,13 @@ def _build_pinned_request_args(url: str, pinned_ip: str | None) -> _PinnedReques
     if pinned_ip is None:
         return _PinnedRequestArgs(
             target_url=url,
-            headers={"Content-Type": _WEBHOOK_CONTENT_TYPE},
+            headers={_CONTENT_TYPE_HEADER: _WEBHOOK_CONTENT_TYPE},
         )
     parsed = urlparse(url)
     return _PinnedRequestArgs(
         target_url=_build_pinned_url(url, pinned_ip),
         headers={
-            "Content-Type": _WEBHOOK_CONTENT_TYPE,
+            _CONTENT_TYPE_HEADER: _WEBHOOK_CONTENT_TYPE,
             _PINNED_HOST_HEADER: parsed.hostname or "",
         },
     )
