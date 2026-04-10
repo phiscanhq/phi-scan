@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["baseline_app", "load_baseline_with_fallback"]
+__all__ = ["baseline_app", "load_optional_baseline"]
 
 from pathlib import Path
 from typing import Annotated
@@ -104,7 +104,7 @@ def _load_baseline_or_exit(baseline_path: Path) -> BaselineSnapshot:
     return snapshot
 
 
-def load_baseline_with_fallback(baseline_path: Path) -> BaselineSnapshot | None:
+def load_optional_baseline(baseline_path: Path) -> BaselineSnapshot | None:
     """Load a baseline snapshot, returning None and printing a warning on failure.
 
     Args:
@@ -255,7 +255,7 @@ def baseline_update(
     remediation.
     """
     console = get_console()
-    old_snapshot = load_baseline_with_fallback(baseline_path)
+    old_snapshot = load_optional_baseline(baseline_path)
     scan_result = _run_scan_for_baseline(path)
     new_snapshot = _write_baseline_or_exit(scan_result, max_age_days, baseline_path)
     if old_snapshot is not None:
