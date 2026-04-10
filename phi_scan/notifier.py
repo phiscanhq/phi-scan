@@ -55,7 +55,7 @@ from phi_scan.exceptions import NotificationError
 from phi_scan.hashing import compute_value_hash
 from phi_scan.models import NotificationConfig, ScanResult
 
-__all__ = ["send_email_notification", "send_webhook_notification"]
+__all__ = ["NotificationRequest", "send_email_notification", "send_webhook_notification"]
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
@@ -218,6 +218,27 @@ _TEAMS_THEME_COLOR_GREEN: str = "00AA00"
 _MAX_FINDINGS_IN_NOTIFICATION: int = 20  # prevent oversized payloads
 
 # ---------------------------------------------------------------------------
+# Notification request model
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class NotificationRequest:
+    """Scan context required by both email and webhook notification channels.
+
+    Bundles the 4–5 scan-related inputs that are common to
+    send_email_notification and send_webhook_notification, satisfying the
+    ≤3 argument rule for those functions.
+    """
+
+    scan_result: ScanResult
+    repository: str
+    branch: str
+    scanner_version: str
+    report_path: Path | None = None
+
+
+# ---------------------------------------------------------------------------
 # Webhook scan summary model
 # ---------------------------------------------------------------------------
 
@@ -271,23 +292,16 @@ def _truncate_findings_for_notification(
     )
 
 
-def _build_webhook_scan_summary(
-    scan_result: ScanResult,
-    repository: str,
-    branch: str,
-    scanner_version: str,
-) -> _WebhookScanSummary:
-    """Derive all shared webhook metadata from a completed scan result.
+def _build_webhook_scan_summary(request: NotificationRequest) -> _WebhookScanSummary:
+    """Derive all shared webhook metadata from a notification request.
 
     Args:
-        scan_result: Completed scan result.
-        repository: Repository identifier.
-        branch: Branch name.
-        scanner_version: phi-scan version string.
+        request: Notification request bundling scan result and scan context.
 
     Returns:
         Immutable summary of scan metadata for use by payload builders.
     """
+    scan_result = request.scan_result
     return _WebhookScanSummary(
         is_clean=scan_result.is_clean,
         risk_level_label=scan_result.risk_level.value.upper(),
@@ -296,9 +310,9 @@ def _build_webhook_scan_summary(
         files_scanned=scan_result.files_scanned,
         scan_duration=scan_result.scan_duration,
         action_taken=ACTION_TAKEN_PASS if scan_result.is_clean else ACTION_TAKEN_FAIL,
-        repository=repository,
-        branch=branch,
-        scanner_version=scanner_version,
+        repository=request.repository,
+        branch=request.branch,
+        scanner_version=request.scanner_version,
         truncated_findings=_truncate_findings_for_notification(scan_result),
     )
 
@@ -372,27 +386,23 @@ def _build_email_subject(scan_result: ScanResult, repository: str, branch: str) 
     )
 
 
-def _build_email_html_body(
-    scan_result: ScanResult, repository: str, branch: str, scanner_version: str
-) -> str:
+def _build_email_html_body(request: NotificationRequest) -> str:
     """Render the HTML email body.
 
     Args:
-        scan_result: Completed scan result.
-        repository: Repository identifier string.
-        branch: Branch name string.
-        scanner_version: phi-scan version string from phi_scan.__version__.
+        request: Notification request bundling scan result and scan context.
 
     Returns:
         Complete HTML document string for the email body.
     """
+    scan_result = request.scan_result
     findings_table = _build_findings_table_html(scan_result)
     return _HTML_EMAIL_TEMPLATE.format(
         risk_level=html.escape(scan_result.risk_level.value.upper()),
         findings_count=len(scan_result.findings),
-        repository=html.escape(repository),
-        branch=html.escape(branch),
-        scanner_version=html.escape(scanner_version),
+        repository=html.escape(request.repository),
+        branch=html.escape(request.branch),
+        scanner_version=html.escape(request.scanner_version),
         files_scanned=scan_result.files_scanned,
         scan_duration=scan_result.scan_duration,
         findings_table=findings_table,
@@ -598,24 +608,18 @@ def _build_generic_payload(summary: _WebhookScanSummary) -> dict[str, Any]:
 
 def _build_webhook_payload(
     webhook_type: WebhookType,
-    scan_result: ScanResult,
-    repository: str,
-    branch: str,
-    scanner_version: str,
+    request: NotificationRequest,
 ) -> dict[str, Any]:
     """Dispatch to the appropriate payload builder for the given webhook_type.
 
     Args:
         webhook_type: The target webhook format.
-        scan_result: Completed scan result.
-        repository: Repository identifier.
-        branch: Branch name.
-        scanner_version: phi-scan version string.
+        request: Notification request bundling scan result and scan context.
 
     Returns:
         Payload dict appropriate for the webhook_type.
     """
-    summary = _build_webhook_scan_summary(scan_result, repository, branch, scanner_version)
+    summary = _build_webhook_scan_summary(request)
     if webhook_type is WebhookType.SLACK:
         return _build_slack_payload(summary)
     if webhook_type is WebhookType.TEAMS:
@@ -780,17 +784,13 @@ def _post_with_retry(
 
 def send_email_notification(
     config: NotificationConfig,
-    scan_result: ScanResult,
-    repository: str,
-    branch: str,
-    scanner_version: str,
-    report_path: Path | None = None,
+    request: NotificationRequest,
 ) -> None:
     """Send an email notification for a completed scan.
 
     Builds an HTML email summarising the scan result and delivers it via
-    SMTP/STARTTLS. When ``report_path`` is provided and the file exists, it is
-    attached to the email.
+    SMTP/STARTTLS. When ``request.report_path`` is provided and the file exists,
+    it is attached to the email.
 
     This function is best-effort: callers must catch ``NotificationError`` and
     log a warning rather than aborting the scan workflow.
@@ -798,11 +798,7 @@ def send_email_notification(
     Args:
         config: Notification configuration (smtp_host, smtp_port, smtp_from,
             smtp_recipients, smtp_use_tls).
-        scan_result: Completed scan result to summarise in the email.
-        repository: Repository name or identifier (used in subject and body).
-        branch: Branch name (used in subject and body).
-        scanner_version: phi-scan version string (e.g. "0.5.0").
-        report_path: Optional path to a PDF or HTML report to attach.
+        request: Notification request bundling scan result and scan context.
 
     Raises:
         NotificationError: If email delivery fails for any reason.
@@ -815,24 +811,21 @@ def send_email_notification(
         raise NotificationError(_NO_SMTP_FROM_ERROR)
     if not config.smtp_recipients:
         raise NotificationError(_NO_RECIPIENTS_ERROR)
-    subject = _build_email_subject(scan_result, repository, branch)
-    html_body = _build_email_html_body(scan_result, repository, branch, scanner_version)
-    message = _build_mime_message(config, subject, html_body, report_path)
+    subject = _build_email_subject(request.scan_result, request.repository, request.branch)
+    html_body = _build_email_html_body(request)
+    message = _build_mime_message(config, subject, html_body, request.report_path)
     _deliver_via_smtp(config, message)
     _logger.info(
         "Email notification sent to %d recipient(s) for %s/%s",
         len(config.smtp_recipients),
-        repository,
-        branch,
+        request.repository,
+        request.branch,
     )
 
 
 def send_webhook_notification(
     config: NotificationConfig,
-    scan_result: ScanResult,
-    repository: str,
-    branch: str,
-    scanner_version: str,
+    request: NotificationRequest,
 ) -> None:
     """POST a findings notification to the configured webhook URL.
 
@@ -846,10 +839,7 @@ def send_webhook_notification(
     Args:
         config: Notification configuration (webhook_url, webhook_type,
             webhook_retry_count).
-        scan_result: Completed scan result to include in the payload.
-        repository: Repository name or identifier.
-        branch: Branch name.
-        scanner_version: phi-scan version string.
+        request: Notification request bundling scan result and scan context.
 
     Raises:
         NotificationError: If webhook_url is empty or delivery fails after all
@@ -858,14 +848,12 @@ def send_webhook_notification(
     if not config.webhook_url:
         raise NotificationError(_NO_WEBHOOK_URL_ERROR)
     _validate_webhook_url(config.webhook_url, config.is_private_webhook_url_allowed)
-    payload = _build_webhook_payload(
-        config.webhook_type, scan_result, repository, branch, scanner_version
-    )
+    payload = _build_webhook_payload(config.webhook_type, request)
     _post_with_retry(config.webhook_url, payload, config.webhook_retry_count)
     _logger.info(
         "Webhook notification delivered to %r (%s) for %s/%s",
         config.webhook_url,
         config.webhook_type.value,
-        repository,
-        branch,
+        request.repository,
+        request.branch,
     )

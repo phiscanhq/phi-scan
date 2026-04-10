@@ -104,7 +104,11 @@ from phi_scan.help_text import (
 )
 from phi_scan.logging_config import get_logger, replace_logger_handlers
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
-from phi_scan.notifier import send_email_notification, send_webhook_notification
+from phi_scan.notifier import (
+    NotificationRequest,
+    send_email_notification,
+    send_webhook_notification,
+)
 from phi_scan.output import (
     WATCH_RESULT_CLEAN_TEXT,
     WATCH_RESULT_VIOLATION_FORMAT,
@@ -848,16 +852,23 @@ def _dispatch_notifications(
 
     repo = _get_current_repository_path()
     branch = _get_current_branch()
+    notification_request = NotificationRequest(
+        scan_result=scan_result,
+        repository=repo,
+        branch=branch,
+        scanner_version=__version__,
+        report_path=report_path,
+    )
     sent_channels: list[str] = []
     if config.is_email_enabled:
         try:
-            send_email_notification(config, scan_result, repo, branch, __version__, report_path)
+            send_email_notification(config, notification_request)
             sent_channels.append("email")
         except NotificationError as email_error:
             _logger.warning(_NOTIFICATION_EMAIL_FAILURE_WARNING.format(error=email_error))
     if config.is_webhook_enabled:
         try:
-            send_webhook_notification(config, scan_result, repo, branch, __version__)
+            send_webhook_notification(config, notification_request)
             sent_channels.append(f"webhook-{config.webhook_type.value}")
         except NotificationError as webhook_error:
             _logger.warning(_NOTIFICATION_WEBHOOK_FAILURE_WARNING.format(error=webhook_error))
