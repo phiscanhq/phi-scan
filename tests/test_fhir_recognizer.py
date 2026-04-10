@@ -370,8 +370,6 @@ def test_fhir_field_base_confidence_is_within_layer_three_range():
 
 def test_build_structured_finding_hashes_raw_value() -> None:
     """build_structured_finding must store value_hash, never the raw value."""
-    import hashlib
-
     raw = _FAKE_FAMILY_NAME
     finding = build_structured_finding(
         StructuredFindingRequest(

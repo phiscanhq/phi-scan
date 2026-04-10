@@ -263,15 +263,15 @@ def _build_webhook_scan_summary(
     """
     truncated_findings = tuple(
         {
-            "file_path": str(f.file_path),
-            "line_number": f.line_number,
-            "entity_type": f.entity_type,
-            "hipaa_category": f.hipaa_category.value,
-            "severity": f.severity.value,
-            "confidence": f.confidence,
-            "value_hash": f.value_hash,
+            "file_path": str(finding.file_path),
+            "line_number": finding.line_number,
+            "entity_type": finding.entity_type,
+            "hipaa_category": finding.hipaa_category.value,
+            "severity": finding.severity.value,
+            "confidence": finding.confidence,
+            "value_hash": finding.value_hash,
         }
-        for f in scan_result.findings[:_MAX_FINDINGS_IN_NOTIFICATION]
+        for finding in scan_result.findings[:_MAX_FINDINGS_IN_NOTIFICATION]
     )
     return _WebhookScanSummary(
         is_clean=scan_result.is_clean,
