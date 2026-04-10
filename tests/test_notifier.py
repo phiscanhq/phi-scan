@@ -49,6 +49,7 @@ from phi_scan.notifier import (
     _resolve_hostname_addresses,  # noqa: PLC2701
     _rewrite_url_hostname_to_ip,  # noqa: PLC2701
     _validate_webhook_url,  # noqa: PLC2701
+    _WebhookPostRequest,  # noqa: PLC2701
     send_email_notification,
     send_webhook_notification,
 )
@@ -88,6 +89,8 @@ _SMTP_ENV_PASSWORD: str = "PHI_SCAN_SMTP_PASSWORD"
 _TEST_PINNED_IP: str = "93.184.216.34"  # example.com public IP — safe for test use
 _DOMAIN_WEBHOOK_HOST: str = "hooks.example.com"
 _DOMAIN_WEBHOOK_URL: str = f"https://{_DOMAIN_WEBHOOK_HOST}/notify"
+_CAPTURED_URL_KEY: str = "url"
+_CAPTURED_HEADERS_KEY: str = "headers"
 
 
 # ---------------------------------------------------------------------------
@@ -827,18 +830,27 @@ def test_post_with_retry_pins_connection_to_resolved_ip() -> None:
     captured_calls: list[dict[str, object]] = []
 
     def stub_post(url: str, **kwargs: object) -> object:
-        captured_calls.append({"url": url, "headers": kwargs.get("headers", {})})
+        captured_calls.append(
+            {_CAPTURED_URL_KEY: url, _CAPTURED_HEADERS_KEY: kwargs.get("headers", {})}
+        )
         mock_response = MagicMock()
         mock_response.is_success = True
         return mock_response
 
     with patch("phi_scan.notifier.httpx.post", side_effect=stub_post):
-        _post_with_retry(_DOMAIN_WEBHOOK_URL, {"text": "test"}, 1, pinned_ip=_TEST_PINNED_IP)
+        _post_with_retry(
+            _WebhookPostRequest(
+                url=_DOMAIN_WEBHOOK_URL,
+                payload={"text": "test"},
+                retry_count=1,
+                pinned_ip=_TEST_PINNED_IP,
+            )
+        )
 
     assert len(captured_calls) == 1
-    assert _TEST_PINNED_IP in str(captured_calls[0]["url"])
-    assert _DOMAIN_WEBHOOK_HOST not in str(captured_calls[0]["url"])
-    assert captured_calls[0]["headers"].get("Host") == _DOMAIN_WEBHOOK_HOST
+    assert _TEST_PINNED_IP in str(captured_calls[0][_CAPTURED_URL_KEY])
+    assert _DOMAIN_WEBHOOK_HOST not in str(captured_calls[0][_CAPTURED_URL_KEY])
+    assert captured_calls[0][_CAPTURED_HEADERS_KEY].get("Host") == _DOMAIN_WEBHOOK_HOST
 
 
 def test_rewrite_url_hostname_to_ip_raises_when_no_hostname() -> None:
