@@ -13,6 +13,7 @@ from phi_scan.constants import (
     CONFIDENCE_MEDIUM_FLOOR,
     CONFIDENCE_STRUCTURED_MAX,
     CONFIDENCE_STRUCTURED_MIN,
+    HIPAA_REMEDIATION_GUIDANCE,
     DetectionLayer,
     PhiCategory,
     SeverityLevel,
@@ -405,8 +406,6 @@ def test_build_structured_finding_derives_severity_from_confidence() -> None:
 
 def test_build_structured_finding_populates_remediation_hint() -> None:
     """build_structured_finding must look up remediation_hint from HIPAA guidance."""
-    from phi_scan.constants import HIPAA_REMEDIATION_GUIDANCE
-
     finding = build_structured_finding(
         StructuredFindingRequest(
             file_path=_FAKE_FILE_PATH,

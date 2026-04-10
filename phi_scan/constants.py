@@ -623,7 +623,7 @@ WEBHOOK_DEFAULT_TIMEOUT_SECONDS: int = 10
 # Subject template for PHI alert email notifications.
 # Formatted with: risk_level, findings_count, repo, branch.
 NOTIFICATION_SUBJECT_FORMAT: str = (
-    "[PHI ALERT] {risk_level} — {findings_count} findings in {repo}/{branch}"
+    "[PHI ALERT] {risk_level} — {findings_count} findings in {repository}/{branch}"
 )
 
 # Audit action_taken values — recorded after each scan.

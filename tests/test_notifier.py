@@ -381,7 +381,7 @@ def test_build_webhook_scan_summary_derives_fields_correctly() -> None:
     assert summary.risk_level_value == scan_result.risk_level.value
     assert summary.findings_count == len(scan_result.findings)
     assert summary.files_scanned == scan_result.files_scanned
-    assert summary.repo == _SAMPLE_REPO
+    assert summary.repository == _SAMPLE_REPO
     assert summary.branch == _SAMPLE_BRANCH
     assert summary.scanner_version == _SAMPLE_SCANNER_VERSION
 
