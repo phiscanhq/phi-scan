@@ -2142,8 +2142,6 @@ _reject_ssrf_resolved_addresses(hostname: str, addresses: list[...]) -> None
   check, and warn that enabling it on public-internet webhooks weakens the
   SSRF protection model
 
-\
-
 ### 7G Verification Checklist
 
 - [x] `CHANGELOG.md` uses `is_private_webhook_url_allowed` consistently — no
@@ -2312,13 +2310,13 @@ backwards-compatible CLI surface.
 
 ### 7I Verification Checklist
 
-- [ ] `phi-scan --help` output unchanged
-- [ ] `phi-scan baseline --help` output unchanged
-- [ ] `phi-scan explain --help` output unchanged
-- [ ] `phi-scan config --help` output unchanged
-- [ ] `cli.py` is under 1900 LOC after split
-- [ ] All existing CLI integration tests pass unchanged
-- [ ] No new public symbols added to any module
+- [x] `phi-scan --help` output unchanged
+- [x] `phi-scan baseline --help` output unchanged
+- [x] `phi-scan explain --help` output unchanged
+- [x] `phi-scan config --help` output unchanged
+- [x] `cli.py` is under 1900 LOC after split
+- [x] All existing CLI integration tests pass unchanged
+- [x] No new public symbols added to any module
 
 ---
 

@@ -64,6 +64,7 @@ make help       Show all targets
 | `phi_scan/cli_baseline.py` | `baseline` sub-app — `create`, `show`, `clear`, `update`, `diff` commands |
 | `phi_scan/cli_config.py` | `config` sub-app — `init` command |
 | `phi_scan/cli_explain.py` | `explain` sub-app — 11 conceptual help topics |
+| `phi_scan/cli_scan_config.py` | Shared scan config loader (`load_scan_config`) used by `cli.py` and `cli_baseline.py` — extracted to avoid circular imports |
 | `phi_scan/scanner.py` | File collection, binary detection, orchestration |
 | `phi_scan/regex_detector.py` | Layer 1 — regex detection engine |
 | `phi_scan/nlp_detector.py` | Layer 2 — Presidio/spaCy NLP (optional) |
