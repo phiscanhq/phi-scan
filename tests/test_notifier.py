@@ -833,12 +833,7 @@ def test_post_with_retry_pins_connection_to_resolved_ip() -> None:
         return mock_response
 
     with patch("phi_scan.notifier.httpx.post", side_effect=stub_post):
-        _post_with_retry(
-            _DOMAIN_WEBHOOK_URL,
-            payload={"text": "test"},
-            retry_count=1,
-            pinned_ip=_TEST_PINNED_IP,
-        )
+        _post_with_retry(_DOMAIN_WEBHOOK_URL, {"text": "test"}, 1, pinned_ip=_TEST_PINNED_IP)
 
     assert len(captured_calls) == 1
     assert _TEST_PINNED_IP in str(captured_calls[0]["url"])
@@ -854,13 +849,12 @@ def test_rewrite_url_hostname_to_ip_raises_when_no_hostname() -> None:
 
 _TEST_IPV6_HOST: str = "2001:db8::1"
 _TEST_IPV6_WEBHOOK_URL: str = f"https://[{_TEST_IPV6_HOST}]:8443/notify"
-_TEST_IPV4_PINNED_IP: str = "93.184.216.34"
 
 
 def test_rewrite_url_hostname_to_ip_handles_ipv6_url() -> None:
     """_rewrite_url_hostname_to_ip must produce a valid URL when the original host is IPv6."""
-    pinned = _rewrite_url_hostname_to_ip(_TEST_IPV6_WEBHOOK_URL, _TEST_IPV4_PINNED_IP)
-    assert _TEST_IPV4_PINNED_IP in pinned
+    pinned = _rewrite_url_hostname_to_ip(_TEST_IPV6_WEBHOOK_URL, _TEST_PINNED_IP)
+    assert _TEST_PINNED_IP in pinned
     assert _TEST_IPV6_HOST not in pinned
     assert ":8443" in pinned
 

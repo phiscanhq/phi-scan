@@ -892,14 +892,14 @@ def _post_with_retry(
     Raises:
         NotificationError: If all attempts fail.
     """
-    request_args = _build_pinned_webhook_request(url, pinned_ip)
+    pinned_request = _build_pinned_webhook_request(url, pinned_ip)
     last_error: Exception | None = None
     for attempt in range(1, retry_count + 1):
         try:
             response = httpx.post(
-                request_args.target_url,
+                pinned_request.target_url,
                 json=payload,
-                headers=request_args.headers,
+                headers=pinned_request.headers,
                 timeout=WEBHOOK_DEFAULT_TIMEOUT_SECONDS,
             )
             if response.is_success:
