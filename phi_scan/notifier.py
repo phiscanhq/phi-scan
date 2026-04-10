@@ -113,10 +113,11 @@ _WEBHOOK_DNS_BLOCKED_ADDRESS_ERROR: str = (
 # SSRF validation, preventing DNS rebinding between validation and request.
 _PINNED_HOST_HEADER: str = "Host"
 _CONTENT_TYPE_HEADER: str = "Content-Type"
-_SINGLE_HOSTNAME_REPLACEMENT_COUNT: int = 1
 _MISSING_HOSTNAME_ERROR_MESSAGE: str = "cannot pin request: URL has no parseable hostname"
 _IPV6_ADDRESS_COLON: str = ":"
 _IPV6_NETLOC_BRACKET_TEMPLATE: str = "[{hostname}]"
+_NETLOC_PORT_TEMPLATE: str = ":{port}"
+_EMPTY_PORT_SEGMENT: str = ""
 
 # IP networks blocked by SSRF protection when is_private_webhook_url_allowed=False.
 # Covers RFC1918 private ranges, link-local, loopback, CGNAT, cloud metadata,
@@ -773,10 +774,10 @@ def _validate_webhook_url(
 
 
 @dataclass(frozen=True)
-class _PinnedRequestArguments:
+class _PinnedWebhookRequest:
     """Pre-computed URL and headers for a TOCTOU-safe webhook POST.
 
-    Produced by ``_build_pinned_request_arguments`` and consumed by ``_post_with_retry``
+    Produced by ``_build_pinned_webhook_request`` and consumed by ``_post_with_retry``
     so that URL rewriting and header construction are isolated from the retry loop.
     """
 
@@ -801,13 +802,14 @@ def _netloc_host_segment(hostname: str) -> str:
     return hostname
 
 
-def _build_pinned_url(url: str, pinned_ip: str) -> str:
-    """Rewrite ``url`` replacing its hostname with ``pinned_ip``.
+def _rewrite_url_hostname_to_ip(url: str, pinned_ip: str) -> str:
+    """Return ``url`` with its hostname replaced by ``pinned_ip``.
 
-    Substitutes the hostname in the netloc so httpx connects to the
-    pre-resolved IP, preventing DNS rebinding between SSRF validation and
-    delivery. The original hostname travels in the Host header (see
-    ``_build_pinned_request_arguments``) so TLS SNI and server routing are preserved.
+    Reconstructs the netloc from parsed parts (host + port) rather than
+    string-substituting the original netloc, which is fragile when the
+    hostname appears as a substring of the port or other netloc components.
+    The original hostname travels in the Host header (see
+    ``_build_pinned_webhook_request``) so TLS SNI and server routing are preserved.
     Both IPv4 and IPv6 pinned addresses are handled: IPv6 addresses are
     bracketed in the netloc (e.g. ``[2001:db8::1]``).
 
@@ -824,15 +826,14 @@ def _build_pinned_url(url: str, pinned_ip: str) -> str:
     parsed = urlparse(url)
     if not parsed.hostname:
         raise NotificationError(_MISSING_HOSTNAME_ERROR_MESSAGE)
-    original_netloc_host = _netloc_host_segment(parsed.hostname)
     pinned_netloc_host = _netloc_host_segment(pinned_ip)
-    pinned_netloc = parsed.netloc.replace(
-        original_netloc_host, pinned_netloc_host, _SINGLE_HOSTNAME_REPLACEMENT_COUNT
+    port_segment = (
+        _NETLOC_PORT_TEMPLATE.format(port=parsed.port) if parsed.port else _EMPTY_PORT_SEGMENT
     )
-    return urlunparse(parsed._replace(netloc=pinned_netloc))
+    return urlunparse(parsed._replace(netloc=f"{pinned_netloc_host}{port_segment}"))
 
 
-def _build_pinned_request_arguments(url: str, pinned_ip: str | None) -> _PinnedRequestArguments:
+def _build_pinned_webhook_request(url: str, pinned_ip: str | None) -> _PinnedWebhookRequest:
     """Build the target URL and headers for a webhook POST.
 
     When ``pinned_ip`` is provided, rewrites the URL to connect to the
@@ -844,13 +845,13 @@ def _build_pinned_request_arguments(url: str, pinned_ip: str | None) -> _PinnedR
         pinned_ip: IP returned by ``_validate_webhook_url``, or None.
 
     Returns:
-        ``_PinnedRequestArguments`` with target_url and headers ready for httpx.
+        ``_PinnedWebhookRequest`` with target_url and headers ready for httpx.
 
     Raises:
         NotificationError: If pinned_ip is set but the URL has no parseable hostname.
     """
     if pinned_ip is None:
-        return _PinnedRequestArguments(
+        return _PinnedWebhookRequest(
             target_url=url,
             headers=MappingProxyType({_CONTENT_TYPE_HEADER: _WEBHOOK_CONTENT_TYPE}),
         )
@@ -858,12 +859,14 @@ def _build_pinned_request_arguments(url: str, pinned_ip: str | None) -> _PinnedR
     original_hostname = parsed.hostname
     if not original_hostname:
         raise NotificationError(_MISSING_HOSTNAME_ERROR_MESSAGE)
-    return _PinnedRequestArguments(
-        target_url=_build_pinned_url(url, pinned_ip),
-        headers=MappingProxyType({
-            _CONTENT_TYPE_HEADER: _WEBHOOK_CONTENT_TYPE,
-            _PINNED_HOST_HEADER: original_hostname,
-        }),
+    return _PinnedWebhookRequest(
+        target_url=_rewrite_url_hostname_to_ip(url, pinned_ip),
+        headers=MappingProxyType(
+            {
+                _CONTENT_TYPE_HEADER: _WEBHOOK_CONTENT_TYPE,
+                _PINNED_HOST_HEADER: original_hostname,
+            }
+        ),
     )
 
 
@@ -889,7 +892,7 @@ def _post_with_retry(
     Raises:
         NotificationError: If all attempts fail.
     """
-    request_args = _build_pinned_request_arguments(url, pinned_ip)
+    request_args = _build_pinned_webhook_request(url, pinned_ip)
     last_error: Exception | None = None
     for attempt in range(1, retry_count + 1):
         try:

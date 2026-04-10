@@ -38,8 +38,7 @@ from phi_scan.notifier import (
     _build_email_html_body,  # noqa: PLC2701
     _build_email_subject,
     _build_generic_payload,
-    _build_pinned_request_arguments,  # noqa: PLC2701
-    _build_pinned_url,  # noqa: PLC2701
+    _build_pinned_webhook_request,  # noqa: PLC2701
     _build_slack_payload,
     _build_teams_payload,
     _build_webhook_payload,
@@ -48,6 +47,7 @@ from phi_scan.notifier import (
     _post_with_retry,  # noqa: PLC2701
     _reject_ssrf_resolved_addresses,  # noqa: PLC2701
     _resolve_hostname_addresses,  # noqa: PLC2701
+    _rewrite_url_hostname_to_ip,  # noqa: PLC2701
     _validate_webhook_url,  # noqa: PLC2701
     send_email_notification,
     send_webhook_notification,
@@ -745,6 +745,7 @@ def test_validate_webhook_url_private_ip_error_does_not_expose_raw_url() -> None
 # _reject_ssrf_resolved_addresses
 # ---------------------------------------------------------------------------
 
+
 def test_validate_webhook_url_blocks_hostname_resolving_to_loopback() -> None:
     """_validate_webhook_url must block a hostname that resolves to 127.0.0.1."""
     with patch("phi_scan.notifier._resolve_hostname_addresses") as stub_resolve:
@@ -800,23 +801,23 @@ def test_validate_webhook_url_returns_none_when_private_allowed() -> None:
     assert pinned_ip is None
 
 
-def test_build_pinned_url_replaces_hostname_with_ip() -> None:
-    """_build_pinned_url must substitute the hostname with the pinned IP."""
-    pinned = _build_pinned_url(_DOMAIN_WEBHOOK_URL, _TEST_PINNED_IP)
+def test_rewrite_url_hostname_to_ip_replaces_hostname() -> None:
+    """_rewrite_url_hostname_to_ip must substitute the hostname with the pinned IP."""
+    pinned = _rewrite_url_hostname_to_ip(_DOMAIN_WEBHOOK_URL, _TEST_PINNED_IP)
     assert _TEST_PINNED_IP in pinned
     assert _DOMAIN_WEBHOOK_HOST not in pinned
 
 
-def test_build_pinned_request_arguments_sets_host_header() -> None:
-    """_build_pinned_request_arguments must set Host header to the original hostname."""
-    request_args = _build_pinned_request_arguments(_DOMAIN_WEBHOOK_URL, _TEST_PINNED_IP)
+def test_build_pinned_webhook_request_sets_host_header() -> None:
+    """_build_pinned_webhook_request must set Host header to the original hostname."""
+    request_args = _build_pinned_webhook_request(_DOMAIN_WEBHOOK_URL, _TEST_PINNED_IP)
     assert request_args.headers.get("Host") == _DOMAIN_WEBHOOK_HOST
     assert _TEST_PINNED_IP in request_args.target_url
 
 
-def test_build_pinned_request_arguments_returns_original_url_when_no_pin() -> None:
-    """_build_pinned_request_arguments must return original URL unchanged when pinned_ip is None."""
-    request_args = _build_pinned_request_arguments(_DOMAIN_WEBHOOK_URL, None)
+def test_build_pinned_webhook_request_returns_original_url_when_no_pin() -> None:
+    """_build_pinned_webhook_request must return original URL unchanged when pinned_ip is None."""
+    request_args = _build_pinned_webhook_request(_DOMAIN_WEBHOOK_URL, None)
     assert request_args.target_url == _DOMAIN_WEBHOOK_URL
     assert "Host" not in request_args.headers
 
@@ -845,10 +846,10 @@ def test_post_with_retry_pins_connection_to_resolved_ip() -> None:
     assert captured_calls[0]["headers"].get("Host") == _DOMAIN_WEBHOOK_HOST
 
 
-def test_build_pinned_url_raises_when_hostname_is_missing() -> None:
-    """_build_pinned_url must raise NotificationError for a URL with no parseable hostname."""
+def test_rewrite_url_hostname_to_ip_raises_when_no_hostname() -> None:
+    """_rewrite_url_hostname_to_ip must raise NotificationError when URL has no hostname."""
     with pytest.raises(NotificationError):
-        _build_pinned_url("file:///local/path", _TEST_PINNED_IP)
+        _rewrite_url_hostname_to_ip("file:///local/path", _TEST_PINNED_IP)
 
 
 _TEST_IPV6_HOST: str = "2001:db8::1"
@@ -856,9 +857,9 @@ _TEST_IPV6_WEBHOOK_URL: str = f"https://[{_TEST_IPV6_HOST}]:8443/notify"
 _TEST_IPV4_PINNED_IP: str = "93.184.216.34"
 
 
-def test_build_pinned_url_handles_ipv6_url() -> None:
-    """_build_pinned_url must produce a valid URL when pinning an IPv6 address."""
-    pinned = _build_pinned_url(_TEST_IPV6_WEBHOOK_URL, _TEST_IPV4_PINNED_IP)
+def test_rewrite_url_hostname_to_ip_handles_ipv6_url() -> None:
+    """_rewrite_url_hostname_to_ip must produce a valid URL when the original host is IPv6."""
+    pinned = _rewrite_url_hostname_to_ip(_TEST_IPV6_WEBHOOK_URL, _TEST_IPV4_PINNED_IP)
     assert _TEST_IPV4_PINNED_IP in pinned
     assert _TEST_IPV6_HOST not in pinned
     assert ":8443" in pinned
