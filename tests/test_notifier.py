@@ -33,6 +33,7 @@ from phi_scan.constants import (
 from phi_scan.exceptions import NotificationError
 from phi_scan.models import NotificationConfig, ScanFinding, ScanResult
 from phi_scan.notifier import (
+    _FINDING_KEY_VALUE_HASH,  # noqa: PLC2701
     NotificationRequest,
     _build_email_html_body,  # noqa: PLC2701
     _build_email_subject,
@@ -409,8 +410,8 @@ def test_generic_payload_no_raw_phi_values() -> None:
     )
     payload = _build_generic_payload(scan_summary)
     for finding_payload in payload.get("findings", []):
-        assert "code_context" not in finding_payload
-        assert "remediation_hint" not in finding_payload
+        assert "code_context" not in finding_payload  # never serialised — PHI constraint
+        assert "remediation_hint" not in finding_payload  # never serialised — PHI constraint
 
 
 def test_generic_payload_contains_value_hash_not_raw_value() -> None:
@@ -426,7 +427,7 @@ def test_generic_payload_contains_value_hash_not_raw_value() -> None:
     )
     payload = _build_generic_payload(scan_summary)
     for finding_payload in payload.get("findings", []):
-        assert "value_hash" in finding_payload
+        assert _FINDING_KEY_VALUE_HASH in finding_payload
 
 
 def test_slack_payload_has_attachments_key() -> None:

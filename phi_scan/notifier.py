@@ -217,6 +217,13 @@ _TEAMS_THEME_COLOR_RED: str = "FF0000"
 _TEAMS_THEME_COLOR_GREEN: str = "00AA00"
 _MAX_FINDINGS_IN_NOTIFICATION: int = 20  # prevent oversized payloads
 _WEBHOOK_EVENT_NAME: str = "phi_scan_complete"
+_FINDING_KEY_FILE_PATH: str = "file_path"
+_FINDING_KEY_LINE_NUMBER: str = "line_number"
+_FINDING_KEY_ENTITY_TYPE: str = "entity_type"
+_FINDING_KEY_HIPAA_CATEGORY: str = "hipaa_category"
+_FINDING_KEY_SEVERITY: str = "severity"
+_FINDING_KEY_CONFIDENCE: str = "confidence"
+_FINDING_KEY_VALUE_HASH: str = "value_hash"
 
 # ---------------------------------------------------------------------------
 # Notification request model
@@ -281,13 +288,13 @@ def _truncate_findings_for_notification(
     """
     return tuple(
         {
-            "file_path": str(finding.file_path),
-            "line_number": finding.line_number,
-            "entity_type": finding.entity_type,
-            "hipaa_category": finding.hipaa_category.value,
-            "severity": finding.severity.value,
-            "confidence": finding.confidence,
-            "value_hash": finding.value_hash,
+            _FINDING_KEY_FILE_PATH: str(finding.file_path),
+            _FINDING_KEY_LINE_NUMBER: finding.line_number,
+            _FINDING_KEY_ENTITY_TYPE: finding.entity_type,
+            _FINDING_KEY_HIPAA_CATEGORY: finding.hipaa_category.value,
+            _FINDING_KEY_SEVERITY: finding.severity.value,
+            _FINDING_KEY_CONFIDENCE: finding.confidence,
+            _FINDING_KEY_VALUE_HASH: finding.value_hash,
         }
         for finding in scan_result.findings[:_MAX_FINDINGS_IN_NOTIFICATION]
     )
