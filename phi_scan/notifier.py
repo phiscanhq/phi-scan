@@ -244,6 +244,33 @@ class _WebhookScanSummary:
     truncated_findings: tuple[dict[str, Any], ...]
 
 
+def _truncate_findings_for_notification(
+    scan_result: ScanResult,
+) -> tuple[dict[str, Any], ...]:
+    """Serialise at most _MAX_FINDINGS_IN_NOTIFICATION findings as plain dicts.
+
+    Only hashed metadata is included — no raw PHI values or code_context.
+
+    Args:
+        scan_result: Completed scan result.
+
+    Returns:
+        Tuple of finding dicts safe for inclusion in a webhook payload.
+    """
+    return tuple(
+        {
+            "file_path": str(finding.file_path),
+            "line_number": finding.line_number,
+            "entity_type": finding.entity_type,
+            "hipaa_category": finding.hipaa_category.value,
+            "severity": finding.severity.value,
+            "confidence": finding.confidence,
+            "value_hash": finding.value_hash,
+        }
+        for finding in scan_result.findings[:_MAX_FINDINGS_IN_NOTIFICATION]
+    )
+
+
 def _build_webhook_scan_summary(
     scan_result: ScanResult,
     repository: str,
@@ -261,18 +288,6 @@ def _build_webhook_scan_summary(
     Returns:
         Immutable summary of scan metadata for use by payload builders.
     """
-    truncated_findings = tuple(
-        {
-            "file_path": str(finding.file_path),
-            "line_number": finding.line_number,
-            "entity_type": finding.entity_type,
-            "hipaa_category": finding.hipaa_category.value,
-            "severity": finding.severity.value,
-            "confidence": finding.confidence,
-            "value_hash": finding.value_hash,
-        }
-        for finding in scan_result.findings[:_MAX_FINDINGS_IN_NOTIFICATION]
-    )
     return _WebhookScanSummary(
         is_clean=scan_result.is_clean,
         risk_level_label=scan_result.risk_level.value.upper(),
@@ -284,7 +299,7 @@ def _build_webhook_scan_summary(
         repository=repository,
         branch=branch,
         scanner_version=scanner_version,
-        truncated_findings=truncated_findings,
+        truncated_findings=_truncate_findings_for_notification(scan_result),
     )
 
 

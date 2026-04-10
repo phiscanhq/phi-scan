@@ -45,8 +45,10 @@ _NO_REMEDIATION_HINT: str = ""
 class StructuredFindingRequest:
     """Input bundle for build_structured_finding.
 
-    Groups the 8 layer-specific inputs required to construct a ScanFinding,
+    Groups the 7 layer-specific inputs required to construct a ScanFinding,
     satisfying the ≤3 argument rule for build_structured_finding.
+    Callers must call compute_value_hash() before constructing this object —
+    raw PHI must never be stored in a field.
     """
 
     file_path: Path
@@ -55,7 +57,7 @@ class StructuredFindingRequest:
     hipaa_category: PhiCategory
     confidence: float
     detection_layer: DetectionLayer
-    raw_value: str
+    value_hash: str
     code_context: str
 
 
@@ -115,15 +117,16 @@ def severity_from_confidence(confidence: float) -> SeverityLevel:
 def build_structured_finding(request: StructuredFindingRequest) -> ScanFinding:
     """Construct a ScanFinding for structured detectors (FHIR, HL7).
 
-    Centralises hash + severity + remediation-hint derivation so the
-    HIPAA-critical operations cannot diverge between FHIR and HL7 layers.
+    Centralises severity + remediation-hint derivation so the HIPAA-critical
+    operations cannot diverge between FHIR and HL7 layers. The caller is
+    responsible for hashing the raw PHI value before constructing the request.
 
     Args:
         request: All layer-specific inputs bundled as a StructuredFindingRequest.
 
     Returns:
-        Immutable ScanFinding with value_hash, severity, and remediation_hint
-        derived from the request.
+        Immutable ScanFinding with severity and remediation_hint derived from
+        the request.
     """
     return ScanFinding(
         file_path=request.file_path,
@@ -132,7 +135,7 @@ def build_structured_finding(request: StructuredFindingRequest) -> ScanFinding:
         hipaa_category=request.hipaa_category,
         confidence=request.confidence,
         detection_layer=request.detection_layer,
-        value_hash=compute_value_hash(request.raw_value),
+        value_hash=request.value_hash,
         severity=severity_from_confidence(request.confidence),
         code_context=request.code_context,
         remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(

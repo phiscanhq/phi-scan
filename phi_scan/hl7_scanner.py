@@ -36,7 +36,11 @@ from phi_scan.constants import (
     PhiCategory,
 )
 from phi_scan.exceptions import MissingOptionalDependencyError
-from phi_scan.hashing import StructuredFindingRequest, build_structured_finding
+from phi_scan.hashing import (
+    StructuredFindingRequest,
+    build_structured_finding,
+    compute_value_hash,
+)
 from phi_scan.models import Hl7ScanContext, ScanFinding
 
 __all__ = [
@@ -175,7 +179,7 @@ def _build_hl7_finding(
             hipaa_category=phi_category,
             confidence=_HL7_FIELD_BASE_CONFIDENCE,
             detection_layer=DetectionLayer.HL7,
-            raw_value=field_value,
+            value_hash=compute_value_hash(field_value),
             code_context=f"{context.segment_type}: {CODE_CONTEXT_REDACTED_VALUE}",
         )
     )
