@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__all__ = ["baseline_app", "load_baseline_with_fallback"]
+
 from pathlib import Path
 from typing import Annotated
 
