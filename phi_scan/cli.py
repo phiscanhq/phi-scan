@@ -28,9 +28,7 @@ from phi_scan.audit import (
     verify_audit_chain,
 )
 from phi_scan.baseline import (
-    BaselineSnapshot,
     filter_baselined_findings,
-    load_baseline,
 )
 from phi_scan.ci_integration import (
     CIIntegrationError,
@@ -44,7 +42,7 @@ from phi_scan.ci_integration import (
     set_commit_status,
     upload_sarif_to_github,
 )
-from phi_scan.cli_baseline import baseline_app
+from phi_scan.cli_baseline import _load_baseline_or_warn, baseline_app
 from phi_scan.cli_config import config_app
 from phi_scan.cli_explain import explain_app
 from phi_scan.cli_scan_config import load_scan_config
@@ -70,7 +68,6 @@ from phi_scan.diff import get_changed_files_from_diff
 from phi_scan.exceptions import (
     AuditKeyMissingError,
     AuditLogError,
-    BaselineError,
     MissingOptionalDependencyError,
     NotificationError,
 )
@@ -222,7 +219,6 @@ _VERBOSE_PHASE_COLLECTING: str = "collecting scan targets"
 _VERBOSE_PHASE_SCANNING: str = "scanning {count} file(s)"
 _VERBOSE_PHASE_AUDIT: str = "writing audit record"
 _VERBOSE_PHASE_REPORT: str = "rendering report"
-_BASELINE_LOAD_ERROR_MESSAGE: str = "Could not load baseline: {error}"
 
 # ---------------------------------------------------------------------------
 # Watch command
@@ -1032,22 +1028,6 @@ def _emit_scan_output_with_baseline(
     else:
         _emit_scan_output(scan_result, output_options)
     raise typer.Exit(code=EXIT_CODE_CLEAN if not new_findings else EXIT_CODE_VIOLATION)
-
-
-def _load_baseline_or_warn(baseline_path: Path) -> BaselineSnapshot | None:
-    """Load a baseline snapshot, printing a warning and returning None on failure.
-
-    Args:
-        baseline_path: Path to the .phi-scanbaseline file.
-
-    Returns:
-        Loaded snapshot, or None when the file is missing or unreadable.
-    """
-    try:
-        return load_baseline(baseline_path=baseline_path)
-    except BaselineError as error:
-        typer.echo(_BASELINE_LOAD_ERROR_MESSAGE.format(error=error), err=True)
-        return None
 
 
 def _display_rich_baseline_results(
