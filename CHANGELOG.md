@@ -69,6 +69,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remain importable from `phi_scan.output.console` unchanged. `_UNICODE_SUPPORTED` and
   `_resolve_symbol` remain in `__init__.py` to preserve `monkeypatch` compatibility in
   existing tests.
+- **Security docs qualification (7H.1):** `SECURITY.md` "Local execution only" bullet
+  qualified to reflect opt-in AI review — `ai.enable_ai_review` (disabled by default)
+  sends redacted code structure only (never raw PHI) to the configured AI provider when
+  explicitly enabled.
+- **Notifier webhook payload model (7H.2):** Extracted `_WebhookScanSummary` frozen
+  dataclass and `_build_webhook_scan_summary` factory from `notifier.py`. Slack, Teams,
+  and generic payload builders each accept a single `_WebhookScanSummary`; the shared
+  metadata (`is_clean`, `risk_level_label`, `findings_count`, `files_scanned`, etc.) is
+  computed once per dispatch.
+- **Shared structured-finding factory (7H.3):** Added `build_structured_finding` to
+  `phi_scan/hashing.py`. FHIR and HL7 detection layers now delegate
+  `compute_value_hash + severity_from_confidence + HIPAA_REMEDIATION_GUIDANCE.get` to
+  this single function, eliminating the duplicated construction pattern.
+- **CLI command-group split (7I):** `cli.py` (2328 LOC) reduced to 1976 LOC by
+  extracting three sub-Typer apps: `cli_baseline.py` (`baseline` commands),
+  `cli_config.py` (`config init`), `cli_explain.py` (11 `explain` topics). All CLI
+  commands, help text, and exit codes are unchanged.
 
 ## [0.5.0] - 2026-04-04
 

@@ -2142,70 +2142,6 @@ _reject_ssrf_resolved_addresses(hostname: str, addresses: list[...]) -> None
   check, and warn that enabling it on public-internet webhooks weakens the
   SSRF protection model
 
-#### 7G.3 — Phase-2 split of `console.py` (1 307 LOC)
-
-`console.py` remains a 1 307-line multi-responsibility file after 7F.1. It
-mixes four distinct concerns: shared infrastructure, findings display, scan
-summary/violation UI, and baseline UI. Convert it to a `console/` sub-package
-using the same backwards-compatible re-export pattern established in 7F.1.
-
-**Target structure:**
-
-```
-phi_scan/output/console/
-    __init__.py     re-exports all public symbols — zero import breakage
-    core.py         _rich_console, get_console(), _detect_unicode_support,
-                    _resolve_symbol, create_scan_progress, display_status_spinner
-    findings.py     display_findings_table, display_file_tree, format_table,
-                    display_code_context_panel, display_category_breakdown,
-                    _build_findings_table, _group_findings_by_file,
-                    _build_confidence_dots, _highest_severity_icon
-    summary.py      display_banner, display_phase_*, display_scan_header,
-                    display_file_type_summary, display_summary_panel,
-                    display_clean_result, display_clean_summary_panel,
-                    display_violation_alert, display_risk_level_badge,
-                    display_severity_inline, display_violation_summary_panel,
-                    display_exit_code_message, and all their private builders
-    baseline.py     display_baseline_summary, display_baseline_diff,
-                    display_baseline_drift_warning, display_baseline_scan_notice,
-                    and their private builders
-```
-
-The `_rich_console` instance lives in `core.py`. All other submodules call
-`get_console()` from `core` — no submodule constructs its own `Console`.
-
-- [ ] **7G.3a** Create `phi_scan/output/console/` package; copy current
-  `console.py` content into `console/__init__.py` as a baseline — verify all
-  tests still pass before any code moves
-- [ ] **7G.3b** Extract shared infrastructure into `console/core.py`:
-  `_rich_console`, `get_console()`, `_detect_unicode_support()`,
-  `_resolve_symbol()`, `create_scan_progress()`, `display_status_spinner()`;
-  update `__init__.py` to import from `core`
-- [ ] **7G.3c** Extract findings display into `console/findings.py`:
-  `display_findings_table`, `display_file_tree`, `format_table`,
-  `display_code_context_panel`, `display_category_breakdown`, and all private
-  builders those functions depend on; each function calls `get_console()` from
-  `core`; update `__init__.py`
-- [ ] **7G.3d** Extract summary/violation/phase UI into `console/summary.py`:
-  `display_banner`, `display_phase_*`, `display_scan_header`,
-  `display_file_type_summary`, `display_summary_panel`,
-  `display_clean_result`, `display_clean_summary_panel`,
-  `display_violation_alert`, `display_risk_level_badge`,
-  `display_severity_inline`, `display_violation_summary_panel`,
-  `display_exit_code_message`, and all private builders; update `__init__.py`
-- [ ] **7G.3e** Extract baseline UI into `console/baseline.py`:
-  `display_baseline_summary`, `display_baseline_diff`,
-  `display_baseline_drift_warning`, `display_baseline_scan_notice`, and their
-  private builders; update `__init__.py`
-- [ ] **7G.3f** Delete the now-empty `phi_scan/output/console.py` monolith;
-  confirm `phi_scan/output/__init__.py` imports from `console/` package
-- [ ] **7G.3g** Verify all existing tests pass unchanged after the split
-- [ ] **7G.3h** `CONTRIBUTING.md` — update module map to reflect
-  `phi_scan/output/console/` sub-package and document where to add new display
-  functions
-- [ ] **7G.3i** `CHANGELOG.md` — add entries under `[Unreleased]` for 7G.1,
-  7G.2, and 7G.3 as each ships
-
 ### 7G Verification Checklist
 
 - [x] `CHANGELOG.md` uses `is_private_webhook_url_allowed` consistently — no
@@ -2215,10 +2151,172 @@ The `_rich_console` instance lives in `core.py`. All other submodules call
 - [x] A hostname resolving to `10.0.0.1` (RFC1918) is blocked by SSRF validation
 - [x] DNS resolution failure raises `SSRFProtectionError` (not a silent pass)
 - [x] `is_private_webhook_url_allowed=True` skips DNS resolution check
-- [ ] `console.py` monolith no longer exists — replaced by `console/` sub-package
-- [ ] All public symbols importable from `phi_scan.output.console` (backwards-compatible)
-- [ ] All existing tests pass after each sub-task
-- [ ] `CONTRIBUTING.md` module map reflects `console/` sub-package
+- [x] `console.py` monolith no longer exists — replaced by `console/` sub-package
+- [x] All public symbols importable from `phi_scan.output.console` (backwards-compatible)
+- [x] All existing tests pass after each sub-task
+- [x] `CONTRIBUTING.md` module map reflects `console/` sub-package
+
+---
+
+### 7H — Post-Review Quality Fixes (Round 2)
+
+**Goal:** Close three DRY/correctness gaps surfaced in the post-7G external
+review: an absolute security claim that is factually wrong when AI review is
+enabled, duplicated metadata assembly across three webhook payload builders,
+and duplicated structured-finding construction across the FHIR and HL7 layers.
+All three are independent and shippable as separate PRs.
+
+**Dependencies:** 7G complete.
+
+#### 7H.1 — SECURITY.md: qualify AI review transmission claim
+
+`SECURITY.md:77` contains the absolute claim *"No PHI or PII is ever
+transmitted to an external API or third-party service."* This is incorrect
+when `ai.enable_ai_review` is enabled — that path sends redacted code
+structure (never raw PHI) to the configured AI provider. The statement must
+be qualified with an opt-in carve-out.
+
+- [ ] **7H.1a** `SECURITY.md` — Replace the absolute claim on the
+  "Local execution only" bullet with qualified language: scanning runs locally
+  by default; the optional AI review layer (disabled by default, controlled by
+  `ai.enable_ai_review`) sends redacted code structure — never raw PHI — to
+  the configured provider when explicitly enabled
+
+#### 7H.2 — Notifier: extract `_WebhookScanSummary` payload model
+
+`_build_slack_payload`, `_build_teams_payload`, and `_build_generic_payload`
+all take the same four arguments `(scan_result, repo, branch, scanner_version)`
+and each independently re-derive the same seven metadata values
+(`is_clean`, `risk_level_label`, `findings_count`, `files_scanned`,
+`scan_duration`, `action_taken`, formatted status text). Any future change to
+how these are computed must be applied in three places.
+
+**Implementation approach:**
+
+Extract a frozen dataclass `_WebhookScanSummary` that holds all pre-computed
+metadata. Add a private factory `_build_webhook_scan_summary` that computes
+the summary once. Refactor each payload builder to accept
+`_WebhookScanSummary` instead of the four loose args. `_build_webhook_payload`
+constructs the summary once and passes it through.
+
+- [ ] **7H.2a** `notifier.py` — Add `@dataclass(frozen=True)
+  _WebhookScanSummary` with fields: `is_clean: bool`,
+  `risk_level_label: str`, `findings_count: int`, `files_scanned: int`,
+  `scan_duration: float`, `action_taken: str`, `repo: str`, `branch: str`,
+  `scanner_version: str`; place it in the payload-builder section alongside
+  `_WEBHOOK_TYPE_BUILDERS`
+- [ ] **7H.2b** `notifier.py` — Add `_build_webhook_scan_summary(
+  scan_result, repo, branch, scanner_version) -> _WebhookScanSummary`:
+  computes `is_clean`, `risk_level_label`
+  (`scan_result.risk_level.value.upper()`), `findings_count`, `files_scanned`,
+  `scan_duration`, `action_taken` (reuses `ACTION_TAKEN_PASS/FAIL` constants),
+  returns a `_WebhookScanSummary`
+- [ ] **7H.2c** `notifier.py` — Refactor `_build_slack_payload`,
+  `_build_teams_payload`, `_build_generic_payload` to accept
+  `_WebhookScanSummary` as their sole argument; remove all direct
+  `scan_result.*` access inside these three functions
+- [ ] **7H.2d** `notifier.py` — Update `_build_webhook_payload` to call
+  `_build_webhook_scan_summary` once and pass the result to each builder;
+  update `_WEBHOOK_TYPE_BUILDERS` type annotation accordingly
+- [ ] **7H.2e** `tests/test_notifier.py` — Verify refactored builders produce
+  identical payload shapes (no behaviour change); add a test for
+  `_build_webhook_scan_summary` to confirm field derivation
+
+#### 7H.3 — FHIR + HL7: shared structured-finding factory
+
+`_build_fhir_finding` and `_build_hl7_finding` independently call
+`compute_value_hash`, `severity_from_confidence`, and
+`HIPAA_REMEDIATION_GUIDANCE.get`. Any change to the hash function, severity
+mapping, or remediation lookup must be applied in both modules or silently
+diverge.
+
+**Implementation approach:**
+
+Add `build_structured_finding` to `phi_scan/hashing.py` (which already serves
+all detection layers and whose docstring explicitly describes its role as the
+centralised ScanFinding construction helper). Update the module docstring to
+reflect the expanded scope. Each detector then calls the factory, retaining
+only the layer-specific inputs (entity_type, code_context, detection_layer).
+
+- [ ] **7H.3a** `phi_scan/hashing.py` — Add `build_structured_finding(
+  file_path, line_number, entity_type, hipaa_category, confidence,
+  detection_layer, raw_value, code_context) -> ScanFinding`: calls
+  `compute_value_hash(raw_value)`, `severity_from_confidence(confidence)`,
+  `HIPAA_REMEDIATION_GUIDANCE.get(hipaa_category, "")`, returns a `ScanFinding`;
+  update module docstring to reflect the addition; add to `__all__`
+- [ ] **7H.3b** `phi_scan/fhir_recognizer.py` — Replace the
+  `_build_fhir_finding` body with a call to `build_structured_finding`,
+  passing `entity_type=line_match.field_name`,
+  `code_context=f'"{line_match.field_name}": {CODE_CONTEXT_REDACTED_VALUE}'`,
+  `detection_layer=DetectionLayer.FHIR`; import `build_structured_finding`
+  from `phi_scan.hashing`
+- [ ] **7H.3c** `phi_scan/hl7_scanner.py` — Replace the `_build_hl7_finding`
+  body with a call to `build_structured_finding`,
+  passing `entity_type=phi_category.value`,
+  `code_context=f"{context.segment_type}: {CODE_CONTEXT_REDACTED_VALUE}"`,
+  `detection_layer=DetectionLayer.HL7`; import `build_structured_finding`
+  from `phi_scan.hashing`
+- [ ] **7H.3d** `tests/` — Confirm all existing FHIR and HL7 tests pass
+  unchanged; add a direct test for `build_structured_finding` verifying
+  value_hash derivation and severity assignment
+
+### 7H Verification Checklist
+
+- [ ] `SECURITY.md` AI review carve-out present and accurate
+- [ ] `_build_slack_payload`, `_build_teams_payload`, `_build_generic_payload`
+  each take `_WebhookScanSummary` as sole argument
+- [ ] `_build_webhook_scan_summary` called exactly once per webhook dispatch
+- [ ] `build_structured_finding` is the single site that calls
+  `compute_value_hash` + `severity_from_confidence` + `HIPAA_REMEDIATION_GUIDANCE.get`
+  for structured detectors
+- [ ] All existing notifier, FHIR, and HL7 tests pass unchanged
+
+---
+
+### 7I — CLI command-group split
+
+**Goal:** Reduce `cli.py` (2328 LOC) by extracting the three already-defined
+sub-Typer apps (`explain_app`, `baseline_app`, `config_app`) into dedicated
+modules. Shared orchestration helpers and the primary `scan` command remain in
+`cli.py`. This is a pure code movement — no behaviour change, full
+backwards-compatible CLI surface.
+
+**Dependencies:** 7H complete.
+
+**Natural split boundaries** (determined by `add_typer` + decorator scope):
+
+| Target module | Content | Approx LOC moved |
+|---|---|---|
+| `phi_scan/cli_explain.py` | `explain_app` Typer + 11 `@explain_app.command` handlers | ~110 |
+| `phi_scan/cli_baseline.py` | `baseline_app` Typer + `create`/`show`/`clear`/`update`/`diff` handlers + `_load_baseline_or_exit`/`_write_baseline_or_exit` helpers | ~250 |
+| `phi_scan/cli_config.py` | `config_app` Typer + `init` handler | ~130 |
+| `phi_scan/cli.py` (retained) | `app` wiring, `scan`, `report`, `history`, `fix`, `dashboard`, `install-hook`, `uninstall-hook`, `init`, `setup`, all shared orchestration helpers | ~1840 |
+
+- [ ] **7I.1** `phi_scan/cli_explain.py` — Move `explain_app` Typer
+  definition and all 11 `@explain_app.command` handlers; import and re-export
+  `explain_app` from `phi_scan/cli.py` via `from phi_scan.cli_explain import
+  explain_app`; no other change to `cli.py`
+- [ ] **7I.2** `phi_scan/cli_baseline.py` — Move `baseline_app` Typer
+  definition, `_load_baseline_or_exit`, `_write_baseline_or_exit`, and all
+  five `@baseline_app.command` handlers; update imports in the new module
+  to cover `BaselineError`, `ScanConfig`, `display_baseline_*`, etc.;
+  import `baseline_app` in `cli.py`
+- [ ] **7I.3** `phi_scan/cli_config.py` — Move `config_app` Typer definition
+  and `@config_app.command("init")` handler; import `config_app` in `cli.py`
+- [ ] **7I.4** `CONTRIBUTING.md` — Update module map to reflect
+  `cli_explain.py`, `cli_baseline.py`, `cli_config.py`; update
+  "Where to Add Things" section for new explain/baseline/config commands
+- [ ] **7I.5** `CHANGELOG.md` — Add entry under `[Unreleased]` for 7I
+
+### 7I Verification Checklist
+
+- [x] `phi-scan --help` output unchanged
+- [x] `phi-scan baseline --help` output unchanged
+- [x] `phi-scan explain --help` output unchanged
+- [x] `phi-scan config --help` output unchanged
+- [x] `cli.py` is under 1900 LOC after split
+- [x] All existing CLI integration tests pass unchanged
+- [x] No new public symbols added to any module
 
 ---
 
@@ -2316,6 +2414,32 @@ This is a separate TypeScript project. It calls the `phi-scan` CLI under the hoo
   - Publish to GitHub Marketplace as a verified action
 - [ ] **8F.2** Submit to AWS Marketplace
 - [ ] **8F.3** Submit to Azure Marketplace
+
+### 8F-ext — Architecture Scalability (strategic items from post-7G review)
+
+These items were surfaced in the external post-7G architectural review as
+the highest-upside improvements beyond feature count. They belong in Phase 8
+because they require API design decisions and affect the extension model
+described in 8B.
+
+- [ ] **8F-ext.1 Parallel scan execution (opt-in):** current `scan_file` loop
+  is sequential over targets. Add `--workers N` flag (default 1, max
+  `os.cpu_count()`); use `concurrent.futures.ThreadPoolExecutor` with bounded
+  workers; results accumulate into the same `ScanResult` with thread-safe
+  collection. Must not change scan semantics — same findings, same ordering in
+  output. Gate behind a feature flag until validated in CI at scale.
+- [ ] **8F-ext.2 CI platform adapter split:** `ci_integration.py` owns all
+  HTTP logic for 7 platforms (GitHub, GitLab, Azure, Bitbucket, CircleCI,
+  Jenkins, TeamCity). Split into `phi_scan/ci/github.py`,
+  `phi_scan/ci/gitlab.py`, `phi_scan/ci/azure.py`, etc., each exposing a
+  `post_pr_comment` + `set_commit_status` interface; a thin `ci_integration.py`
+  shim dispatches by platform. Improves per-platform test isolation and
+  release safety.
+- [ ] **8F-ext.3 Custom suppressor + output sink plugin hooks:** extend the
+  8B plugin API to support custom suppression logic (e.g., suppress if
+  `entity_type == "MRN"` in specific files) and custom output sinks (e.g.,
+  write findings to a team-specific ticketing system). Both are
+  enterprise-adoption blockers for teams with existing workflows.
 
 ### 8G — Community Growth & Marketing
 

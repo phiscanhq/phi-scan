@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import logging
@@ -30,11 +29,7 @@ from phi_scan.audit import (
 )
 from phi_scan.baseline import (
     BaselineSnapshot,
-    compute_baseline_diff,
-    create_baseline,
-    detect_baseline_drift,
     filter_baselined_findings,
-    get_baseline_summary,
     load_baseline,
 )
 from phi_scan.ci_integration import (
@@ -49,18 +44,19 @@ from phi_scan.ci_integration import (
     set_commit_status,
     upload_sarif_to_github,
 )
+from phi_scan.cli_baseline import baseline_app
+from phi_scan.cli_config import config_app
+from phi_scan.cli_explain import explain_app
+from phi_scan.cli_scan_config import load_scan_config
 from phi_scan.compliance import (
     ComplianceFramework,
     InvalidFrameworkError,
     annotate_findings,
     parse_framework_flag,
 )
-from phi_scan.config import create_default_config, load_config
 from phi_scan.constants import (
-    BASELINE_DRIFT_WARNING_PERCENT,
+    BASELINE_LOAD_ERROR_MESSAGE,
     DEFAULT_BASELINE_FILENAME,
-    DEFAULT_BASELINE_MAX_AGE_DAYS,
-    DEFAULT_CONFIG_FILENAME,
     DEFAULT_DATABASE_PATH,
     DEFAULT_IGNORE_FILENAME,
     DEFAULT_TEXT_ENCODING,
@@ -70,14 +66,12 @@ from phi_scan.constants import (
     IMPLEMENTED_OUTPUT_FORMATS,
     OutputFormat,
     PathspecMatchStyle,
-    SeverityLevel,
 )
 from phi_scan.diff import get_changed_files_from_diff
 from phi_scan.exceptions import (
     AuditKeyMissingError,
     AuditLogError,
     BaselineError,
-    ConfigurationError,
     MissingOptionalDependencyError,
     NotificationError,
 )
@@ -88,19 +82,6 @@ from phi_scan.fixer import (
     apply_approved_replacements,
     collect_file_replacements,
     fix_file,
-)
-from phi_scan.help_text import (
-    EXPLAIN_CONFIDENCE_TEXT,
-    EXPLAIN_CONFIG_TEXT,
-    EXPLAIN_DEIDENTIFICATION_TEXT,
-    EXPLAIN_DETECTION_TEXT,
-    EXPLAIN_FRAMEWORKS_TEXT,
-    EXPLAIN_HIPAA_TEXT,
-    EXPLAIN_IGNORE_TEXT,
-    EXPLAIN_REMEDIATION_TEXT,
-    EXPLAIN_REPORTS_TEXT,
-    EXPLAIN_RISK_LEVELS_TEXT,
-    EXPLAIN_SEVERITY_TEXT,
 )
 from phi_scan.logging_config import get_logger, replace_logger_handlers
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
@@ -117,10 +98,7 @@ from phi_scan.output import (
     build_watch_layout,
     create_scan_progress,
     display_banner,
-    display_baseline_diff,
-    display_baseline_drift_warning,
     display_baseline_scan_notice,
-    display_baseline_summary,
     display_category_breakdown,
     display_clean_result,
     display_clean_summary_panel,
@@ -176,16 +154,8 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-config_app = typer.Typer(name="config", help="Manage PhiScan configuration.")
 app.add_typer(config_app)
-
-explain_app = typer.Typer(name="explain", help="Explain PhiScan concepts and configuration.")
 app.add_typer(explain_app)
-
-baseline_app = typer.Typer(
-    name="baseline",
-    help="Manage the scan baseline — accept existing findings and enforce zero new PHI.",
-)
 app.add_typer(baseline_app)
 
 # ---------------------------------------------------------------------------
@@ -344,13 +314,6 @@ _HOOK_SCRIPT_CONTENT: str = (
 )
 
 # ---------------------------------------------------------------------------
-# Config sub-app
-# ---------------------------------------------------------------------------
-
-_CONFIG_CREATED_MESSAGE: str = "Configuration file created: {path}"
-_CONFIG_ALREADY_EXISTS_MESSAGE: str = "Config file already exists at {path} — not overwriting."
-
-# ---------------------------------------------------------------------------
 # Stub messages for Phase 2+ features
 # ---------------------------------------------------------------------------
 
@@ -376,16 +339,9 @@ _SPINNER_CONFIG_LOAD_MESSAGE: str = "Loading configuration…"
 _SPINNER_AUDIT_WRITE_MESSAGE: str = "Writing audit log…"
 
 # ---------------------------------------------------------------------------
-# Baseline command constants
+# Baseline-related scan command constants
 # ---------------------------------------------------------------------------
 
-_BASELINE_PATH_HELP: str = (
-    "Path to the .phi-scanbaseline file. Defaults to .phi-scanbaseline in CWD."
-)
-_BASELINE_MAX_AGE_HELP: str = (
-    "Days until baseline entries expire and revert to active findings (default: 90)."
-)
-_BASELINE_SCAN_PATH_HELP: str = "Directory to scan when creating or updating the baseline."
 _SCAN_BASELINE_HELP: str = (
     "Only report NEW findings not in the .phi-scanbaseline file. "
     "Exit code is based on new findings only."
@@ -404,24 +360,6 @@ _SCAN_UPLOAD_SARIF_HELP: str = (
     "Each finding appears as an inline annotation on the exact line in the PR diff."
 )
 
-_BASELINE_NO_FILE_WARNING: str = (
-    "No baseline file found at {path!r}. Run 'phi-scan baseline create' to create one."
-)
-_BASELINE_CREATED_MESSAGE: str = (
-    "Baseline created: {path}  ({count} {label} accepted, expires in {days} days)"
-)
-_BASELINE_UPDATED_MESSAGE: str = (
-    "Baseline updated: {path}  ({count} {label} accepted, expires in {days} days)"
-)
-_BASELINE_CLEARED_MESSAGE: str = "Baseline cleared: {path}"
-_BASELINE_NOT_FOUND_MESSAGE: str = "No baseline file found at {path!r} — nothing to clear."
-_BASELINE_CLEAR_CONFIRM_PROMPT: str = "This will remove the baseline at {path!r}. Continue? [y/N]"
-_BASELINE_CLEAR_ABORTED_MESSAGE: str = "Baseline clear aborted."
-_BASELINE_ERROR_MESSAGE: str = "Baseline error: {error}"
-_BASELINE_LOAD_ERROR_MESSAGE: str = "Could not load baseline: {error}"
-
-_BASELINE_CONFIRM_YES: str = "y"
-
 # Maximum characters of a file path shown in the progress bar description column.
 # Longer paths are truncated with a leading ellipsis so the bar layout stays stable.
 _PROGRESS_FILENAME_MAX_CHARS: int = 38
@@ -431,9 +369,6 @@ _PROGRESS_FILENAME_ELLIPSIS: str = "…"
 # Error and warning messages
 # ---------------------------------------------------------------------------
 
-_CONFIG_LOAD_FAILURE_WARNING: str = (
-    "Config file {path!r} exists but could not be loaded — using defaults: {error}"
-)
 _AUDIT_WRITE_FAILURE_WARNING: str = "Audit log write failed — scan result not persisted: {error}"
 _AUDIT_KEY_MISSING_DEBUG: str = (
     "Audit log skipped — encryption key not found. Run 'phi-scan setup' to generate it."
@@ -461,14 +396,6 @@ _UNSUPPORTED_OUTPUT_FORMAT_ERROR: str = (
     f"Currently supported: {_IMPLEMENTED_FORMAT_NAMES}. "
     "Additional formats are not yet available."
 )
-_INVALID_SEVERITY_THRESHOLD_ERROR: str = (
-    "Invalid severity threshold {value!r}. Accepted values: info, low, medium, high."
-)
-_NO_CONFIG_FILE_HINT: str = (
-    "No {filename} found — using built-in defaults. "
-    "Run `phi-scan config init` to create a config file."
-)
-
 # ---------------------------------------------------------------------------
 # Log level configuration
 # ---------------------------------------------------------------------------
@@ -650,45 +577,6 @@ def _configure_logging(log_level: str, log_file: Path | None, is_quiet: bool) ->
     """
     level = _LOG_LEVEL_MAP.get(log_level.lower(), logging.WARNING)
     replace_logger_handlers(console_level=level, log_file_path=log_file, is_quiet=is_quiet)
-
-
-def _load_scan_config(config_path: Path | None, severity_threshold: str | None) -> ScanConfig:
-    """Load ScanConfig from file, applying a CLI severity override if provided.
-
-    A missing or unreadable config file is not an error — defaults are used so
-    `phi-scan scan .` works out of the box without any config file.
-
-    Args:
-        config_path: Path to .phi-scanner.yml, or None to use the default name.
-        severity_threshold: CLI override for the minimum severity level, or None.
-
-    Returns:
-        A fully populated ScanConfig with any CLI overrides applied.
-
-    Raises:
-        typer.Exit: If severity_threshold is not a valid SeverityLevel value.
-    """
-    resolved_config_path = config_path or Path(DEFAULT_CONFIG_FILENAME)
-    try:
-        scan_config = load_config(resolved_config_path)
-    except ConfigurationError as config_error:
-        if resolved_config_path.exists():
-            _logger.warning(
-                _CONFIG_LOAD_FAILURE_WARNING.format(
-                    path=str(resolved_config_path), error=config_error
-                )
-            )
-        else:
-            typer.echo(_NO_CONFIG_FILE_HINT.format(filename=resolved_config_path.name), err=True)
-        scan_config = ScanConfig()
-    if severity_threshold is None:
-        return scan_config
-    try:
-        parsed_severity = SeverityLevel(severity_threshold.lower())
-    except ValueError:
-        typer.echo(_INVALID_SEVERITY_THRESHOLD_ERROR.format(value=severity_threshold), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR)
-    return dataclasses.replace(scan_config, severity_threshold=parsed_severity)
 
 
 def _load_combined_ignore_patterns(scan_config: ScanConfig) -> list[str]:
@@ -1119,6 +1007,22 @@ def _emit_scan_output(scan_result: ScanResult, options: _ScanOutputOptions) -> N
 # ---------------------------------------------------------------------------
 
 
+def _load_optional_baseline(baseline_path: Path) -> BaselineSnapshot | None:
+    """Load a baseline snapshot, returning None and printing a warning on failure.
+
+    Args:
+        baseline_path: Path to the .phi-scanbaseline file.
+
+    Returns:
+        Loaded snapshot, or None when the file is missing or unreadable.
+    """
+    try:
+        return load_baseline(baseline_path=baseline_path)
+    except BaselineError as baseline_load_error:
+        typer.echo(BASELINE_LOAD_ERROR_MESSAGE.format(error=baseline_load_error), err=True)
+        return None
+
+
 def _emit_scan_output_with_baseline(
     scan_result: ScanResult, output_options: _ScanOutputOptions
 ) -> NoReturn:
@@ -1134,7 +1038,7 @@ def _emit_scan_output_with_baseline(
         output_options: Output format, rich-mode flag, and report path.
     """
     baseline_path = Path(DEFAULT_BASELINE_FILENAME)
-    snapshot = _load_baseline_or_warn(baseline_path)
+    snapshot = _load_optional_baseline(baseline_path)
     if snapshot is None:
         _emit_scan_output(scan_result, output_options)
         raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
@@ -1144,77 +1048,6 @@ def _emit_scan_output_with_baseline(
     else:
         _emit_scan_output(scan_result, output_options)
     raise typer.Exit(code=EXIT_CODE_CLEAN if not new_findings else EXIT_CODE_VIOLATION)
-
-
-def _load_baseline_or_warn(baseline_path: Path) -> BaselineSnapshot | None:
-    """Load a baseline snapshot, printing a warning and returning None on failure.
-
-    Args:
-        baseline_path: Path to the .phi-scanbaseline file.
-
-    Returns:
-        Loaded snapshot, or None when the file is missing or unreadable.
-    """
-    try:
-        return load_baseline(baseline_path=baseline_path)
-    except BaselineError as error:
-        typer.echo(_BASELINE_LOAD_ERROR_MESSAGE.format(error=error), err=True)
-        return None
-
-
-def _load_baseline_or_exit(baseline_path: Path) -> BaselineSnapshot:
-    """Load a baseline snapshot, exiting with an error message on any failure.
-
-    Centralises the try/except + None-check pattern repeated across
-    ``baseline show`` and ``baseline diff``.
-
-    Args:
-        baseline_path: Path to the .phi-scanbaseline file.
-
-    Returns:
-        Loaded snapshot (never None — exits instead).
-
-    Raises:
-        typer.Exit: With EXIT_CODE_ERROR on BaselineError, or EXIT_CODE_CLEAN
-            when no baseline file exists yet.
-    """
-    try:
-        snapshot = load_baseline(baseline_path=baseline_path)
-    except BaselineError as error:
-        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR)
-    if snapshot is None:
-        typer.echo(_BASELINE_NO_FILE_WARNING.format(path=baseline_path), err=True)
-        raise typer.Exit(code=EXIT_CODE_CLEAN)
-    return snapshot
-
-
-def _write_baseline_or_exit(
-    scan_result: ScanResult,
-    max_age_days: int,
-    baseline_path: Path,
-) -> BaselineSnapshot:
-    """Create and write a baseline snapshot, exiting with an error message on failure.
-
-    Centralises the try/except pattern repeated across ``baseline create``
-    and ``baseline update``.
-
-    Args:
-        scan_result:    Completed scan whose findings become the new baseline.
-        max_age_days:   Maximum age in days before a baseline entry expires.
-        baseline_path:  Path to write the .phi-scanbaseline file.
-
-    Returns:
-        The newly written snapshot.
-
-    Raises:
-        typer.Exit: With EXIT_CODE_ERROR when the file cannot be written.
-    """
-    try:
-        return create_baseline(scan_result, max_age_days, baseline_path=baseline_path)
-    except BaselineError as error:
-        typer.echo(_BASELINE_ERROR_MESSAGE.format(error=error), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR)
 
 
 def _display_rich_baseline_results(
@@ -1727,7 +1560,7 @@ def scan(
     enabled_frameworks = _resolve_framework_flag(framework)
     is_rich_mode = not is_quiet and output_format_enum is OutputFormat.TABLE
     with display_status_spinner(_SPINNER_CONFIG_LOAD_MESSAGE, is_active=is_rich_mode):
-        scan_config = _load_scan_config(config_path, severity_threshold)
+        scan_config = load_scan_config(config_path, severity_threshold)
     if is_rich_mode:
         display_banner()
         display_scan_header(path, scan_config)
@@ -1950,17 +1783,6 @@ def display_dashboard() -> None:
         raise typer.Exit(code=EXIT_CODE_CLEAN)
 
 
-@config_app.command("init")
-def initialize_config() -> None:
-    """Generate a default .phi-scanner.yml configuration file."""
-    config_file_path = Path(DEFAULT_CONFIG_FILENAME)
-    if config_file_path.exists():
-        typer.echo(_CONFIG_ALREADY_EXISTS_MESSAGE.format(path=config_file_path))
-        raise typer.Exit(code=EXIT_CODE_CLEAN)
-    create_default_config(config_file_path)
-    typer.echo(_CONFIG_CREATED_MESSAGE.format(path=config_file_path))
-
-
 # ---------------------------------------------------------------------------
 # Fix command
 # ---------------------------------------------------------------------------
@@ -2107,233 +1929,3 @@ def fix_command(
             typer.echo(_FIX_FAKER_MISSING_MESSAGE, err=True)
             raise typer.Exit(code=EXIT_CODE_ERROR) from None
         _print_fix_result(fix_result, fix_mode)
-
-
-# ---------------------------------------------------------------------------
-# Explain command group
-# ---------------------------------------------------------------------------
-
-
-def _render_explain_topic(topic_markup: str) -> None:
-    """Render a help_text constant to the terminal with Rich markup."""
-    get_console().print(topic_markup)
-
-
-@explain_app.command("confidence")
-def explain_confidence() -> None:
-    """Explain confidence scores: what they mean and how the threshold works."""
-    _render_explain_topic(EXPLAIN_CONFIDENCE_TEXT)
-
-
-@explain_app.command("severity")
-def explain_severity() -> None:
-    """Explain HIGH / MEDIUM / LOW / INFO severity levels and the threshold."""
-    _render_explain_topic(EXPLAIN_SEVERITY_TEXT)
-
-
-@explain_app.command("risk-levels")
-def explain_risk_levels() -> None:
-    """Explain CRITICAL / HIGH / MODERATE / LOW / CLEAN risk assessment."""
-    _render_explain_topic(EXPLAIN_RISK_LEVELS_TEXT)
-
-
-@explain_app.command("hipaa")
-def explain_hipaa() -> None:
-    """List all 18 HIPAA Safe Harbor identifier categories with descriptions."""
-    _render_explain_topic(EXPLAIN_HIPAA_TEXT)
-
-
-@explain_app.command("detection")
-def explain_detection() -> None:
-    """Describe how the four detection layers work together."""
-    _render_explain_topic(EXPLAIN_DETECTION_TEXT)
-
-
-@explain_app.command("config")
-def explain_config() -> None:
-    """Show an annotated .phi-scanner.yml with every option explained."""
-    _render_explain_topic(EXPLAIN_CONFIG_TEXT)
-
-
-@explain_app.command("ignore")
-def explain_ignore() -> None:
-    """Explain .phi-scanignore patterns and inline suppression directives."""
-    _render_explain_topic(EXPLAIN_IGNORE_TEXT)
-
-
-@explain_app.command("reports")
-def explain_reports() -> None:
-    """List available output formats and when to use each."""
-    _render_explain_topic(EXPLAIN_REPORTS_TEXT)
-
-
-@explain_app.command("remediation")
-def explain_remediation() -> None:
-    """Show the full remediation playbook for all 18 HIPAA categories."""
-    _render_explain_topic(EXPLAIN_REMEDIATION_TEXT)
-
-
-@explain_app.command("frameworks")
-def explain_frameworks() -> None:
-    """List all supported compliance frameworks with citations and penalty ranges."""
-    _render_explain_topic(EXPLAIN_FRAMEWORKS_TEXT)
-
-
-@explain_app.command("deidentification")
-def explain_deidentification() -> None:
-    """Explain HIPAA Safe Harbor vs Expert Determination and known detection gaps."""
-    _render_explain_topic(EXPLAIN_DEIDENTIFICATION_TEXT)
-
-
-# ---------------------------------------------------------------------------
-# Baseline command group (Phase 3B)
-# ---------------------------------------------------------------------------
-
-# Internal helpers for the baseline command group
-# ------------------------------------------------
-
-
-def _run_scan_for_baseline(scan_root: Path) -> ScanResult:
-    """Run a full scan of scan_root using default config, returning the ScanResult.
-
-    Args:
-        scan_root: Directory to scan.
-
-    Returns:
-        Aggregated ScanResult from execute_scan.
-    """
-    scan_config = _load_scan_config(None, None)
-    ignore_patterns = load_ignore_patterns(Path(DEFAULT_IGNORE_FILENAME))
-    if scan_config.exclude_paths:
-        ignore_patterns.extend(scan_config.exclude_paths)
-    scan_targets = collect_scan_targets(scan_root, ignore_patterns, scan_config)
-    return execute_scan(scan_targets, scan_config)
-
-
-def _entry_count_label(count: int) -> str:
-    """Return 'entry' for 1 item, 'entries' otherwise."""
-    _single_label: str = "entry"
-    _plural_label: str = "entries"
-    return _single_label if count == 1 else _plural_label
-
-
-# Baseline commands
-# -----------------
-
-
-@baseline_app.command("create")
-def baseline_create(
-    path: Annotated[Path, typer.Argument(help=_BASELINE_SCAN_PATH_HELP)] = Path("."),
-    max_age_days: Annotated[
-        int, typer.Option("--max-age-days", help=_BASELINE_MAX_AGE_HELP)
-    ] = DEFAULT_BASELINE_MAX_AGE_DAYS,
-    baseline_path: Annotated[
-        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
-    ] = Path(DEFAULT_BASELINE_FILENAME),
-) -> None:
-    """Run a full scan and save all findings as the accepted baseline.
-
-    The baseline file is written to .phi-scanbaseline in the current directory.
-    Commit it to your repository so all developers share the same baseline.
-    """
-    console = get_console()
-    scan_result = _run_scan_for_baseline(path)
-    snapshot = _write_baseline_or_exit(scan_result, max_age_days, baseline_path)
-    count = len(snapshot.entries)
-    console.print(
-        _BASELINE_CREATED_MESSAGE.format(
-            path=baseline_path,
-            count=count,
-            label=_entry_count_label(count),
-            days=max_age_days,
-        )
-    )
-
-
-@baseline_app.command("show")
-def baseline_show(
-    baseline_path: Annotated[
-        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
-    ] = Path(DEFAULT_BASELINE_FILENAME),
-) -> None:
-    """Display summary statistics for the current baseline."""
-    snapshot = _load_baseline_or_exit(baseline_path)
-    summary = get_baseline_summary(snapshot, baseline_path)
-    display_baseline_summary(summary)
-
-
-@baseline_app.command("clear")
-def baseline_clear(
-    baseline_path: Annotated[
-        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
-    ] = Path(DEFAULT_BASELINE_FILENAME),
-) -> None:
-    """Remove the baseline file, reverting all findings to active."""
-    if not baseline_path.exists():
-        typer.echo(_BASELINE_NOT_FOUND_MESSAGE.format(path=baseline_path))
-        raise typer.Exit(code=EXIT_CODE_CLEAN)
-    raw_answer = (
-        typer.prompt(_BASELINE_CLEAR_CONFIRM_PROMPT.format(path=baseline_path), default="")
-        .strip()
-        .lower()
-    )
-    if raw_answer != _BASELINE_CONFIRM_YES:
-        typer.echo(_BASELINE_CLEAR_ABORTED_MESSAGE)
-        raise typer.Exit(code=EXIT_CODE_CLEAN)
-    baseline_path.unlink()
-    typer.echo(_BASELINE_CLEARED_MESSAGE.format(path=baseline_path))
-
-
-@baseline_app.command("update")
-def baseline_update(
-    path: Annotated[Path, typer.Argument(help=_BASELINE_SCAN_PATH_HELP)] = Path("."),
-    max_age_days: Annotated[
-        int, typer.Option("--max-age-days", help=_BASELINE_MAX_AGE_HELP)
-    ] = DEFAULT_BASELINE_MAX_AGE_DAYS,
-    baseline_path: Annotated[
-        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
-    ] = Path(DEFAULT_BASELINE_FILENAME),
-) -> None:
-    """Re-scan and overwrite the baseline with the current findings.
-
-    Warn when the new entry count is significantly higher than the previous count
-    (drift detection). A large increase suggests PHI accumulation rather than
-    remediation.
-    """
-    console = get_console()
-    old_snapshot = _load_baseline_or_warn(baseline_path)
-    scan_result = _run_scan_for_baseline(path)
-    new_snapshot = _write_baseline_or_exit(scan_result, max_age_days, baseline_path)
-    if old_snapshot is not None:
-        drift = detect_baseline_drift(old_snapshot, new_snapshot)
-        if drift > BASELINE_DRIFT_WARNING_PERCENT:
-            display_baseline_drift_warning(
-                len(old_snapshot.entries), len(new_snapshot.entries), drift
-            )
-    count = len(new_snapshot.entries)
-    console.print(
-        _BASELINE_UPDATED_MESSAGE.format(
-            path=baseline_path,
-            count=count,
-            label=_entry_count_label(count),
-            days=max_age_days,
-        )
-    )
-
-
-@baseline_app.command("diff")
-def baseline_diff(
-    path: Annotated[Path, typer.Argument(help=_BASELINE_SCAN_PATH_HELP)] = Path("."),
-    baseline_path: Annotated[
-        Path, typer.Option("--baseline-path", help=_BASELINE_PATH_HELP)
-    ] = Path(DEFAULT_BASELINE_FILENAME),
-) -> None:
-    """Compare the current scan against the baseline.
-
-    Shows new findings (not in baseline), resolved findings (in baseline but no
-    longer detected), and persisting findings (still present and still baselined).
-    """
-    snapshot = _load_baseline_or_exit(baseline_path)
-    scan_result = _run_scan_for_baseline(path)
-    diff = compute_baseline_diff(snapshot, scan_result)
-    display_baseline_diff(diff)

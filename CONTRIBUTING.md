@@ -60,7 +60,11 @@ make help       Show all targets
 
 | Module | Purpose |
 |---|---|
-| `phi_scan/cli.py` | Typer CLI — all user-facing commands |
+| `phi_scan/cli.py` | Typer CLI — `scan`, `report`, `history`, `fix`, `dashboard`, `install-hook`, `uninstall-hook`, `init`, `setup` commands + shared orchestration helpers |
+| `phi_scan/cli_baseline.py` | `baseline` sub-app — `create`, `show`, `clear`, `update`, `diff` commands |
+| `phi_scan/cli_config.py` | `config` sub-app — `init` command |
+| `phi_scan/cli_explain.py` | `explain` sub-app — 11 conceptual help topics |
+| `phi_scan/cli_scan_config.py` | Shared scan config loader (`load_scan_config`) used by `cli.py` and `cli_baseline.py` — extracted to avoid circular imports |
 | `phi_scan/scanner.py` | File collection, binary detection, orchestration |
 | `phi_scan/regex_detector.py` | Layer 1 — regex detection engine |
 | `phi_scan/nlp_detector.py` | Layer 2 — Presidio/spaCy NLP (optional) |
@@ -91,7 +95,9 @@ make help       Show all targets
 - **New terminal display function**: add to the appropriate `phi_scan/output/console/` sub-module (`findings.py`, `summary.py`, or `baseline.py`) → re-export from `phi_scan/output/console/__init__.py` using `name as name` syntax
 - **New CI/CD platform**: `phi_scan/ci_integration.py` — add a `_HttpRequestConfig`-based call using `_execute_http_request`; wire into `post_pr_comment` and `set_commit_status` dispatch tables
 - **New PHI pattern**: `phi_scan/regex_detector.py` — add pattern + validator; update `PhiCategory` in `constants.py` if a new HIPAA category
-- **New CLI command**: `phi_scan/cli.py` — follow the existing Typer app/sub-app pattern
+- **New top-level CLI command** (`scan`, `report`, etc.): `phi_scan/cli.py` — add `@app.command()` handler
+- **New `baseline` sub-command**: `phi_scan/cli_baseline.py` — add `@baseline_app.command()` handler
+- **New `explain` topic**: `phi_scan/cli_explain.py` — add `@explain_app.command()` handler and a constant in `phi_scan/help_text.py`
 
 ---
 

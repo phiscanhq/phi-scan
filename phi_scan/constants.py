@@ -8,6 +8,7 @@ __all__ = [
     "AUDIT_RETENTION_DAYS",
     "AUDIT_SCHEMA_VERSION",
     "BASELINE_DRIFT_WARNING_PERCENT",
+    "BASELINE_LOAD_ERROR_MESSAGE",
     "BASELINE_SCHEMA_VERSION",
     "BINARY_CHECK_BYTE_COUNT",
     "CACHE_SCHEMA_VERSION",
@@ -133,6 +134,9 @@ BASELINE_SCHEMA_VERSION: int = 1
 # Warn when a baseline update adds more than this percent more entries than before.
 # A 20 % increase signals the team may be accumulating rather than remediating PHI.
 BASELINE_DRIFT_WARNING_PERCENT: int = 20
+# Error message emitted when a baseline file cannot be loaded. Used by both
+# the scan command (cli.py) and the baseline update command (cli_baseline.py).
+BASELINE_LOAD_ERROR_MESSAGE: str = "Could not load baseline: {error}"
 # Substituted in place of the raw matched PHI value when building code_context.
 # The source line is shown to help developers locate the finding; the actual
 # matched value is replaced so raw PHI never flows through the model or display.
