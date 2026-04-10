@@ -39,6 +39,7 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 from urllib.parse import urlparse
 
@@ -270,7 +271,7 @@ class _WebhookScanSummary:
     repository: str
     branch: str
     scanner_version: str
-    truncated_findings: tuple[dict[str, Any], ...]
+    truncated_findings: tuple[MappingProxyType[str, Any], ...]
 
 
 def _truncate_findings_for_notification(
@@ -287,15 +288,17 @@ def _truncate_findings_for_notification(
         Tuple of finding dicts safe for inclusion in a webhook payload.
     """
     return tuple(
-        {
-            _FINDING_KEY_FILE_PATH: str(finding.file_path),
-            _FINDING_KEY_LINE_NUMBER: finding.line_number,
-            _FINDING_KEY_ENTITY_TYPE: finding.entity_type,
-            _FINDING_KEY_HIPAA_CATEGORY: finding.hipaa_category.value,
-            _FINDING_KEY_SEVERITY: finding.severity.value,
-            _FINDING_KEY_CONFIDENCE: finding.confidence,
-            _FINDING_KEY_VALUE_HASH: finding.value_hash,
-        }
+        MappingProxyType(
+            {
+                _FINDING_KEY_FILE_PATH: str(finding.file_path),
+                _FINDING_KEY_LINE_NUMBER: finding.line_number,
+                _FINDING_KEY_ENTITY_TYPE: finding.entity_type,
+                _FINDING_KEY_HIPAA_CATEGORY: finding.hipaa_category.value,
+                _FINDING_KEY_SEVERITY: finding.severity.value,
+                _FINDING_KEY_CONFIDENCE: finding.confidence,
+                _FINDING_KEY_VALUE_HASH: finding.value_hash,
+            }
+        )
         for finding in scan_result.findings[:_MAX_FINDINGS_IN_NOTIFICATION]
     )
 
@@ -612,7 +615,7 @@ def _build_generic_payload(scan_summary: _WebhookScanSummary) -> dict[str, Any]:
         "files_scanned": scan_summary.files_scanned,
         "scan_duration": scan_summary.scan_duration,
         "action_taken": scan_summary.action_taken,
-        "findings": list(scan_summary.truncated_findings),
+        "findings": [dict(finding) for finding in scan_summary.truncated_findings],
     }
 
 
