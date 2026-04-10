@@ -42,7 +42,7 @@ from phi_scan.ci_integration import (
     set_commit_status,
     upload_sarif_to_github,
 )
-from phi_scan.cli_baseline import _load_baseline_or_warn, baseline_app
+from phi_scan.cli_baseline import baseline_app, load_baseline_with_fallback
 from phi_scan.cli_config import config_app
 from phi_scan.cli_explain import explain_app
 from phi_scan.cli_scan_config import load_scan_config
@@ -1018,7 +1018,7 @@ def _emit_scan_output_with_baseline(
         output_options: Output format, rich-mode flag, and report path.
     """
     baseline_path = Path(DEFAULT_BASELINE_FILENAME)
-    snapshot = _load_baseline_or_warn(baseline_path)
+    snapshot = load_baseline_with_fallback(baseline_path)
     if snapshot is None:
         _emit_scan_output(scan_result, output_options)
         raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)

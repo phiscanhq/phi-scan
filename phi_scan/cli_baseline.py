@@ -102,8 +102,8 @@ def _load_baseline_or_exit(baseline_path: Path) -> BaselineSnapshot:
     return snapshot
 
 
-def _load_baseline_or_warn(baseline_path: Path) -> BaselineSnapshot | None:
-    """Load a baseline snapshot, printing a warning and returning None on failure.
+def load_baseline_with_fallback(baseline_path: Path) -> BaselineSnapshot | None:
+    """Load a baseline snapshot, returning None and printing a warning on failure.
 
     Args:
         baseline_path: Path to the .phi-scanbaseline file.
@@ -253,7 +253,7 @@ def baseline_update(
     remediation.
     """
     console = get_console()
-    old_snapshot = _load_baseline_or_warn(baseline_path)
+    old_snapshot = load_baseline_with_fallback(baseline_path)
     scan_result = _run_scan_for_baseline(path)
     new_snapshot = _write_baseline_or_exit(scan_result, max_age_days, baseline_path)
     if old_snapshot is not None:
