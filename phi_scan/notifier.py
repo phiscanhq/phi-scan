@@ -54,7 +54,7 @@ from phi_scan.constants import (
 )
 from phi_scan.exceptions import NotificationError
 from phi_scan.hashing import compute_value_hash
-from phi_scan.models import NotificationConfig, ScanResult
+from phi_scan.models import NotificationConfig, ScanFinding, ScanResult
 
 __all__ = ["NotificationRequest", "send_email_notification", "send_webhook_notification"]
 
@@ -274,10 +274,33 @@ class _WebhookScanSummary:
     truncated_findings: tuple[MappingProxyType[str, Any], ...]
 
 
+def _serialise_finding(finding: ScanFinding) -> MappingProxyType[str, Any]:
+    """Serialise a single finding as a read-only metadata dict.
+
+    Only hashed metadata is included — no raw PHI values or code_context.
+
+    Args:
+        finding: The scan finding to serialise.
+
+    Returns:
+        Immutable mapping of finding metadata safe for webhook payloads.
+    """
+    finding_dict: dict[str, Any] = {
+        _FINDING_KEY_FILE_PATH: str(finding.file_path),
+        _FINDING_KEY_LINE_NUMBER: finding.line_number,
+        _FINDING_KEY_ENTITY_TYPE: finding.entity_type,
+        _FINDING_KEY_HIPAA_CATEGORY: finding.hipaa_category.value,
+        _FINDING_KEY_SEVERITY: finding.severity.value,
+        _FINDING_KEY_CONFIDENCE: finding.confidence,
+        _FINDING_KEY_VALUE_HASH: finding.value_hash,
+    }
+    return MappingProxyType(finding_dict)
+
+
 def _truncate_findings_for_notification(
     scan_result: ScanResult,
-) -> tuple[dict[str, Any], ...]:
-    """Serialise at most _MAX_FINDINGS_IN_NOTIFICATION findings as plain dicts.
+) -> tuple[MappingProxyType[str, Any], ...]:
+    """Serialise at most _MAX_FINDINGS_IN_NOTIFICATION findings as read-only dicts.
 
     Only hashed metadata is included — no raw PHI values or code_context.
 
@@ -285,20 +308,10 @@ def _truncate_findings_for_notification(
         scan_result: Completed scan result.
 
     Returns:
-        Tuple of finding dicts safe for inclusion in a webhook payload.
+        Tuple of immutable finding mappings safe for inclusion in a webhook payload.
     """
     return tuple(
-        MappingProxyType(
-            {
-                _FINDING_KEY_FILE_PATH: str(finding.file_path),
-                _FINDING_KEY_LINE_NUMBER: finding.line_number,
-                _FINDING_KEY_ENTITY_TYPE: finding.entity_type,
-                _FINDING_KEY_HIPAA_CATEGORY: finding.hipaa_category.value,
-                _FINDING_KEY_SEVERITY: finding.severity.value,
-                _FINDING_KEY_CONFIDENCE: finding.confidence,
-                _FINDING_KEY_VALUE_HASH: finding.value_hash,
-            }
-        )
+        _serialise_finding(finding)
         for finding in scan_result.findings[:_MAX_FINDINGS_IN_NOTIFICATION]
     )
 
