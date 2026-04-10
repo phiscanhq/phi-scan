@@ -15,6 +15,8 @@ extracted here.
 from __future__ import annotations
 
 import hashlib
+import string
+from dataclasses import dataclass
 from pathlib import Path
 
 from phi_scan.constants import (
@@ -30,7 +32,48 @@ from phi_scan.constants import (
 )
 from phi_scan.models import ScanFinding
 
-__all__ = ["build_structured_finding", "compute_value_hash", "severity_from_confidence"]
+__all__ = [
+    "StructuredFindingRequest",
+    "build_structured_finding",
+    "compute_value_hash",
+    "severity_from_confidence",
+]
+
+_NO_REMEDIATION_HINT: str = ""
+_SHA256_HEX_DIGEST_LENGTH: int = 64
+
+
+@dataclass(frozen=True)
+class StructuredFindingRequest:
+    """Input bundle for build_structured_finding.
+
+    Groups the 7 layer-specific inputs required to construct a ScanFinding,
+    satisfying the ≤3 argument rule for build_structured_finding.
+    Callers must call compute_value_hash() before constructing this object —
+    raw PHI must never be stored in a field.
+    """
+
+    file_path: Path
+    line_number: int
+    entity_type: str
+    hipaa_category: PhiCategory
+    confidence: float
+    detection_layer: DetectionLayer
+    value_hash: str
+    code_context: str
+
+    def __post_init__(self) -> None:
+        """Reject value_hash that is not a valid SHA-256 hex digest.
+
+        Raises:
+            ValueError: If value_hash is not exactly 64 lowercase hex characters.
+        """
+        is_valid_length = len(self.value_hash) == _SHA256_HEX_DIGEST_LENGTH
+        is_valid_hex = all(character in string.hexdigits for character in self.value_hash)
+        if not is_valid_length or not is_valid_hex:
+            raise ValueError(
+                f"value_hash must be a 64-character hex digest; got length {len(self.value_hash)}"
+            )
 
 
 def compute_value_hash(text: str) -> str:
@@ -86,46 +129,31 @@ def severity_from_confidence(confidence: float) -> SeverityLevel:
     return SeverityLevel.INFO
 
 
-def build_structured_finding(
-    file_path: Path,
-    line_number: int,
-    entity_type: str,
-    hipaa_category: PhiCategory,
-    confidence: float,
-    detection_layer: DetectionLayer,
-    raw_value: str,
-    code_context: str,
-) -> ScanFinding:
+def build_structured_finding(request: StructuredFindingRequest) -> ScanFinding:
     """Construct a ScanFinding for structured detectors (FHIR, HL7).
 
-    Centralises the hash + severity + remediation-hint derivation that both
-    FHIR and HL7 layers perform identically. Callers supply only the
-    layer-specific inputs; this function ensures the HIPAA-critical operations
-    cannot diverge between layers.
+    Centralises severity + remediation-hint derivation so the HIPAA-critical
+    operations cannot diverge between FHIR and HL7 layers. The caller is
+    responsible for hashing the raw PHI value before constructing the request.
 
     Args:
-        file_path: Source path recorded in the finding for reporting.
-        line_number: 1-based line number of the match.
-        entity_type: Human-readable entity label (e.g. field name or category value).
-        hipaa_category: HIPAA category for this finding.
-        confidence: Base confidence score for this detection layer.
-        detection_layer: Which structured layer produced the finding.
-        raw_value: The raw matched PHI value — hashed immediately, never stored.
-        code_context: Pre-redacted source context string (must contain [REDACTED]).
+        request: All layer-specific inputs bundled as a StructuredFindingRequest.
 
     Returns:
-        Immutable ScanFinding with value_hash, severity, and remediation_hint
-        derived from the inputs.
+        Immutable ScanFinding with severity and remediation_hint derived from
+        the request.
     """
     return ScanFinding(
-        file_path=file_path,
-        line_number=line_number,
-        entity_type=entity_type,
-        hipaa_category=hipaa_category,
-        confidence=confidence,
-        detection_layer=detection_layer,
-        value_hash=compute_value_hash(raw_value),
-        severity=severity_from_confidence(confidence),
-        code_context=code_context,
-        remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(hipaa_category, ""),
+        file_path=request.file_path,
+        line_number=request.line_number,
+        entity_type=request.entity_type,
+        hipaa_category=request.hipaa_category,
+        confidence=request.confidence,
+        detection_layer=request.detection_layer,
+        value_hash=request.value_hash,
+        severity=severity_from_confidence(request.confidence),
+        code_context=request.code_context,
+        remediation_hint=HIPAA_REMEDIATION_GUIDANCE.get(
+            request.hipaa_category, _NO_REMEDIATION_HINT
+        ),
     )

@@ -6,7 +6,7 @@ Implements two delivery channels:
   Email (5A) — ``send_email_notification``
     Sends a Rich-formatted HTML email via SMTP/STARTTLS when PHI is detected.
     TLS is required; plaintext SMTP connections are rejected at delivery time.
-    Subject format: ``[PHI ALERT] {risk_level} — {findings_count} findings in {repo}/{branch}``.
+    Subject format: see NOTIFICATION_SUBJECT_FORMAT in constants.py.
     An HTML or PDF report may be attached when a report_path is provided.
 
   Webhooks (5B) — ``send_webhook_notification``
@@ -39,6 +39,7 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 from urllib.parse import urlparse
 
@@ -53,9 +54,9 @@ from phi_scan.constants import (
 )
 from phi_scan.exceptions import NotificationError
 from phi_scan.hashing import compute_value_hash
-from phi_scan.models import NotificationConfig, ScanResult
+from phi_scan.models import NotificationConfig, ScanFinding, ScanResult
 
-__all__ = ["send_email_notification", "send_webhook_notification"]
+__all__ = ["NotificationRequest", "send_email_notification", "send_webhook_notification"]
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ _HTML_EMAIL_TEMPLATE: str = """\
     </tr>
     <tr>
       <td style="padding:8px;border:1px solid #ddd;"><strong>Repository</strong></td>
-      <td style="padding:8px;border:1px solid #ddd;">{repo}</td>
+      <td style="padding:8px;border:1px solid #ddd;">{repository}</td>
     </tr>
     <tr style="background:#f9f9f9;">
       <td style="padding:8px;border:1px solid #ddd;"><strong>Branch</strong></td>
@@ -216,6 +217,35 @@ _SLACK_COLOR_GOOD: str = "good"
 _TEAMS_THEME_COLOR_RED: str = "FF0000"
 _TEAMS_THEME_COLOR_GREEN: str = "00AA00"
 _MAX_FINDINGS_IN_NOTIFICATION: int = 20  # prevent oversized payloads
+_WEBHOOK_EVENT_NAME: str = "phi_scan_complete"
+_FINDING_KEY_FILE_PATH: str = "file_path"
+_FINDING_KEY_LINE_NUMBER: str = "line_number"
+_FINDING_KEY_ENTITY_TYPE: str = "entity_type"
+_FINDING_KEY_HIPAA_CATEGORY: str = "hipaa_category"
+_FINDING_KEY_SEVERITY: str = "severity"
+_FINDING_KEY_CONFIDENCE: str = "confidence"
+_FINDING_KEY_VALUE_HASH: str = "value_hash"
+
+# ---------------------------------------------------------------------------
+# Notification request model
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class NotificationRequest:
+    """Scan context required by both email and webhook notification channels.
+
+    Bundles the 4–5 scan-related inputs that are common to
+    send_email_notification and send_webhook_notification, satisfying the
+    ≤3 argument rule for those functions.
+    """
+
+    scan_result: ScanResult
+    repository: str
+    branch: str
+    scanner_version: str
+    report_path: Path | None = None
+
 
 # ---------------------------------------------------------------------------
 # Webhook scan summary model
@@ -226,49 +256,88 @@ _MAX_FINDINGS_IN_NOTIFICATION: int = 20  # prevent oversized payloads
 class _WebhookScanSummary:
     """Pre-computed scan metadata shared by all webhook payload builders.
 
-    Constructed once by _build_webhook_scan_summary and passed to each
+    Constructed once by _derive_webhook_scan_summary and passed to each
     builder, eliminating duplicate derivation across Slack, Teams, and
     generic payload formats.
     """
 
     is_clean: bool
     risk_level_label: str
+    risk_level_value: str
     findings_count: int
     files_scanned: int
     scan_duration: float
     action_taken: str
-    repo: str
+    repository: str
     branch: str
     scanner_version: str
+    truncated_findings: tuple[MappingProxyType[str, Any], ...]
 
 
-def _build_webhook_scan_summary(
+def _serialise_finding(finding: ScanFinding) -> MappingProxyType[str, Any]:
+    """Serialise a single finding as a read-only metadata dict.
+
+    Only hashed metadata is included — no raw PHI values or code_context.
+
+    Args:
+        finding: The scan finding to serialise.
+
+    Returns:
+        Immutable mapping of finding metadata safe for webhook payloads.
+    """
+    finding_dict: dict[str, Any] = {
+        _FINDING_KEY_FILE_PATH: str(finding.file_path),
+        _FINDING_KEY_LINE_NUMBER: finding.line_number,
+        _FINDING_KEY_ENTITY_TYPE: finding.entity_type,
+        _FINDING_KEY_HIPAA_CATEGORY: finding.hipaa_category.value,
+        _FINDING_KEY_SEVERITY: finding.severity.value,
+        _FINDING_KEY_CONFIDENCE: finding.confidence,
+        _FINDING_KEY_VALUE_HASH: finding.value_hash,
+    }
+    return MappingProxyType(finding_dict)
+
+
+def _truncate_findings_for_notification(
     scan_result: ScanResult,
-    repo: str,
-    branch: str,
-    scanner_version: str,
-) -> _WebhookScanSummary:
-    """Derive all shared webhook metadata from a completed scan result.
+) -> tuple[MappingProxyType[str, Any], ...]:
+    """Serialise at most _MAX_FINDINGS_IN_NOTIFICATION findings as read-only dicts.
+
+    Only hashed metadata is included — no raw PHI values or code_context.
 
     Args:
         scan_result: Completed scan result.
-        repo: Repository identifier.
-        branch: Branch name.
-        scanner_version: phi-scan version string.
+
+    Returns:
+        Tuple of immutable finding mappings safe for inclusion in a webhook payload.
+    """
+    return tuple(
+        _serialise_finding(finding)
+        for finding in scan_result.findings[:_MAX_FINDINGS_IN_NOTIFICATION]
+    )
+
+
+def _derive_webhook_scan_summary(request: NotificationRequest) -> _WebhookScanSummary:
+    """Derive all shared webhook metadata from a notification request.
+
+    Args:
+        request: Notification request bundling scan result and scan context.
 
     Returns:
         Immutable summary of scan metadata for use by payload builders.
     """
+    scan_result = request.scan_result
     return _WebhookScanSummary(
         is_clean=scan_result.is_clean,
         risk_level_label=scan_result.risk_level.value.upper(),
+        risk_level_value=scan_result.risk_level.value,
         findings_count=len(scan_result.findings),
         files_scanned=scan_result.files_scanned,
         scan_duration=scan_result.scan_duration,
         action_taken=ACTION_TAKEN_PASS if scan_result.is_clean else ACTION_TAKEN_FAIL,
-        repo=repo,
-        branch=branch,
-        scanner_version=scanner_version,
+        repository=request.repository,
+        branch=request.branch,
+        scanner_version=request.scanner_version,
+        truncated_findings=_truncate_findings_for_notification(scan_result),
     )
 
 
@@ -322,46 +391,40 @@ def _build_findings_table_html(scan_result: ScanResult) -> str:
     return "".join(rows)
 
 
-def _build_email_subject(scan_result: ScanResult, repo: str, branch: str) -> str:
+def _build_email_subject(request: NotificationRequest) -> str:
     """Return the formatted email subject line.
 
     Args:
-        scan_result: Completed scan result.
-        repo: Repository name or path hash (never raw PHI).
-        branch: Branch name or hash (never raw PHI).
+        request: Notification request bundling scan result and scan context.
 
     Returns:
         Subject string formatted per NOTIFICATION_SUBJECT_FORMAT.
     """
     return NOTIFICATION_SUBJECT_FORMAT.format(
-        risk_level=scan_result.risk_level.value.upper(),
-        findings_count=len(scan_result.findings),
-        repo=repo,
-        branch=branch,
+        risk_level=request.scan_result.risk_level.value.upper(),
+        findings_count=len(request.scan_result.findings),
+        repository=request.repository,
+        branch=request.branch,
     )
 
 
-def _build_email_html_body(
-    scan_result: ScanResult, repo: str, branch: str, scanner_version: str
-) -> str:
+def _build_email_html_body(request: NotificationRequest) -> str:
     """Render the HTML email body.
 
     Args:
-        scan_result: Completed scan result.
-        repo: Repository identifier string.
-        branch: Branch name string.
-        scanner_version: phi-scan version string from phi_scan.__version__.
+        request: Notification request bundling scan result and scan context.
 
     Returns:
         Complete HTML document string for the email body.
     """
+    scan_result = request.scan_result
     findings_table = _build_findings_table_html(scan_result)
     return _HTML_EMAIL_TEMPLATE.format(
         risk_level=html.escape(scan_result.risk_level.value.upper()),
         findings_count=len(scan_result.findings),
-        repo=html.escape(repo),
-        branch=html.escape(branch),
-        scanner_version=html.escape(scanner_version),
+        repository=html.escape(request.repository),
+        branch=html.escape(request.branch),
+        scanner_version=html.escape(request.scanner_version),
         files_scanned=scan_result.files_scanned,
         scan_duration=scan_result.scan_duration,
         findings_table=findings_table,
@@ -462,20 +525,22 @@ def _deliver_via_smtp(
 # ---------------------------------------------------------------------------
 
 
-def _build_slack_payload(summary: _WebhookScanSummary) -> dict[str, Any]:
+def _build_slack_payload(scan_summary: _WebhookScanSummary) -> dict[str, Any]:
     """Build a Slack Block Kit message payload.
 
     Args:
-        summary: Pre-computed scan metadata from _build_webhook_scan_summary.
+        scan_summary: Pre-computed scan metadata from _derive_webhook_scan_summary.
 
     Returns:
         Slack Block Kit payload dict ready for JSON serialisation.
     """
-    color = _SLACK_COLOR_GOOD if summary.is_clean else _SLACK_COLOR_DANGER
+    color = _SLACK_COLOR_GOOD if scan_summary.is_clean else _SLACK_COLOR_DANGER
     status_text = (
         "*CLEAN* — no PHI detected"
-        if summary.is_clean
-        else f"*{summary.risk_level_label}* — {summary.findings_count} finding(s) detected"
+        if scan_summary.is_clean
+        else (
+            f"*{scan_summary.risk_level_label}* — {scan_summary.findings_count} finding(s) detected"
+        )
     )
     return {
         "attachments": [
@@ -487,10 +552,11 @@ def _build_slack_payload(summary: _WebhookScanSummary) -> dict[str, Any]:
                         "text": {
                             "type": "mrkdwn",
                             "text": (
-                                f":shield: *phi-scan Alert* | {summary.repo}/{summary.branch}\n"
+                                f":shield: *phi-scan Alert* | "
+                                f"{scan_summary.repository}/{scan_summary.branch}\n"
                                 f"{status_text}\n"
-                                f"Files scanned: {summary.files_scanned} | "
-                                f"Scanner: {summary.scanner_version}"
+                                f"Files scanned: {scan_summary.files_scanned} | "
+                                f"Scanner: {scan_summary.scanner_version}"
                             ),
                         },
                     }
@@ -500,20 +566,20 @@ def _build_slack_payload(summary: _WebhookScanSummary) -> dict[str, Any]:
     }
 
 
-def _build_teams_payload(summary: _WebhookScanSummary) -> dict[str, Any]:
+def _build_teams_payload(scan_summary: _WebhookScanSummary) -> dict[str, Any]:
     """Build a Microsoft Teams Adaptive Card payload.
 
     Args:
-        summary: Pre-computed scan metadata from _build_webhook_scan_summary.
+        scan_summary: Pre-computed scan metadata from _derive_webhook_scan_summary.
 
     Returns:
         Teams connector card payload dict ready for JSON serialisation.
     """
-    theme_color = _TEAMS_THEME_COLOR_GREEN if summary.is_clean else _TEAMS_THEME_COLOR_RED
+    theme_color = _TEAMS_THEME_COLOR_GREEN if scan_summary.is_clean else _TEAMS_THEME_COLOR_RED
     status_text = (
         "CLEAN — no PHI detected"
-        if summary.is_clean
-        else f"{summary.risk_level_label} — {summary.findings_count} finding(s) detected"
+        if scan_summary.is_clean
+        else f"{scan_summary.risk_level_label} — {scan_summary.findings_count} finding(s) detected"
     )
     return {
         "@type": "MessageCard",
@@ -522,24 +588,23 @@ def _build_teams_payload(summary: _WebhookScanSummary) -> dict[str, Any]:
         "summary": f"phi-scan {status_text}",
         "sections": [
             {
-                "activityTitle": f"phi-scan Alert — {summary.repo}/{summary.branch}",
+                "activityTitle": (
+                    f"phi-scan Alert — {scan_summary.repository}/{scan_summary.branch}"
+                ),
                 "activitySubtitle": status_text,
                 "facts": [
-                    {"name": "Risk Level", "value": summary.risk_level_label},
+                    {"name": "Risk Level", "value": scan_summary.risk_level_value},
                     # phi-scan:ignore-next-line
-                    {"name": "Findings", "value": str(summary.findings_count)},
-                    {"name": "Files Scanned", "value": str(summary.files_scanned)},
-                    {"name": "Scanner Version", "value": summary.scanner_version},
+                    {"name": "Findings", "value": str(scan_summary.findings_count)},
+                    {"name": "Files Scanned", "value": str(scan_summary.files_scanned)},
+                    {"name": "Scanner Version", "value": scan_summary.scanner_version},
                 ],
             }
         ],
     }
 
 
-def _build_generic_payload(
-    summary: _WebhookScanSummary,
-    scan_result: ScanResult,
-) -> dict[str, Any]:
+def _build_generic_payload(scan_summary: _WebhookScanSummary) -> dict[str, Any]:
     """Build a generic JSON webhook payload.
 
     The payload includes only hashed metadata — no raw PHI values or
@@ -547,64 +612,45 @@ def _build_generic_payload(
     digest of the detected value; it cannot be reversed to recover the PHI.
 
     Args:
-        summary: Pre-computed scan metadata from _build_webhook_scan_summary.
-        scan_result: Completed scan result (used for the per-finding list only).
+        scan_summary: Pre-computed scan metadata from _derive_webhook_scan_summary.
 
     Returns:
         Generic JSON payload dict.
     """
-    findings_payload = [
-        {
-            "file_path": str(f.file_path),
-            "line_number": f.line_number,
-            "entity_type": f.entity_type,
-            "hipaa_category": f.hipaa_category.value,
-            "severity": f.severity.value,
-            "confidence": f.confidence,
-            "value_hash": f.value_hash,
-        }
-        for f in scan_result.findings[:_MAX_FINDINGS_IN_NOTIFICATION]
-    ]
     return {
-        "event": "phi_scan_complete",
-        "scanner_version": summary.scanner_version,
-        "repository": summary.repo,
-        "branch": summary.branch,
-        "risk_level": summary.risk_level_label,
-        "is_clean": summary.is_clean,
-        "findings_count": summary.findings_count,
-        "files_scanned": summary.files_scanned,
-        "scan_duration": summary.scan_duration,
-        "action_taken": summary.action_taken,
-        "findings": findings_payload,
+        "event": _WEBHOOK_EVENT_NAME,
+        "scanner_version": scan_summary.scanner_version,
+        "repository": scan_summary.repository,
+        "branch": scan_summary.branch,
+        "risk_level": scan_summary.risk_level_value,
+        "is_clean": scan_summary.is_clean,
+        "findings_count": scan_summary.findings_count,
+        "files_scanned": scan_summary.files_scanned,
+        "scan_duration": scan_summary.scan_duration,
+        "action_taken": scan_summary.action_taken,
+        "findings": [dict(finding) for finding in scan_summary.truncated_findings],
     }
 
 
 def _build_webhook_payload(
     webhook_type: WebhookType,
-    scan_result: ScanResult,
-    repo: str,
-    branch: str,
-    scanner_version: str,
+    request: NotificationRequest,
 ) -> dict[str, Any]:
     """Dispatch to the appropriate payload builder for the given webhook_type.
 
     Args:
         webhook_type: The target webhook format.
-        scan_result: Completed scan result.
-        repo: Repository identifier.
-        branch: Branch name.
-        scanner_version: phi-scan version string.
+        request: Notification request bundling scan result and scan context.
 
     Returns:
         Payload dict appropriate for the webhook_type.
     """
-    summary = _build_webhook_scan_summary(scan_result, repo, branch, scanner_version)
+    scan_summary = _derive_webhook_scan_summary(request)
     if webhook_type is WebhookType.SLACK:
-        return _build_slack_payload(summary)
+        return _build_slack_payload(scan_summary)
     if webhook_type is WebhookType.TEAMS:
-        return _build_teams_payload(summary)
-    return _build_generic_payload(summary, scan_result)
+        return _build_teams_payload(scan_summary)
+    return _build_generic_payload(scan_summary)
 
 
 def _resolve_hostname_addresses(  # phi-scan:ignore
@@ -764,17 +810,13 @@ def _post_with_retry(
 
 def send_email_notification(
     config: NotificationConfig,
-    scan_result: ScanResult,
-    repo: str,
-    branch: str,
-    scanner_version: str,
-    report_path: Path | None = None,
+    request: NotificationRequest,
 ) -> None:
     """Send an email notification for a completed scan.
 
     Builds an HTML email summarising the scan result and delivers it via
-    SMTP/STARTTLS. When ``report_path`` is provided and the file exists, it is
-    attached to the email.
+    SMTP/STARTTLS. When ``request.report_path`` is provided and the file exists,
+    it is attached to the email.
 
     This function is best-effort: callers must catch ``NotificationError`` and
     log a warning rather than aborting the scan workflow.
@@ -782,11 +824,7 @@ def send_email_notification(
     Args:
         config: Notification configuration (smtp_host, smtp_port, smtp_from,
             smtp_recipients, smtp_use_tls).
-        scan_result: Completed scan result to summarise in the email.
-        repo: Repository name or identifier (used in subject and body).
-        branch: Branch name (used in subject and body).
-        scanner_version: phi-scan version string (e.g. "0.5.0").
-        report_path: Optional path to a PDF or HTML report to attach.
+        request: Notification request bundling scan result and scan context.
 
     Raises:
         NotificationError: If email delivery fails for any reason.
@@ -799,24 +837,21 @@ def send_email_notification(
         raise NotificationError(_NO_SMTP_FROM_ERROR)
     if not config.smtp_recipients:
         raise NotificationError(_NO_RECIPIENTS_ERROR)
-    subject = _build_email_subject(scan_result, repo, branch)
-    html_body = _build_email_html_body(scan_result, repo, branch, scanner_version)
-    message = _build_mime_message(config, subject, html_body, report_path)
+    subject = _build_email_subject(request)
+    html_body = _build_email_html_body(request)
+    message = _build_mime_message(config, subject, html_body, request.report_path)
     _deliver_via_smtp(config, message)
     _logger.info(
         "Email notification sent to %d recipient(s) for %s/%s",
         len(config.smtp_recipients),
-        repo,
-        branch,
+        request.repository,
+        request.branch,
     )
 
 
 def send_webhook_notification(
     config: NotificationConfig,
-    scan_result: ScanResult,
-    repo: str,
-    branch: str,
-    scanner_version: str,
+    request: NotificationRequest,
 ) -> None:
     """POST a findings notification to the configured webhook URL.
 
@@ -830,10 +865,7 @@ def send_webhook_notification(
     Args:
         config: Notification configuration (webhook_url, webhook_type,
             webhook_retry_count).
-        scan_result: Completed scan result to include in the payload.
-        repo: Repository name or identifier.
-        branch: Branch name.
-        scanner_version: phi-scan version string.
+        request: Notification request bundling scan result and scan context.
 
     Raises:
         NotificationError: If webhook_url is empty or delivery fails after all
@@ -842,14 +874,12 @@ def send_webhook_notification(
     if not config.webhook_url:
         raise NotificationError(_NO_WEBHOOK_URL_ERROR)
     _validate_webhook_url(config.webhook_url, config.is_private_webhook_url_allowed)
-    payload = _build_webhook_payload(
-        config.webhook_type, scan_result, repo, branch, scanner_version
-    )
+    payload = _build_webhook_payload(config.webhook_type, request)
     _post_with_retry(config.webhook_url, payload, config.webhook_retry_count)
     _logger.info(
         "Webhook notification delivered to %r (%s) for %s/%s",
         config.webhook_url,
         config.webhook_type.value,
-        repo,
-        branch,
+        request.repository,
+        request.branch,
     )

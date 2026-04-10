@@ -35,7 +35,11 @@ from phi_scan.constants import (
     DetectionLayer,
     PhiCategory,
 )
-from phi_scan.hashing import build_structured_finding
+from phi_scan.hashing import (
+    StructuredFindingRequest,
+    build_structured_finding,
+    compute_value_hash,
+)
 from phi_scan.models import ScanFinding
 
 __all__ = ["detect_phi_in_structured_content"]
@@ -193,14 +197,16 @@ def _build_fhir_finding(file_path: Path, line_match: _FhirLineMatch) -> ScanFind
     # developer to locate and remediate the finding.
     code_context = f'"{line_match.field_name}": {CODE_CONTEXT_REDACTED_VALUE}'
     return build_structured_finding(
-        file_path=file_path,
-        line_number=line_match.line_number,
-        entity_type=line_match.field_name,
-        hipaa_category=phi_category,
-        confidence=_FHIR_FIELD_BASE_CONFIDENCE,
-        detection_layer=DetectionLayer.FHIR,
-        raw_value=line_match.raw_value,
-        code_context=code_context,
+        StructuredFindingRequest(
+            file_path=file_path,
+            line_number=line_match.line_number,
+            entity_type=line_match.field_name,
+            hipaa_category=phi_category,
+            confidence=_FHIR_FIELD_BASE_CONFIDENCE,
+            detection_layer=DetectionLayer.FHIR,
+            value_hash=compute_value_hash(line_match.raw_value),
+            code_context=code_context,
+        )
     )
 
 

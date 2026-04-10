@@ -33,13 +33,15 @@ from phi_scan.constants import (
 from phi_scan.exceptions import NotificationError
 from phi_scan.models import NotificationConfig, ScanFinding, ScanResult
 from phi_scan.notifier import (
+    _FINDING_KEY_VALUE_HASH,  # noqa: PLC2701
+    NotificationRequest,
     _build_email_html_body,  # noqa: PLC2701
     _build_email_subject,
     _build_generic_payload,
     _build_slack_payload,
     _build_teams_payload,
     _build_webhook_payload,
-    _build_webhook_scan_summary,  # noqa: PLC2701
+    _derive_webhook_scan_summary,  # noqa: PLC2701
     _get_smtp_credentials,
     _reject_ssrf_resolved_addresses,  # noqa: PLC2701
     _resolve_hostname_addresses,  # noqa: PLC2701
@@ -169,26 +171,54 @@ def _make_webhook_config(
 
 def test_email_subject_contains_risk_level() -> None:
     """Email subject must include the risk level in uppercase."""
-    subject = _build_email_subject(_make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH)
+    subject = _build_email_subject(
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
+    )
     assert "HIGH" in subject
 
 
 def test_email_subject_contains_findings_count() -> None:
     """Email subject must include the findings count."""
-    subject = _build_email_subject(_make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH)
+    subject = _build_email_subject(
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
+    )
     assert str(_ONE_FINDING) in subject
 
 
 def test_email_subject_contains_repo_and_branch() -> None:
     """Email subject must include the repository and branch."""
-    subject = _build_email_subject(_make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH)
+    subject = _build_email_subject(
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
+    )
     assert _SAMPLE_REPO in subject
     assert _SAMPLE_BRANCH in subject
 
 
 def test_email_subject_phi_alert_prefix() -> None:
     """Email subject must begin with the [PHI ALERT] prefix."""
-    subject = _build_email_subject(_make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH)
+    subject = _build_email_subject(
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
+    )
     assert subject.startswith("[PHI ALERT]")
 
 
@@ -207,7 +237,13 @@ def test_send_email_raises_when_smtp_host_empty() -> None:
     )
     with pytest.raises(NotificationError):
         send_email_notification(
-            config, _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+            config,
+            NotificationRequest(
+                scan_result=_make_dirty_result(),
+                repository=_SAMPLE_REPO,
+                branch=_SAMPLE_BRANCH,
+                scanner_version=_SAMPLE_SCANNER_VERSION,
+            ),
         )
 
 
@@ -221,7 +257,13 @@ def test_send_email_raises_when_smtp_from_empty() -> None:
     )
     with pytest.raises(NotificationError):
         send_email_notification(
-            config, _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+            config,
+            NotificationRequest(
+                scan_result=_make_dirty_result(),
+                repository=_SAMPLE_REPO,
+                branch=_SAMPLE_BRANCH,
+                scanner_version=_SAMPLE_SCANNER_VERSION,
+            ),
         )
 
 
@@ -235,7 +277,13 @@ def test_send_email_raises_when_no_recipients() -> None:
     )
     with pytest.raises(NotificationError):
         send_email_notification(
-            config, _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+            config,
+            NotificationRequest(
+                scan_result=_make_dirty_result(),
+                repository=_SAMPLE_REPO,
+                branch=_SAMPLE_BRANCH,
+                scanner_version=_SAMPLE_SCANNER_VERSION,
+            ),
         )
 
 
@@ -244,7 +292,13 @@ def test_send_email_raises_when_tls_disabled() -> None:
     config = _make_email_config(smtp_use_tls=False)
     with pytest.raises(NotificationError, match="[Pp]laintext"):
         send_email_notification(
-            config, _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+            config,
+            NotificationRequest(
+                scan_result=_make_dirty_result(),
+                repository=_SAMPLE_REPO,
+                branch=_SAMPLE_BRANCH,
+                scanner_version=_SAMPLE_SCANNER_VERSION,
+            ),
         )
 
 
@@ -256,10 +310,12 @@ def test_send_email_raises_on_smtp_exception() -> None:
         with pytest.raises(NotificationError):
             send_email_notification(
                 config,
-                _make_dirty_result(),
-                _SAMPLE_REPO,
-                _SAMPLE_BRANCH,
-                _SAMPLE_SCANNER_VERSION,
+                NotificationRequest(
+                    scan_result=_make_dirty_result(),
+                    repository=_SAMPLE_REPO,
+                    branch=_SAMPLE_BRANCH,
+                    scanner_version=_SAMPLE_SCANNER_VERSION,
+                ),
             )
 
 
@@ -272,10 +328,12 @@ def test_send_email_succeeds_with_mock_smtp() -> None:
     with patch("smtplib.SMTP", return_value=mock_smtp):
         send_email_notification(
             config,
-            _make_dirty_result(),
-            _SAMPLE_REPO,
-            _SAMPLE_BRANCH,
-            _SAMPLE_SCANNER_VERSION,
+            NotificationRequest(
+                scan_result=_make_dirty_result(),
+                repository=_SAMPLE_REPO,
+                branch=_SAMPLE_BRANCH,
+                scanner_version=_SAMPLE_SCANNER_VERSION,
+            ),
         )
 
 
@@ -312,87 +370,125 @@ def test_get_smtp_credentials_reads_from_env(monkeypatch: pytest.MonkeyPatch) ->
 def test_generic_payload_contains_event_field() -> None:
     """Generic webhook payload must include an 'event' field."""
     scan_result = _make_dirty_result()
-    summary = _build_webhook_scan_summary(
-        scan_result, _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+    scan_summary = _derive_webhook_scan_summary(
+        NotificationRequest(
+            scan_result=scan_result,
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
     )
-    payload = _build_generic_payload(summary, scan_result)
+    payload = _build_generic_payload(scan_summary)
     assert "event" in payload
 
 
 def test_generic_payload_contains_findings_count() -> None:
     """Generic webhook payload findings_count must match scan result."""
     scan_result = _make_dirty_result()
-    summary = _build_webhook_scan_summary(
-        scan_result, _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+    scan_summary = _derive_webhook_scan_summary(
+        NotificationRequest(
+            scan_result=scan_result,
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
     )
-    payload = _build_generic_payload(summary, scan_result)
+    payload = _build_generic_payload(scan_summary)
     assert payload["findings_count"] == len(scan_result.findings)
 
 
 def test_generic_payload_no_raw_phi_values() -> None:
     """Generic payload findings must not include code_context or remediation_hint."""
     scan_result = _make_dirty_result()
-    summary = _build_webhook_scan_summary(
-        scan_result, _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+    scan_summary = _derive_webhook_scan_summary(
+        NotificationRequest(
+            scan_result=scan_result,
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
     )
-    payload = _build_generic_payload(summary, scan_result)
+    payload = _build_generic_payload(scan_summary)
     for finding_payload in payload.get("findings", []):
-        assert "code_context" not in finding_payload
-        assert "remediation_hint" not in finding_payload
+        assert "code_context" not in finding_payload  # never serialised — PHI constraint
+        assert "remediation_hint" not in finding_payload  # never serialised — PHI constraint
 
 
 def test_generic_payload_contains_value_hash_not_raw_value() -> None:
     """Generic payload findings must contain value_hash (not the raw PHI value)."""
     scan_result = _make_dirty_result()
-    summary = _build_webhook_scan_summary(
-        scan_result, _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+    scan_summary = _derive_webhook_scan_summary(
+        NotificationRequest(
+            scan_result=scan_result,
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
     )
-    payload = _build_generic_payload(summary, scan_result)
+    payload = _build_generic_payload(scan_summary)
     for finding_payload in payload.get("findings", []):
-        assert "value_hash" in finding_payload
+        assert _FINDING_KEY_VALUE_HASH in finding_payload
 
 
 def test_slack_payload_has_attachments_key() -> None:
     """Slack payload must use the 'attachments' key for Block Kit compatibility."""
-    summary = _build_webhook_scan_summary(
-        _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+    scan_summary = _derive_webhook_scan_summary(
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
     )
-    payload = _build_slack_payload(summary)
+    payload = _build_slack_payload(scan_summary)
     assert "attachments" in payload
 
 
 def test_teams_payload_has_message_card_type() -> None:
     """Teams payload must have '@type': 'MessageCard'."""
-    summary = _build_webhook_scan_summary(
-        _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+    scan_summary = _derive_webhook_scan_summary(
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
     )
-    payload = _build_teams_payload(summary)
+    payload = _build_teams_payload(scan_summary)
     assert payload.get("@type") == "MessageCard"
 
 
-def test_build_webhook_scan_summary_derives_fields_correctly() -> None:
-    """_build_webhook_scan_summary must derive all metadata fields from ScanResult."""
+def test_derive_webhook_scan_summary_derives_fields_correctly() -> None:
+    """_derive_webhook_scan_summary must derive all metadata fields from ScanResult."""
     scan_result = _make_dirty_result()
-    summary = _build_webhook_scan_summary(
-        scan_result, _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+    scan_summary = _derive_webhook_scan_summary(
+        NotificationRequest(
+            scan_result=scan_result,
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
     )
-    assert summary.is_clean == scan_result.is_clean
-    assert summary.risk_level_label == scan_result.risk_level.value.upper()
-    assert summary.findings_count == len(scan_result.findings)
-    assert summary.files_scanned == scan_result.files_scanned
-    assert summary.repo == _SAMPLE_REPO
-    assert summary.branch == _SAMPLE_BRANCH
-    assert summary.scanner_version == _SAMPLE_SCANNER_VERSION
+    assert scan_summary.is_clean == scan_result.is_clean
+    assert scan_summary.risk_level_label == scan_result.risk_level.value.upper()
+    assert scan_summary.risk_level_value == scan_result.risk_level.value
+    assert scan_summary.findings_count == len(scan_result.findings)
+    assert scan_summary.files_scanned == scan_result.files_scanned
+    assert scan_summary.repository == _SAMPLE_REPO
+    assert scan_summary.branch == _SAMPLE_BRANCH
+    assert scan_summary.scanner_version == _SAMPLE_SCANNER_VERSION
 
 
 def test_build_webhook_payload_dispatches_slack() -> None:
     """_build_webhook_payload must produce a Slack payload for WebhookType.SLACK."""
     payload = _build_webhook_payload(
         WebhookType.SLACK,
-        _make_dirty_result(),
-        _SAMPLE_REPO,
-        _SAMPLE_BRANCH,
-        _SAMPLE_SCANNER_VERSION,
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        ),
     )
     assert "attachments" in payload
 
@@ -401,10 +497,12 @@ def test_build_webhook_payload_dispatches_teams() -> None:
     """_build_webhook_payload must produce a Teams payload for WebhookType.TEAMS."""
     payload = _build_webhook_payload(
         WebhookType.TEAMS,
-        _make_dirty_result(),
-        _SAMPLE_REPO,
-        _SAMPLE_BRANCH,
-        _SAMPLE_SCANNER_VERSION,
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        ),
     )
     assert payload.get("@type") == "MessageCard"
 
@@ -413,10 +511,12 @@ def test_build_webhook_payload_dispatches_generic() -> None:
     """_build_webhook_payload must produce a generic payload for WebhookType.GENERIC."""
     payload = _build_webhook_payload(
         WebhookType.GENERIC,
-        _make_dirty_result(),
-        _SAMPLE_REPO,
-        _SAMPLE_BRANCH,
-        _SAMPLE_SCANNER_VERSION,
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        ),
     )
     assert "event" in payload
 
@@ -431,7 +531,13 @@ def test_send_webhook_raises_when_url_empty() -> None:
     config = NotificationConfig(is_webhook_enabled=True, webhook_url="")
     with pytest.raises(NotificationError):
         send_webhook_notification(
-            config, _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+            config,
+            NotificationRequest(
+                scan_result=_make_dirty_result(),
+                repository=_SAMPLE_REPO,
+                branch=_SAMPLE_BRANCH,
+                scanner_version=_SAMPLE_SCANNER_VERSION,
+            ),
         )
 
 
@@ -449,10 +555,12 @@ def test_send_webhook_succeeds_on_http_200() -> None:
     ):
         send_webhook_notification(
             config,
-            _make_dirty_result(),
-            _SAMPLE_REPO,
-            _SAMPLE_BRANCH,
-            _SAMPLE_SCANNER_VERSION,
+            NotificationRequest(
+                scan_result=_make_dirty_result(),
+                repository=_SAMPLE_REPO,
+                branch=_SAMPLE_BRANCH,
+                scanner_version=_SAMPLE_SCANNER_VERSION,
+            ),
         )
 
 
@@ -466,10 +574,12 @@ def test_send_webhook_raises_after_all_retries_fail() -> None:
         with pytest.raises(NotificationError):
             send_webhook_notification(
                 config,
-                _make_dirty_result(),
-                _SAMPLE_REPO,
-                _SAMPLE_BRANCH,
-                _SAMPLE_SCANNER_VERSION,
+                NotificationRequest(
+                    scan_result=_make_dirty_result(),
+                    repository=_SAMPLE_REPO,
+                    branch=_SAMPLE_BRANCH,
+                    scanner_version=_SAMPLE_SCANNER_VERSION,
+                ),
             )
 
 
@@ -480,10 +590,12 @@ def test_send_webhook_raises_on_network_error() -> None:
         with pytest.raises(NotificationError):
             send_webhook_notification(
                 config,
-                _make_dirty_result(),
-                _SAMPLE_REPO,
-                _SAMPLE_BRANCH,
-                _SAMPLE_SCANNER_VERSION,
+                NotificationRequest(
+                    scan_result=_make_dirty_result(),
+                    repository=_SAMPLE_REPO,
+                    branch=_SAMPLE_BRANCH,
+                    scanner_version=_SAMPLE_SCANNER_VERSION,
+                ),
             )
 
 
@@ -503,10 +615,12 @@ def test_send_webhook_retries_on_failure() -> None:
         with pytest.raises(NotificationError):
             send_webhook_notification(
                 config,
-                _make_dirty_result(),
-                _SAMPLE_REPO,
-                _SAMPLE_BRANCH,
-                _SAMPLE_SCANNER_VERSION,
+                NotificationRequest(
+                    scan_result=_make_dirty_result(),
+                    repository=_SAMPLE_REPO,
+                    branch=_SAMPLE_BRANCH,
+                    scanner_version=_SAMPLE_SCANNER_VERSION,
+                ),
             )
         assert mock_post.call_count == 3
 
@@ -694,7 +808,13 @@ def test_send_webhook_rejects_http_url() -> None:
     )
     with pytest.raises(NotificationError, match="https"):
         send_webhook_notification(
-            config, _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+            config,
+            NotificationRequest(
+                scan_result=_make_dirty_result(),
+                repository=_SAMPLE_REPO,
+                branch=_SAMPLE_BRANCH,
+                scanner_version=_SAMPLE_SCANNER_VERSION,
+            ),
         )
 
 
@@ -706,7 +826,13 @@ def test_send_webhook_rejects_private_ip_url() -> None:
     )
     with pytest.raises(NotificationError, match="blocked"):
         send_webhook_notification(
-            config, _make_dirty_result(), _SAMPLE_REPO, _SAMPLE_BRANCH, _SAMPLE_SCANNER_VERSION
+            config,
+            NotificationRequest(
+                scan_result=_make_dirty_result(),
+                repository=_SAMPLE_REPO,
+                branch=_SAMPLE_BRANCH,
+                scanner_version=_SAMPLE_SCANNER_VERSION,
+            ),
         )
 
 
@@ -718,10 +844,12 @@ def test_send_webhook_rejects_private_ip_url() -> None:
 def test_email_html_body_escapes_branch_name() -> None:
     """_build_email_html_body must HTML-escape the branch name."""
     html_body = _build_email_html_body(
-        _make_dirty_result(),
-        _SAMPLE_REPO,
-        _SCRIPT_INJECTION_BRANCH,
-        _SAMPLE_SCANNER_VERSION,
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SAMPLE_REPO,
+            branch=_SCRIPT_INJECTION_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
     )
     assert "<script>" not in html_body
     assert "&lt;script&gt;" in html_body
@@ -730,10 +858,12 @@ def test_email_html_body_escapes_branch_name() -> None:
 def test_email_html_body_escapes_repo_name() -> None:
     """_build_email_html_body must HTML-escape the repo name."""
     html_body = _build_email_html_body(
-        _make_dirty_result(),
-        _SCRIPT_INJECTION_REPO,
-        _SAMPLE_BRANCH,
-        _SAMPLE_SCANNER_VERSION,
+        NotificationRequest(
+            scan_result=_make_dirty_result(),
+            repository=_SCRIPT_INJECTION_REPO,
+            branch=_SAMPLE_BRANCH,
+            scanner_version=_SAMPLE_SCANNER_VERSION,
+        )
     )
     assert "<b>" not in html_body
     assert "&lt;b&gt;" in html_body
