@@ -113,7 +113,6 @@ _WEBHOOK_DNS_BLOCKED_ADDRESS_ERROR: str = (
 # SSRF validation, preventing DNS rebinding between validation and request.
 _PINNED_HOST_HEADER: str = "Host"
 _CONTENT_TYPE_HEADER: str = "Content-Type"
-_URL_REWRITE_NO_HOSTNAME_ERROR: str = "cannot rewrite URL hostname: no parseable hostname in URL"
 _WEBHOOK_BUILD_NO_HOSTNAME_ERROR: str = "cannot build pinned request: URL has no parseable hostname"
 _IPV6_ADDRESS_COLON: str = ":"
 _IPV6_NETLOC_BRACKET_TEMPLATE: str = "[{hostname}]"
@@ -800,8 +799,8 @@ class _WebhookPostRequest:
     pinned_ip: str | None
 
 
-def _netloc_host_segment(hostname: str) -> str:
-    """Return hostname as it appears in a URL netloc.
+def _format_netloc_host_segment(hostname: str) -> str:
+    """Return hostname formatted for insertion into a URL netloc string.
 
     IPv6 addresses must be bracketed in netloc (e.g. ``[2001:db8::1]``);
     IPv4 addresses and DNS names are used as-is.
@@ -817,7 +816,7 @@ def _netloc_host_segment(hostname: str) -> str:
     return hostname
 
 
-def _rewrite_url_hostname_to_ip(url: str, pinned_ip: str) -> str:
+def _rewrite_url_hostname_to_ip(url: str, pinned_ip: str, original_hostname: str) -> str:
     """Return ``url`` with its hostname replaced by ``pinned_ip``.
 
     Reconstructs the netloc from parsed parts (host + port) rather than
@@ -831,21 +830,20 @@ def _rewrite_url_hostname_to_ip(url: str, pinned_ip: str) -> str:
     Args:
         url: Original webhook URL.
         pinned_ip: IP address string returned by ``_validate_webhook_url``.
+        original_hostname: Pre-parsed hostname from ``url`` (avoids a second
+            ``urlparse`` call in the caller that already holds this value).
 
     Returns:
         URL with hostname replaced by ``pinned_ip``.
-
-    Raises:
-        NotificationError: If the URL has no parseable hostname.
     """
-    parsed = urlparse(url)
-    if not parsed.hostname:
-        raise NotificationError(_URL_REWRITE_NO_HOSTNAME_ERROR)
-    pinned_netloc_host = _netloc_host_segment(pinned_ip)
+    parsed_webhook_url = urlparse(url)
+    pinned_netloc_host = _format_netloc_host_segment(pinned_ip)
     port_segment = (
-        _NETLOC_PORT_TEMPLATE.format(port=parsed.port) if parsed.port else _EMPTY_PORT_SEGMENT
+        _NETLOC_PORT_TEMPLATE.format(port=parsed_webhook_url.port)
+        if parsed_webhook_url.port
+        else _EMPTY_PORT_SEGMENT
     )
-    return urlunparse(parsed._replace(netloc=f"{pinned_netloc_host}{port_segment}"))
+    return urlunparse(parsed_webhook_url._replace(netloc=f"{pinned_netloc_host}{port_segment}"))
 
 
 def _build_pinned_webhook_request(url: str, pinned_ip: str | None) -> _PinnedWebhookRequest:
@@ -870,12 +868,12 @@ def _build_pinned_webhook_request(url: str, pinned_ip: str | None) -> _PinnedWeb
             target_url=url,
             headers=MappingProxyType({_CONTENT_TYPE_HEADER: _WEBHOOK_CONTENT_TYPE}),
         )
-    parsed = urlparse(url)
-    original_hostname = parsed.hostname
+    parsed_webhook_url = urlparse(url)
+    original_hostname = parsed_webhook_url.hostname
     if not original_hostname:
         raise NotificationError(_WEBHOOK_BUILD_NO_HOSTNAME_ERROR)
     return _PinnedWebhookRequest(
-        target_url=_rewrite_url_hostname_to_ip(url, pinned_ip),
+        target_url=_rewrite_url_hostname_to_ip(url, pinned_ip, original_hostname),
         headers=MappingProxyType(
             {
                 _CONTENT_TYPE_HEADER: _WEBHOOK_CONTENT_TYPE,
