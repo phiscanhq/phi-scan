@@ -120,7 +120,9 @@ _NETLOC_PORT_TEMPLATE: str = ":{port}"
 
 # IP networks blocked by SSRF protection when is_private_webhook_url_allowed=False.
 # Covers RFC1918 private ranges, link-local, loopback, CGNAT, cloud metadata,
-# and IPv6 equivalents. Addresses not in these ranges are permitted.
+# and IPv6 equivalents. Addresses not in these ranges are permitted unless
+# they are also caught by the built-in property checks in
+# ``_is_ip_address_blocked`` (unspecified, multicast, reserved).
 _BLOCKED_IP_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
     ipaddress.ip_network("10.0.0.0/8"),  # phi-scan:ignore
     ipaddress.ip_network("172.16.0.0/12"),  # phi-scan:ignore
@@ -661,16 +663,57 @@ def _build_webhook_payload(
     return _build_generic_payload(scan_summary)
 
 
+def _normalise_ip_address(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    """Return the canonical form of an IP address for SSRF checks.
+
+    IPv4-mapped IPv6 addresses (``::ffff:x.y.z.w``) are unmapped to their
+    IPv4 form so the IPv4 blocklist applies — otherwise a DNS record of
+    ``::ffff:127.0.0.1`` would bypass the ``127.0.0.0/8`` rule by arriving
+    as IPv6. All other addresses are returned unchanged.
+    """
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    return ip
+
+
+def _is_ip_address_blocked(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    """Return True when the address falls in any SSRF-blocked range.
+
+    Callers must pass the address through ``_normalise_ip_address`` first so
+    IPv4-mapped IPv6 values are compared as IPv4.
+
+    Blocks three categories on top of the enumerated ``_BLOCKED_IP_NETWORKS``:
+      * ``is_unspecified`` — ``0.0.0.0`` and ``::``, which several operating
+        systems route implicitly to loopback.
+      * ``is_multicast`` — ``224.0.0.0/4`` and ``ff00::/8``; never a valid
+        webhook destination.
+      * ``is_reserved`` — IPv4 ``240.0.0.0/4`` (includes the limited
+        broadcast address ``255.255.255.255``).
+    """
+    if ip.is_unspecified or ip.is_multicast or ip.is_reserved:
+        return True
+    return any(ip in network for network in _BLOCKED_IP_NETWORKS)
+
+
 def _resolve_hostname_addresses(  # phi-scan:ignore
     dns_host: str,  # phi-scan:ignore
 ) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:  # phi-scan:ignore
-    """Resolve a hostname to all of its IP addresses.
+    """Resolve a hostname to all of its normalised IP addresses.
+
+    Each address returned by ``socket.getaddrinfo`` is run through
+    ``_normalise_ip_address`` so IPv4-mapped IPv6 values collapse to their
+    IPv4 form before any SSRF check sees them.
 
     Args:
         dns_host: The DNS hostname to resolve.
 
     Returns:
-        List of resolved IPv4Address or IPv6Address objects.
+        List of resolved IPv4Address or IPv6Address objects, IPv4-mapped
+        IPv6 addresses unmapped to IPv4.
 
     Raises:
         NotificationError: If the hostname cannot be resolved.
@@ -685,7 +728,7 @@ def _resolve_hostname_addresses(  # phi-scan:ignore
             )
         ) from error
     return [  # phi-scan:ignore
-        ipaddress.ip_address(sockaddr[0])  # phi-scan:ignore
+        _normalise_ip_address(ipaddress.ip_address(sockaddr[0]))  # phi-scan:ignore
         for _, _, _, _, sockaddr in address_infos
     ]
 
@@ -704,7 +747,7 @@ def _reject_ssrf_resolved_addresses(  # phi-scan:ignore
         NotificationError: If any address falls in a blocked range.
     """
     for ip in candidate_ips:  # phi-scan:ignore
-        if any(ip in network for network in _BLOCKED_IP_NETWORKS):  # phi-scan:ignore
+        if _is_ip_address_blocked(ip):  # phi-scan:ignore
             raise NotificationError(
                 _WEBHOOK_DNS_BLOCKED_ADDRESS_ERROR.format(
                     hostname_hash=compute_value_hash(dns_host),  # phi-scan:ignore
@@ -759,15 +802,17 @@ def _validate_webhook_url(
     if is_private_webhook_url_allowed:
         return None
     try:
-        address = ipaddress.ip_address(hostname)  # phi-scan:ignore
+        parsed_literal_ip = ipaddress.ip_address(hostname)  # phi-scan:ignore
     except ValueError:
         resolved_addresses = _resolve_hostname_addresses(hostname)  # phi-scan:ignore
         _reject_ssrf_resolved_addresses(hostname, resolved_addresses)
         return str(resolved_addresses[0])  # phi-scan:ignore
-    if any(address in network for network in _BLOCKED_IP_NETWORKS):  # phi-scan:ignore
+    literal_ip = _normalise_ip_address(parsed_literal_ip)  # phi-scan:ignore
+    if _is_ip_address_blocked(literal_ip):  # phi-scan:ignore
         raise NotificationError(
             _WEBHOOK_PRIVATE_IP_ERROR.format(
-                url_hash=compute_value_hash(url), address_hash=compute_value_hash(str(address))
+                url_hash=compute_value_hash(url),
+                address_hash=compute_value_hash(str(literal_ip)),  # phi-scan:ignore
             )
         )
     return None
