@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 import pathspec
 import typer
 from rich.live import Live
+from rich.progress import Progress, TaskID
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -127,6 +129,7 @@ from phi_scan.output import (
 )
 from phi_scan.report import generate_html_report, generate_pdf_report
 from phi_scan.scanner import (
+    MAX_WORKER_COUNT,
     build_scan_result,
     collect_scan_targets,
     execute_scan,
@@ -359,11 +362,28 @@ _SCAN_UPLOAD_SARIF_HELP: str = (
     "Requires --output sarif and GITHUB_TOKEN. "
     "Each finding appears as an inline annotation on the exact line in the PR diff."
 )
+_SCAN_WORKERS_HELP: str = (
+    f"Number of worker threads for parallel file scanning. Default 1 (sequential). "
+    f"Values above 1 enable concurrent scanning up to {MAX_WORKER_COUNT}. "
+    "Output ordering is deterministic regardless of thread completion order."
+)
 
 # Maximum characters of a file path shown in the progress bar description column.
 # Longer paths are truncated with a leading ellipsis so the bar layout stays stable.
 _PROGRESS_FILENAME_MAX_CHARS: int = 38
 _PROGRESS_FILENAME_ELLIPSIS: str = "…"
+# Label shown in the progress bar description column when parallel scanning is active.
+# Replaces the per-file name shown in sequential mode (multiple files run simultaneously
+# so a single filename would be misleading).
+_PARALLEL_SCAN_PROGRESS_LABEL: str = "scanning..."
+# Thread name prefix used by the CLI-side ThreadPoolExecutor (progress bar path).
+_CLI_PARALLEL_THREAD_NAME_PREFIX: str = "phi-scan-worker"
+# Default and minimum worker count accepted by the --workers option.
+_DEFAULT_WORKER_COUNT: int = 1
+_MIN_WORKER_COUNT: int = 1
+# Error messages for out-of-range --workers values.
+_WORKERS_BELOW_MINIMUM_ERROR: str = f"--workers must be at least {_MIN_WORKER_COUNT}"
+_WORKERS_ABOVE_MAXIMUM_ERROR: str = f"--workers must not exceed {MAX_WORKER_COUNT}"
 
 # ---------------------------------------------------------------------------
 # Error and warning messages
@@ -567,6 +587,33 @@ class _ScanPhaseOptions:
     should_use_baseline: bool = False
 
 
+@dataclass(frozen=True)
+class _ScanExecutionOptions:
+    """Execution parameters threaded from the scan command into the scan loop.
+
+    Bundles worker_count and should_show_progress so _execute_scan_with_progress
+    stays within the three-argument limit required by CLAUDE.md.
+    """
+
+    worker_count: int = _DEFAULT_WORKER_COUNT
+    should_show_progress: bool = False
+
+
+@dataclass
+class _ParallelProgressScan:
+    """Arguments for _scan_files_with_progress and its sequential/parallel sub-helpers.
+
+    Bundles all five inputs required by the progress-bar scan path into a single
+    object so each helper stays within the three-argument limit.
+    """
+
+    scan_targets: list[Path]
+    config: ScanConfig
+    worker_count: int
+    progress: Progress
+    task_id: TaskID
+
+
 def _configure_logging(log_level: str, log_file: Path | None, is_quiet: bool) -> None:
     """Apply logging configuration from CLI flags.
 
@@ -657,10 +704,91 @@ def _truncate_filename_for_progress(file_path: Path) -> str:
     return _PROGRESS_FILENAME_ELLIPSIS + path_string[-_PROGRESS_FILENAME_MAX_CHARS:]
 
 
+def _validate_worker_count(worker_count: int) -> None:
+    """Raise typer.BadParameter if worker_count is outside the permitted range.
+
+    Args:
+        worker_count: Value supplied by the --workers CLI option.
+
+    Raises:
+        typer.BadParameter: If worker_count < _MIN_WORKER_COUNT or > MAX_WORKER_COUNT.
+    """
+    if worker_count < _MIN_WORKER_COUNT:
+        raise typer.BadParameter(_WORKERS_BELOW_MINIMUM_ERROR)
+    if worker_count > MAX_WORKER_COUNT:
+        raise typer.BadParameter(_WORKERS_ABOVE_MAXIMUM_ERROR)
+
+
+def _scan_files_sequential_with_progress(
+    scan: _ParallelProgressScan,
+) -> list[ScanFinding]:
+    """Scan files one at a time, advancing the progress bar after each file.
+
+    Args:
+        scan: Bundled scan targets, config, and progress bar state.
+
+    Returns:
+        All findings in scan_targets order.
+    """
+    all_findings: list[ScanFinding] = []
+    for file_path in scan.scan_targets:
+        progress_label = _truncate_filename_for_progress(file_path)
+        scan.progress.update(scan.task_id, description=progress_label, advance=1)
+        all_findings.extend(scan_file(file_path, scan.config))
+    return all_findings
+
+
+def _scan_files_parallel_with_progress(
+    scan: _ParallelProgressScan,
+) -> list[ScanFinding]:
+    """Scan files concurrently, advancing the progress bar as each file completes.
+
+    Uses as_completed() so the progress bar fires on actual completion rather than
+    submission order. Results are re-sorted by original scan_targets index before
+    returning to ensure deterministic output ordering.
+
+    Args:
+        scan: Bundled scan targets, config, worker count, and progress bar state.
+
+    Returns:
+        All findings in scan_targets order.
+    """
+    indexed_results: dict[int, list[ScanFinding]] = {}
+    future_to_index: dict[Future[list[ScanFinding]], int] = {}
+    with ThreadPoolExecutor(
+        max_workers=scan.worker_count,
+        thread_name_prefix=_CLI_PARALLEL_THREAD_NAME_PREFIX,
+    ) as executor:
+        for index, file_path in enumerate(scan.scan_targets):
+            future_to_index[executor.submit(scan_file, file_path, scan.config)] = index
+        for completed_future in as_completed(future_to_index):
+            original_index = future_to_index[completed_future]
+            indexed_results[original_index] = completed_future.result()
+            scan.progress.update(scan.task_id, description=_PARALLEL_SCAN_PROGRESS_LABEL, advance=1)
+    ordered_per_file = [indexed_results[i] for i in range(len(scan.scan_targets))]
+    return [finding for file_findings in ordered_per_file for finding in file_findings]
+
+
+def _scan_files_with_progress(
+    scan: _ParallelProgressScan,
+) -> list[ScanFinding]:
+    """Dispatch to sequential or parallel progress scanning based on worker_count.
+
+    Args:
+        scan: Bundled scan targets, config, worker count, and progress bar state.
+
+    Returns:
+        All findings in scan_targets order.
+    """
+    if scan.worker_count > _MIN_WORKER_COUNT:
+        return _scan_files_parallel_with_progress(scan)
+    return _scan_files_sequential_with_progress(scan)
+
+
 def _execute_scan_with_progress(
     scan_targets: list[Path],
     config: ScanConfig,
-    should_show_progress: bool,
+    execution_options: _ScanExecutionOptions,
 ) -> ScanResult:
     """Run the scan loop, showing a Rich progress bar when should_show_progress is True.
 
@@ -670,20 +798,23 @@ def _execute_scan_with_progress(
     Args:
         scan_targets: Files to scan, as returned by _resolve_scan_targets.
         config: Active scan configuration.
-        should_show_progress: Show the Rich progress bar when True.
+        execution_options: Worker count and progress bar visibility settings.
 
     Returns:
         Aggregated ScanResult for all scanned files.
     """
-    if not should_show_progress:
-        return execute_scan(scan_targets, config)
-    all_findings: list[ScanFinding] = []
+    if not execution_options.should_show_progress:
+        return execute_scan(scan_targets, config, execution_options.worker_count)
     scan_start = time.monotonic()
     with create_scan_progress(total_files=len(scan_targets)) as (progress, task_id):
-        for file_path in scan_targets:
-            progress_label = _truncate_filename_for_progress(file_path)
-            progress.update(task_id, description=progress_label, advance=1)
-            all_findings.extend(scan_file(file_path, config))
+        parallel_scan = _ParallelProgressScan(
+            scan_targets=scan_targets,
+            config=config,
+            worker_count=execution_options.worker_count,
+            progress=progress,
+            task_id=task_id,
+        )
+        all_findings = _scan_files_with_progress(parallel_scan)
     scan_duration = time.monotonic() - scan_start
     return build_scan_result(tuple(all_findings), len(scan_targets), scan_duration)
 
@@ -1544,6 +1675,9 @@ def scan(
     should_upload_sarif: Annotated[
         bool, typer.Option("--upload-sarif", help=_SCAN_UPLOAD_SARIF_HELP)
     ] = False,
+    worker_count: Annotated[
+        int, typer.Option("--workers", help=_SCAN_WORKERS_HELP)
+    ] = _DEFAULT_WORKER_COUNT,
 ) -> None:
     """Scan a directory or file for PHI/PII.
 
@@ -1554,6 +1688,7 @@ def scan(
     table) is suppressed for serialised formats (json/csv/sarif) to keep stdout
     clean for pipe and file consumption.
     """
+    _validate_worker_count(worker_count)
     effective_log_level = _LOG_LEVEL_DEBUG if is_verbose else log_level
     _configure_logging(effective_log_level, log_file, is_quiet)
     output_format_enum = _resolve_output_format(output_format)
@@ -1572,7 +1707,11 @@ def scan(
     # framework_annotations depend on scan_result.findings. Any error raised by
     # _execute_scan_with_progress will propagate before output_options is configured,
     # which is acceptable — output_options has no effect until _emit_scan_output is called.
-    scan_result = _execute_scan_with_progress(scan_targets, scan_config, is_rich_mode)
+    execution_options = _ScanExecutionOptions(
+        worker_count=worker_count,
+        should_show_progress=is_rich_mode,
+    )
+    scan_result = _execute_scan_with_progress(scan_targets, scan_config, execution_options)
     framework_annotations = (
         annotate_findings(scan_result.findings, enabled_frameworks) if enabled_frameworks else None
     )
