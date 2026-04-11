@@ -925,9 +925,12 @@ def _post_with_retry(post_request: _WebhookPostRequest) -> None:
                 post_request.retry_count,
                 request_error,
             )
-    raise NotificationError(
+    final_error = NotificationError(
         _WEBHOOK_SEND_ERROR.format(url=post_request.url, detail=last_error)
-    ) from last_error
+    )
+    if last_error is not None:
+        raise final_error from last_error
+    raise final_error
 
 
 # ---------------------------------------------------------------------------
