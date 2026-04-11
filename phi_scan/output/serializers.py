@@ -150,7 +150,11 @@ def _serialize_finding_to_dict(finding: ScanFinding) -> dict[str, object]:
         A dict with string keys and JSON-serializable values.
     """
     return {
-        "file_path": str(finding.file_path),
+        # file_path uses POSIX separators so output is stable across runner OS —
+        # str(WindowsPath("src/a.py")) emits backslashes which would break
+        # cross-platform golden comparisons and downstream consumers (GitHub code
+        # scanning, GitLab code quality) that expect forward slashes.
+        "file_path": finding.file_path.as_posix(),
         "line_number": finding.line_number,
         "entity_type": finding.entity_type,
         "hipaa_category": finding.hipaa_category.value,
@@ -175,7 +179,7 @@ def _serialize_finding_to_csv_row(finding: ScanFinding) -> dict[str, object]:
         A dict whose keys match _CSV_FIELD_NAMES.
     """
     return {
-        "file_path": str(finding.file_path),
+        "file_path": finding.file_path.as_posix(),
         "line_number": finding.line_number,
         "entity_type": finding.entity_type,
         "hipaa_category": finding.hipaa_category.value,
@@ -275,7 +279,7 @@ def _build_sarif_location(finding: ScanFinding) -> dict[str, object]:
     return {
         "physicalLocation": {
             "artifactLocation": {
-                "uri": str(finding.file_path),
+                "uri": finding.file_path.as_posix(),
                 "uriBaseId": _SARIF_URI_BASE_ID,
             },
             "region": {"startLine": finding.line_number},
@@ -345,7 +349,7 @@ def _build_junit_failure_element(finding: ScanFinding) -> ElementTree.Element:
         },
     )
     failure.text = _JUNIT_FAILURE_TEXT_FORMAT.format(
-        file_path=finding.file_path,
+        file_path=finding.file_path.as_posix(),
         line_number=finding.line_number,
         hipaa_category=finding.hipaa_category.value,
         confidence=_JUNIT_CONFIDENCE_FORMAT.format(finding.confidence),
@@ -367,7 +371,7 @@ def _build_junit_testcase(finding: ScanFinding) -> ElementTree.Element:
         _JUNIT_TESTCASE_TAG,
         {
             "name": _JUNIT_TESTCASE_NAME_FORMAT.format(
-                file_path=finding.file_path,
+                file_path=finding.file_path.as_posix(),
                 line_number=finding.line_number,
                 entity_type=finding.entity_type,
             ),
@@ -405,8 +409,11 @@ def _compute_finding_fingerprint(finding: ScanFinding) -> str:
         64-character lowercase hex digest, stable across runs for the same
         file/line/entity-type combination.
     """
+    # file_path uses POSIX form so the fingerprint is identical across runner
+    # OS — otherwise Windows and Linux CI would produce different dedup keys
+    # for the same finding, breaking cross-platform code-quality merging.
     fingerprint_input = _FINDING_FINGERPRINT_INPUT_FORMAT.format(
-        file_path=finding.file_path,
+        file_path=finding.file_path.as_posix(),
         line_number=finding.line_number,
         entity_type=finding.entity_type,
     )
@@ -435,7 +442,7 @@ def _build_codequality_entry(finding: ScanFinding) -> dict[str, object]:
         "fingerprint": _compute_finding_fingerprint(finding),
         "severity": _SEVERITY_TO_CODEQUALITY[finding.severity],
         "location": {
-            "path": str(finding.file_path),
+            "path": finding.file_path.as_posix(),
             "lines": {"begin": finding.line_number},
         },
     }
@@ -445,7 +452,7 @@ def _build_gitlab_sast_location(finding: ScanFinding) -> dict[str, object]:
     """Build the location dict for a GitLab SAST vulnerability entry.
 
     PHI-safety: file_path is always relative — ScanFinding.__post_init__ rejects
-    absolute paths, so str(finding.file_path) is safe to serialize directly.
+    absolute paths, so finding.file_path.as_posix() is safe to serialize directly.
 
     Args:
         finding: The finding to extract location metadata from.
@@ -454,7 +461,7 @@ def _build_gitlab_sast_location(finding: ScanFinding) -> dict[str, object]:
         A location dict with file path and start/end line numbers.
     """
     return {
-        "file": str(finding.file_path),
+        "file": finding.file_path.as_posix(),
         "start_line": finding.line_number,
         "end_line": finding.line_number,
     }

@@ -115,6 +115,9 @@ _LOW_SEVERITY_CONFIDENCE: float = 0.65
 _FIXTURE_SCAN_DURATION: float = 0.0
 _FIXTURE_HASH_SEED_FORMAT: str = "phi-scan-golden:{entity_type}:{line_number}"
 
+_HISTOGRAM_INITIAL_COUNT: int = 0
+_HISTOGRAM_INCREMENT: int = 1
+
 
 def _compute_fixture_hash_digest(entity_type: str, line_number: int) -> str:
     """Return a deterministic SHA-256 hex digest for a fixture finding.
@@ -214,13 +217,13 @@ def _build_severity_counts_from_findings(
 ) -> MappingProxyType[SeverityLevel, int]:
     """Return an immutable severity-level histogram over findings."""
     counts: dict[SeverityLevel, int] = {
-        SeverityLevel.INFO: 0,
-        SeverityLevel.LOW: 0,
-        SeverityLevel.MEDIUM: 0,
-        SeverityLevel.HIGH: 0,
+        SeverityLevel.INFO: _HISTOGRAM_INITIAL_COUNT,
+        SeverityLevel.LOW: _HISTOGRAM_INITIAL_COUNT,
+        SeverityLevel.MEDIUM: _HISTOGRAM_INITIAL_COUNT,
+        SeverityLevel.HIGH: _HISTOGRAM_INITIAL_COUNT,
     }
     for finding in findings:
-        counts[finding.severity] += 1
+        counts[finding.severity] += _HISTOGRAM_INCREMENT
     return MappingProxyType(counts)
 
 
@@ -230,7 +233,8 @@ def _build_category_counts_from_findings(
     """Return an immutable PHI-category histogram over findings."""
     counts: dict[PhiCategory, int] = {}
     for finding in findings:
-        counts[finding.hipaa_category] = counts.get(finding.hipaa_category, 0) + 1
+        previous_count = counts.get(finding.hipaa_category, _HISTOGRAM_INITIAL_COUNT)
+        counts[finding.hipaa_category] = previous_count + _HISTOGRAM_INCREMENT
     return MappingProxyType(counts)
 
 
