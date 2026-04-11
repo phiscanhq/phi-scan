@@ -67,7 +67,7 @@ def _build_cyclonedx_command(requirements_path: Path) -> list[str]:
     return command
 
 
-def _generate_cyclonedx_document(command: list[str]) -> int:
+def _execute_cyclonedx_command(command: list[str]) -> int:
     audit_completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
     return audit_completed.returncode
 
@@ -87,7 +87,7 @@ def main() -> int:
         return _CYCLONEDX_FAILURE_EXIT_CODE
     command = _build_cyclonedx_command(requirements_path)
     log_command_invocation(command)
-    cyclonedx_exit_code = _generate_cyclonedx_document(command)
+    cyclonedx_exit_code = _execute_cyclonedx_command(command)
     if cyclonedx_exit_code != _SUCCESS_EXIT_CODE:
         print(
             f"pip-audit CycloneDX generation failed with exit code {cyclonedx_exit_code}.",

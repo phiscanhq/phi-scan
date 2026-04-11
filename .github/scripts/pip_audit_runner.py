@@ -71,6 +71,7 @@ _PIP_AUDIT_BASE_COMMAND: tuple[str, ...] = (
     "--strict",
 )
 _PIP_AUDIT_IGNORE_FLAG: str = "--ignore-vuln"
+_TOML_BINARY_READ_MODE: str = "rb"
 
 _POLICY_VIOLATION_EXIT_CODE: int = 2
 
@@ -85,7 +86,7 @@ def _load_ignore_entries() -> list[dict[str, object]]:
             f"{_IGNORE_FILE_NAME} is missing from the repository root. "
             "The file must exist even when empty; see docs/supply-chain.md."
         )
-    with _IGNORE_FILE_PATH.open("rb") as ignore_file:
+    with _IGNORE_FILE_PATH.open(_TOML_BINARY_READ_MODE) as ignore_file:
         parsed_document = tomllib.load(ignore_file)
     raw_entries = parsed_document.get(_IGNORED_ENTRIES_KEY, [])
     if not isinstance(raw_entries, list):
