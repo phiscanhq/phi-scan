@@ -189,7 +189,7 @@ class TestCsvDataRowFields:
         assert len(data_row) == len(_CSV_HEADERS_IN_ORDER)
 
     def test_data_row_file_path_matches_finding(self, data_row: list[str]) -> None:
-        assert data_row[_COL_FILE_PATH] == str(_TEST_FILE_PATH)
+        assert data_row[_COL_FILE_PATH] == _TEST_FILE_PATH.as_posix()
 
     def test_data_row_line_number_is_parseable_as_int(self, data_row: list[str]) -> None:
         line_number = int(data_row[_COL_LINE_NUMBER])
