@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "PhiScan",
+          "version": "<VERSION>",
+          "rules": [
+            {
+              "id": "us_ssn",
+              "name": "us_ssn",
+              "shortDescription": {
+                "text": "ssn"
+              },
+              "help": {
+                "text": "Replace with a synthetic SSN from the reserved 999 range.",
+                "markdown": "Replace with a synthetic SSN from the reserved 999 range."
+              }
+            },
+            {
+              "id": "email_address",
+              "name": "email_address",
+              "shortDescription": {
+                "text": "email"
+              },
+              "help": {
+                "text": "Use an example.com address from the RFC 2606 reserved list.",
+                "markdown": "Use an example.com address from the RFC 2606 reserved list."
+              }
+            },
+            {
+              "id": "phone_number",
+              "name": "phone_number",
+              "shortDescription": {
+                "text": "phone"
+              },
+              "help": {
+                "text": "Use a 555-0100 through 555-0199 fictional phone number.",
+                "markdown": "Use a 555-0100 through 555-0199 fictional phone number."
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "us_ssn",
+          "level": "error",
+          "message": {
+            "text": "ssn identifier detected by the regex layer (confidence: 0.95). Replace with a synthetic SSN from the reserved 999 range."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/a.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "email_address",
+          "level": "warning",
+          "message": {
+            "text": "email identifier detected by the regex layer (confidence: 0.75). Use an example.com address from the RFC 2606 reserved list."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/a.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 42
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "phone_number",
+          "level": "note",
+          "message": {
+            "text": "phone identifier detected by the regex layer (confidence: 0.65). Use a 555-0100 through 555-0199 fictional phone number."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/b.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

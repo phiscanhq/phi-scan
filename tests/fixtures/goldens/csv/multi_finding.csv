@@ -1,0 +1,4 @@
+file_path,line_number,entity_type,hipaa_category,confidence,severity,detection_layer,remediation_hint
+src/a.py,10,us_ssn,ssn,0.95,high,regex,Replace with a synthetic SSN from the reserved 999 range.
+src/a.py,42,email_address,email,0.75,medium,regex,Use an example.com address from the RFC 2606 reserved list.
+src/b.py,5,phone_number,phone,0.65,low,regex,Use a 555-0100 through 555-0199 fictional phone number.

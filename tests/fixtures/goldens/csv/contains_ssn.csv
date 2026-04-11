@@ -1,0 +1,2 @@
+file_path,line_number,entity_type,hipaa_category,confidence,severity,detection_layer,remediation_hint
+src/contains_ssn.py,10,us_ssn,ssn,0.95,high,regex,Replace with a synthetic SSN from the reserved 999 range.

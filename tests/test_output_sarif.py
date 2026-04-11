@@ -327,7 +327,7 @@ class TestSarifLocation:
     ) -> None:
         artifact_location: dict[str, object] = physical_location[_SARIF_ARTIFACT_LOCATION_KEY]  # type: ignore[assignment]
 
-        assert artifact_location[_SARIF_URI_KEY] == str(_TEST_FILE_PATH)
+        assert artifact_location[_SARIF_URI_KEY] == _TEST_FILE_PATH.as_posix()
 
     def test_artifact_location_uri_base_id_is_srcroot(
         self, physical_location: dict[str, object]

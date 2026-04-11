@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="phi-scan" tests="1" failures="1" errors="0" time="0.00">
+  <testcase name="src/contains_email.py:12 [email_address]" classname="email">
+    <failure message="[MEDIUM] PHI detected: email_address" type="PHIViolation">file: src/contains_email.py
+line: 12
+category: email
+confidence: 0.75
+remediation: Use an example.com address from the RFC 2606 reserved list.</failure>
+  </testcase>
+</testsuite>

@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="phi-scan" tests="1" failures="1" errors="0" time="0.00">
+  <testcase name="src/contains_ssn.py:10 [us_ssn]" classname="ssn">
+    <failure message="[HIGH] PHI detected: us_ssn" type="PHIViolation">file: src/contains_ssn.py
+line: 10
+category: ssn
+confidence: 0.95
+remediation: Replace with a synthetic SSN from the reserved 999 range.</failure>
+  </testcase>
+</testsuite>

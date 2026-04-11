@@ -1,0 +1,6 @@
+# Golden output fixtures — byte-exact comparison is the entire contract.
+# Disable line-ending normalization so CSV files (which use RFC 4180 CRLF)
+# round-trip through checkout/commit without being rewritten to LF. The
+# `-text` attribute leaves diff generation enabled so PR reviewers still
+# see golden drifts inline.
+tests/fixtures/goldens/** -text

@@ -1,0 +1,2 @@
+file_path,line_number,entity_type,hipaa_category,confidence,severity,detection_layer,remediation_hint
+src/contains_email.py,12,email_address,email,0.75,medium,regex,Use an example.com address from the RFC 2606 reserved list.

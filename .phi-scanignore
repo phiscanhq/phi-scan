@@ -161,9 +161,12 @@ phi_scan/
 # pattern names and detection concepts that match the scanner's own rules.
 # .gitignore comments reference PHI-adjacent concepts (credentials, hashes,
 # PHI values) that produce false positives against the quasi-identifier detector.
+# .gitattributes references RFC numbers ("RFC 4180") and file pattern globs
+# that trip the UNIQUE_ID + HEALTH_PLAN combination detector.
 .phi-scanner.yml
 .phi-scanignore
 .gitignore
+.gitattributes
 
 # Project root files — legal text, build scripts, and pre-commit configuration
 # contain word patterns (e.g. "coverage", "version", hook names) that trigger

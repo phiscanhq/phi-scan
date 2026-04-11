@@ -1,0 +1,29 @@
+{
+  "files_scanned": 1,
+  "files_with_findings": 1,
+  "scan_duration": 0.0,
+  "is_clean": false,
+  "risk_level": "moderate",
+  "severity_counts": {
+    "info": 0,
+    "low": 0,
+    "medium": 1,
+    "high": 0
+  },
+  "category_counts": {
+    "email": 1
+  },
+  "findings": [
+    {
+      "file_path": "src/contains_email.py",
+      "line_number": 12,
+      "entity_type": "email_address",
+      "hipaa_category": "email",
+      "confidence": 0.75,
+      "detection_layer": "regex",
+      "severity": "medium",
+      "value_hash": "e9eae1b532629258975ad50078eb400ddc9704d0bc31c8f8b7fe92c745368f22",
+      "remediation_hint": "Use an example.com address from the RFC 2606 reserved list."
+    }
+  ]
+}

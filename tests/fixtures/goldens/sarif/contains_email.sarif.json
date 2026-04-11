@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "PhiScan",
+          "version": "<VERSION>",
+          "rules": [
+            {
+              "id": "email_address",
+              "name": "email_address",
+              "shortDescription": {
+                "text": "email"
+              },
+              "help": {
+                "text": "Use an example.com address from the RFC 2606 reserved list.",
+                "markdown": "Use an example.com address from the RFC 2606 reserved list."
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "email_address",
+          "level": "warning",
+          "message": {
+            "text": "email identifier detected by the regex layer (confidence: 0.75). Use an example.com address from the RFC 2606 reserved list."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/contains_email.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

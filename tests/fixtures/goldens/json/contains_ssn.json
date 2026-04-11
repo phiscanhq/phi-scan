@@ -1,0 +1,29 @@
+{
+  "files_scanned": 1,
+  "files_with_findings": 1,
+  "scan_duration": 0.0,
+  "is_clean": false,
+  "risk_level": "high",
+  "severity_counts": {
+    "info": 0,
+    "low": 0,
+    "medium": 0,
+    "high": 1
+  },
+  "category_counts": {
+    "ssn": 1
+  },
+  "findings": [
+    {
+      "file_path": "src/contains_ssn.py",
+      "line_number": 10,
+      "entity_type": "us_ssn",
+      "hipaa_category": "ssn",
+      "confidence": 0.95,
+      "detection_layer": "regex",
+      "severity": "high",
+      "value_hash": "b00b8f6feba7154eb691d840fb19ef50cf91c1265a0e32ed6fdeba2f7f08557b",
+      "remediation_hint": "Replace with a synthetic SSN from the reserved 999 range."
+    }
+  ]
+}

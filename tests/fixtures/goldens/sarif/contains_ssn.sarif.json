@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "PhiScan",
+          "version": "<VERSION>",
+          "rules": [
+            {
+              "id": "us_ssn",
+              "name": "us_ssn",
+              "shortDescription": {
+                "text": "ssn"
+              },
+              "help": {
+                "text": "Replace with a synthetic SSN from the reserved 999 range.",
+                "markdown": "Replace with a synthetic SSN from the reserved 999 range."
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "us_ssn",
+          "level": "error",
+          "message": {
+            "text": "ssn identifier detected by the regex layer (confidence: 0.95). Replace with a synthetic SSN from the reserved 999 range."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/contains_ssn.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

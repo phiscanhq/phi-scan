@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="phi-scan" tests="3" failures="3" errors="0" time="0.00">
+  <testcase name="src/a.py:10 [us_ssn]" classname="ssn">
+    <failure message="[HIGH] PHI detected: us_ssn" type="PHIViolation">file: src/a.py
+line: 10
+category: ssn
+confidence: 0.95
+remediation: Replace with a synthetic SSN from the reserved 999 range.</failure>
+  </testcase>
+  <testcase name="src/a.py:42 [email_address]" classname="email">
+    <failure message="[MEDIUM] PHI detected: email_address" type="PHIViolation">file: src/a.py
+line: 42
+category: email
+confidence: 0.75
+remediation: Use an example.com address from the RFC 2606 reserved list.</failure>
+  </testcase>
+  <testcase name="src/b.py:5 [phone_number]" classname="phone">
+    <failure message="[LOW] PHI detected: phone_number" type="PHIViolation">file: src/b.py
+line: 5
+category: phone
+confidence: 0.65
+remediation: Use a 555-0100 through 555-0199 fictional phone number.</failure>
+  </testcase>
+</testsuite>
