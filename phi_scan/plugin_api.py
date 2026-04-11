@@ -144,7 +144,8 @@ class ScanFinding:
 
     def __post_init__(self) -> None:
         self._reject_invalid_entity_type()
-        self._reject_invalid_offsets()
+        self._reject_negative_start_offset()
+        self._reject_non_increasing_end_offset()
         self._reject_invalid_confidence()
 
     def _reject_invalid_entity_type(self) -> None:
@@ -157,21 +158,25 @@ class ScanFinding:
             )
         )
 
-    def _reject_invalid_offsets(self) -> None:
-        if self.start_offset < MIN_START_OFFSET:
-            raise ValueError(
-                _INVALID_START_OFFSET_ERROR.format(
-                    minimum=MIN_START_OFFSET,
-                    start_offset=self.start_offset,
-                )
+    def _reject_negative_start_offset(self) -> None:
+        if self.start_offset >= MIN_START_OFFSET:
+            return
+        raise ValueError(
+            _INVALID_START_OFFSET_ERROR.format(
+                minimum=MIN_START_OFFSET,
+                start_offset=self.start_offset,
             )
-        if self.end_offset <= self.start_offset:
-            raise ValueError(
-                _INVALID_END_OFFSET_ERROR.format(
-                    end_offset=self.end_offset,
-                    start_offset=self.start_offset,
-                )
+        )
+
+    def _reject_non_increasing_end_offset(self) -> None:
+        if self.end_offset > self.start_offset:
+            return
+        raise ValueError(
+            _INVALID_END_OFFSET_ERROR.format(
+                end_offset=self.end_offset,
+                start_offset=self.start_offset,
             )
+        )
 
     def _reject_invalid_confidence(self) -> None:
         if MIN_CONFIDENCE_SCORE <= self.confidence <= MAX_CONFIDENCE_SCORE:

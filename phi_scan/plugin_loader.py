@@ -21,7 +21,7 @@ returned here is the hand-off point for that later work.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from importlib.metadata import EntryPoint, entry_points
 
 from phi_scan.exceptions import PluginValidationError
@@ -61,8 +61,8 @@ _API_VERSION_MISMATCH_REASON: str = (
     "plugin_api_version {plugin_version!r} does not match host {host_version!r}"
 )
 _NAME_COLLISION_REASON: str = "name {name!r} already registered by a previous plugin"
-_IMPORT_FAILURE_REASON: str = "entry-point load failed: {error}"
-_INSTANTIATION_FAILURE_REASON: str = "recognizer constructor raised: {error}"
+_IMPORT_FAILURE_REASON: str = "entry-point load failed with {error_type}"
+_INSTANTIATION_FAILURE_REASON: str = "recognizer constructor raised {error_type}"
 
 _SKIPPED_PLUGIN_LOG_MESSAGE: str = "Skipping plugin %r from %s: %s"
 
@@ -116,8 +116,8 @@ class PluginRegistry:
             same deterministic order.
     """
 
-    loaded: tuple[LoadedPlugin, ...] = field(default_factory=tuple)
-    skipped: tuple[SkippedPlugin, ...] = field(default_factory=tuple)
+    loaded: tuple[LoadedPlugin, ...] = ()
+    skipped: tuple[SkippedPlugin, ...] = ()
 
 
 def load_plugin_registry() -> PluginRegistry:
@@ -207,7 +207,9 @@ def _load_entry_point_class(entry_point: EntryPoint) -> type[BaseRecognizer]:
     try:
         loaded_object = entry_point.load()
     except (ImportError, AttributeError) as load_error:
-        raise PluginValidationError(_IMPORT_FAILURE_REASON.format(error=load_error)) from load_error
+        raise PluginValidationError(
+            _IMPORT_FAILURE_REASON.format(error_type=type(load_error).__name__)
+        ) from load_error
     if not isinstance(loaded_object, type):
         raise PluginValidationError(_NOT_A_CLASS_REASON)
     if not issubclass(loaded_object, BaseRecognizer):
@@ -303,12 +305,16 @@ def _instantiate_recognizer(
     # plugin must never crash the scan or leak a raw traceback to the CLI. The
     # exception is re-raised as PluginValidationError so the loader records it
     # in the skipped list and continues. BaseException (SystemExit,
-    # KeyboardInterrupt) is deliberately not caught.
+    # KeyboardInterrupt) is deliberately not caught. Only the exception type
+    # name is embedded in the reason — the raw message is intentionally
+    # dropped because a plugin constructor may have read a value from the
+    # environment (env var, file, DB) that could incidentally contain PHI,
+    # and the reason string is logged at WARNING level.
     try:
         return recognizer_class()
     except Exception as init_error:  # noqa: BLE001 — see comment above
         raise PluginValidationError(
-            _INSTANTIATION_FAILURE_REASON.format(error=init_error)
+            _INSTANTIATION_FAILURE_REASON.format(error_type=type(init_error).__name__)
         ) from init_error
 
 

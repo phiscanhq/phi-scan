@@ -187,12 +187,15 @@ class _DuplicateEntityTypesRecognizer(BaseRecognizer):
         return []
 
 
+_CONSTRUCTOR_SENSITIVE_MESSAGE: str = "patient_name=Jane Doe MRN=12345"
+
+
 class _ConstructorRaisingRecognizer(BaseRecognizer):
     name = "constructor_raises"
     entity_types = ["BROKEN_TYPE"]
 
     def __init__(self) -> None:
-        raise RuntimeError("constructor intentionally raised in test")
+        raise RuntimeError(_CONSTRUCTOR_SENSITIVE_MESSAGE)
 
     def detect(self, line: str, context: ScanContext) -> list[ScanFinding]:
         del line, context
@@ -583,7 +586,23 @@ def test_recognizer_constructor_failure_is_skipped(
     )
     registry = load_plugin_registry()
     assert registry.loaded == ()
-    assert "constructor raised" in registry.skipped[0].reason
+    skipped_reason = registry.skipped[0].reason
+    assert "constructor raised" in skipped_reason
+    assert "RuntimeError" in skipped_reason
+
+
+def test_recognizer_constructor_error_message_is_not_leaked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_entry_points(
+        monkeypatch,
+        [_FakeEntryPoint(_ALPHA_ENTRY_POINT_NAME, _ConstructorRaisingRecognizer)],
+    )
+    registry = load_plugin_registry()
+    skipped_reason = registry.skipped[0].reason
+    assert _CONSTRUCTOR_SENSITIVE_MESSAGE not in skipped_reason
+    assert "Jane Doe" not in skipped_reason
+    assert "12345" not in skipped_reason
 
 
 # ---------------------------------------------------------------------------
