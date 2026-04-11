@@ -42,6 +42,14 @@ jobs:
           phi-scan --version
           phi-scan --help > /dev/null
 
+      - name: Generate CycloneDX SBOM (S10)
+        run: uv run --python 3.12 python .github/scripts/sbom_generator.py
+
+      - name: Sign wheel and sdist with Sigstore (S11)
+        uses: sigstore/gh-action-sigstore-python@v3.0.0
+        with:
+          inputs: ./dist/*.whl ./dist/*.tar.gz
+
       - name: Publish to PyPI
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
@@ -68,4 +76,7 @@ jobs:
           gh release create "$TAG_NAME" \
             --title "phi-scan $TAG_NAME" \
             --notes "${{ steps.changelog.outputs.notes }}" \
-            dist/*.whl dist/*.tar.gz
+            dist/*.whl \
+            dist/*.tar.gz \
+            dist/*.sigstore.json \
+            sbom.cyclonedx.json
