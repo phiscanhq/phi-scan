@@ -9,8 +9,7 @@ import time
 import zipfile
 import zlib
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
-from itertools import repeat
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -18,6 +17,8 @@ from typing import TYPE_CHECKING
 import pathspec
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from phi_scan.ai_review import AIUsageSummary
 
 from phi_scan.cache import FileCacheKey, get_cached_result, store_cached_result
@@ -432,27 +433,46 @@ def _run_parallel_scan(
     scan_targets: list[Path],
     config: ScanConfig,
     worker_count: int,
+    on_file_complete: Callable[[Path], None] | None = None,
 ) -> list[ScanFinding]:
     """Scan scan_targets concurrently using a bounded ThreadPoolExecutor.
 
-    Uses executor.map() with itertools.repeat() to broadcast config across all
-    calls without a closure. Results are returned in scan_targets order
-    regardless of thread completion order.
+    Uses ``submit`` + ``as_completed`` so per-file results become available in
+    completion order, enabling callers to advance a progress UI as each file
+    finishes. Results are re-sorted by original scan_targets index before
+    flattening, so the returned findings list is deterministic regardless of
+    thread completion order. Worker-thread exceptions are re-raised by
+    ``Future.result()`` and propagate to the caller.
 
     Args:
         scan_targets: Ordered list of files to scan.
         config: Scan configuration forwarded to each scan_file call.
         worker_count: Number of worker threads; must be > MIN_WORKER_COUNT.
+        on_file_complete: Optional callback invoked on the orchestrating thread
+            once per file, immediately after its ``scan_file`` result is
+            collected. Receives the completed file path. Any exception raised
+            by the callback propagates to the caller.
 
     Returns:
         All findings from all files, in scan_targets order.
     """
+    if not scan_targets:
+        return []
+    indexed_results: dict[int, list[ScanFinding]] = {}
+    future_to_index: dict[Future[list[ScanFinding]], int] = {}
     with ThreadPoolExecutor(
         max_workers=worker_count,
         thread_name_prefix=_PARALLEL_THREAD_NAME_PREFIX,
     ) as executor:
-        per_file_results = list(executor.map(scan_file, scan_targets, repeat(config)))
-    return [finding for file_findings in per_file_results for finding in file_findings]
+        for index, file_path in enumerate(scan_targets):
+            future_to_index[executor.submit(scan_file, file_path, config)] = index
+        for completed_future in as_completed(future_to_index):
+            original_index = future_to_index[completed_future]
+            indexed_results[original_index] = completed_future.result()
+            if on_file_complete is not None:
+                on_file_complete(scan_targets[original_index])
+    ordered_per_file = [indexed_results[i] for i in range(len(scan_targets))]
+    return [finding for file_findings in ordered_per_file for finding in file_findings]
 
 
 # ---------------------------------------------------------------------------

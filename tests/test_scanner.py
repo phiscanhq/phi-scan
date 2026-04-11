@@ -65,11 +65,11 @@ _PARITY_WORKER_COUNT: int = 2
 _WORKER_COUNT_ZERO: int = 0
 _WORKER_COUNT_NEGATIVE: int = -1
 _WORKER_COUNT_ABOVE_MAX: int = MAX_WORKER_COUNT + 1
-# PHI content written to parity test files. Uses a structurally valid SSN pattern
-# (high confidence regex match) so findings are consistently generated across both code paths.
-# 123-45-6789 uses area number 123, which the SSA has never assigned — it is
-# a well-known synthetic test value and is not a real individual's SSN.
-_PARITY_PHI_CONTENT: str = "patient_ssn = '123-45-6789'\n"
+# Path to the parity PHI fixture. The raw SSN literal lives under
+# tests/fixtures/phi/, which is excluded by .phi-scanignore so the scanner
+# never flags its own test corpus. Keeping the literal out of this source
+# file preserves the "never store raw PHI values in code" invariant.
+_PARITY_PHI_FIXTURE_PATH: Path = Path(__file__).parent / "fixtures" / "phi" / "parity.py"
 # Number of non-blank, non-comment patterns written by
 # test_load_ignore_patterns_skips_blank_lines: _SAMPLE_IGNORE_PATTERN ("*.log") and "*.tmp".
 # Update this constant if that test's fixture content changes.
@@ -591,9 +591,10 @@ def test_execute_scan_parallel_is_clean_for_no_phi_content(tmp_path: Path) -> No
 
 def _build_parity_files(root: Path, file_count: int) -> list[Path]:
     """Create file_count Python files with PHI content under root; return ordered list."""
+    parity_content = _PARITY_PHI_FIXTURE_PATH.read_text(encoding=DEFAULT_TEXT_ENCODING)
     files = [root / f"file_{index:03d}.py" for index in range(file_count)]
     for phi_file in files:
-        phi_file.write_text(_PARITY_PHI_CONTENT, encoding=DEFAULT_TEXT_ENCODING)
+        phi_file.write_text(parity_content, encoding=DEFAULT_TEXT_ENCODING)
     return files
 
 

@@ -7,7 +7,6 @@ import json
 import logging
 import time
 from collections import deque
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -129,9 +128,9 @@ from phi_scan.output import (
 )
 from phi_scan.report import generate_html_report, generate_pdf_report
 from phi_scan.scanner import (
-    _PARALLEL_THREAD_NAME_PREFIX,  # noqa: PLC2701
     MAX_WORKER_COUNT,
     MIN_WORKER_COUNT,
+    _run_parallel_scan,  # noqa: PLC2701
     build_scan_result,
     collect_scan_targets,
     execute_scan,
@@ -743,11 +742,10 @@ def _run_parallel_scan_with_progress(
 ) -> list[ScanFinding]:
     """Scan files concurrently, advancing the progress bar as each file completes.
 
-    Uses as_completed() so the progress bar fires on actual completion rather than
-    submission order. Results are re-sorted by original scan_targets index before
-    returning to ensure deterministic output ordering. Worker-thread exceptions
-    are re-raised by Future.result() and propagate to the caller — matching the
-    re-raise-on-iteration behaviour of executor.map() in scanner._run_parallel_scan.
+    Delegates the thread pool and ordering logic to ``scanner._run_parallel_scan``
+    and supplies a per-file completion callback that ticks the Rich progress
+    bar. Keeping a single parallel executor implementation prevents the CLI and
+    scanner paths from diverging in thread safety, error handling, or ordering.
 
     Args:
         scan: Bundled scan targets, config, worker count, and progress bar state.
@@ -755,24 +753,20 @@ def _run_parallel_scan_with_progress(
     Returns:
         All findings in scan_targets order.
     """
-    indexed_results: dict[int, list[ScanFinding]] = {}
-    future_to_index: dict[Future[list[ScanFinding]], int] = {}
-    with ThreadPoolExecutor(
-        max_workers=scan.worker_count,
-        thread_name_prefix=_PARALLEL_THREAD_NAME_PREFIX,
-    ) as executor:
-        for index, file_path in enumerate(scan.scan_targets):
-            future_to_index[executor.submit(scan_file, file_path, scan.config)] = index
-        for completed_future in as_completed(future_to_index):
-            original_index = future_to_index[completed_future]
-            indexed_results[original_index] = completed_future.result()
-            scan.progress.update(
-                scan.task_id,
-                description=_PARALLEL_SCAN_PROGRESS_LABEL,
-                advance=1,
-            )
-    ordered_per_file = [indexed_results[i] for i in range(len(scan.scan_targets))]
-    return [finding for file_findings in ordered_per_file for finding in file_findings]
+
+    def _advance_progress_bar(_: Path) -> None:
+        scan.progress.update(
+            scan.task_id,
+            description=_PARALLEL_SCAN_PROGRESS_LABEL,
+            advance=1,
+        )
+
+    return _run_parallel_scan(
+        scan.scan_targets,
+        scan.config,
+        scan.worker_count,
+        on_file_complete=_advance_progress_bar,
+    )
 
 
 def _run_scan_with_progress(

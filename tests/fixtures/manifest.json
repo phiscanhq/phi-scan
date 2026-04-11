@@ -121,6 +121,15 @@
       "notes": "Combination achieves ~87% unique identification (Sweeney 2000). Must be HIGH severity regardless of individual scores."
     },
     {
+      "path": "phi/parity.py",
+      "category": "phi",
+      "description": "Single synthetic SSN loaded verbatim by the sequential/parallel scan parity tests in test_scanner.py",
+      "expected_min_findings": 1,
+      "primary_entity_types": ["SSN"],
+      "hipaa_identifiers": ["SSN"],
+      "notes": "Area number 123 has never been assigned by the SSA — a well-known synthetic value. Keeps the raw literal out of test source files."
+    },
+    {
       "path": "clean/no_phi.py",
       "category": "clean",
       "description": "Pure algorithm code — math functions and named constants with no PHI",
