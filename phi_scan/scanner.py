@@ -10,6 +10,7 @@ import zipfile
 import zlib
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from itertools import repeat
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -43,6 +44,7 @@ from phi_scan.suppression import is_finding_suppressed, load_suppressions
 
 __all__ = [
     "MAX_WORKER_COUNT",
+    "MIN_WORKER_COUNT",
     "collect_scan_targets",
     "execute_scan",
     "is_binary_file",
@@ -138,9 +140,9 @@ _NOTEBOOK_SECTION_SEPARATOR: str = "\n"
 # Maximum number of worker threads accepted by execute_scan and the CLI.
 # Values above this are rejected at the call site before reaching the executor.
 MAX_WORKER_COUNT: int = 32
-# Worker count threshold: values above this switch execute_scan to the parallel
-# code path. Values at or below run sequentially (default behaviour).
-_MIN_WORKER_COUNT: int = 1
+# Minimum worker count. Values at or below this run sequentially; values above
+# this switch execute_scan to the parallel code path.
+MIN_WORKER_COUNT: int = 1
 # Thread name prefix used by ThreadPoolExecutor for log and debugger visibility.
 _PARALLEL_THREAD_NAME_PREFIX: str = "phi-scan-worker"
 
@@ -342,7 +344,7 @@ def scan_file(file_path: Path, config: ScanConfig) -> list[ScanFinding]:
 def execute_scan(
     scan_targets: list[Path],
     config: ScanConfig,
-    worker_count: int = _MIN_WORKER_COUNT,
+    worker_count: int = MIN_WORKER_COUNT,
 ) -> ScanResult:
     """Scan every file in scan_targets and return the aggregated ScanResult.
 
@@ -365,13 +367,31 @@ def execute_scan(
     from phi_scan.ai_review import apply_ai_review_to_findings
 
     scan_start = time.monotonic()
-    if worker_count > _MIN_WORKER_COUNT:
-        all_findings = _scan_files_parallel(scan_targets, config, worker_count)
-    else:
-        all_findings = _scan_files_sequential(scan_targets, config)
+    all_findings = _collect_all_findings(scan_targets, config, worker_count)
     reviewed_findings, ai_usage = apply_ai_review_to_findings(all_findings, config.ai_review_config)
     scan_duration = time.monotonic() - scan_start
     return build_scan_result(tuple(reviewed_findings), len(scan_targets), scan_duration, ai_usage)
+
+
+def _collect_all_findings(
+    scan_targets: list[Path],
+    config: ScanConfig,
+    worker_count: int,
+) -> list[ScanFinding]:
+    """Dispatch scan_targets to the sequential or parallel scan path.
+
+    Args:
+        scan_targets: Ordered list of files to scan.
+        config: Scan configuration forwarded to each scan_file call.
+        worker_count: Number of worker threads. Values at or below
+            MIN_WORKER_COUNT run sequentially; higher values run in parallel.
+
+    Returns:
+        All findings from all files, in scan_targets order.
+    """
+    if worker_count > MIN_WORKER_COUNT:
+        return _scan_files_parallel(scan_targets, config, worker_count)
+    return _scan_files_sequential(scan_targets, config)
 
 
 def _scan_files_sequential(
@@ -400,26 +420,23 @@ def _scan_files_parallel(
 ) -> list[ScanFinding]:
     """Scan scan_targets concurrently using a bounded ThreadPoolExecutor.
 
-    Uses executor.map() to guarantee that results are returned in the same
-    order as scan_targets regardless of thread completion order.
+    Uses executor.map() with itertools.repeat() to broadcast config across all
+    calls without a closure. Results are returned in scan_targets order
+    regardless of thread completion order.
 
     Args:
         scan_targets: Ordered list of files to scan.
         config: Scan configuration forwarded to each scan_file call.
-        worker_count: Number of worker threads; must be > _MIN_WORKER_COUNT.
+        worker_count: Number of worker threads; must be > MIN_WORKER_COUNT.
 
     Returns:
         All findings from all files, in scan_targets order.
     """
-
-    def scan_one_file(file_path: Path) -> list[ScanFinding]:
-        return scan_file(file_path, config)
-
     with ThreadPoolExecutor(
         max_workers=worker_count,
         thread_name_prefix=_PARALLEL_THREAD_NAME_PREFIX,
     ) as executor:
-        per_file_results = list(executor.map(scan_one_file, scan_targets))
+        per_file_results = list(executor.map(scan_file, scan_targets, repeat(config)))
     return [finding for file_findings in per_file_results for finding in file_findings]
 
 

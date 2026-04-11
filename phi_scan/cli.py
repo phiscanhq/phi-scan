@@ -129,9 +129,9 @@ from phi_scan.output import (
 )
 from phi_scan.report import generate_html_report, generate_pdf_report
 from phi_scan.scanner import (
-    _MIN_WORKER_COUNT,  # noqa: PLC2701
     _PARALLEL_THREAD_NAME_PREFIX,  # noqa: PLC2701
     MAX_WORKER_COUNT,
+    MIN_WORKER_COUNT,
     build_scan_result,
     collect_scan_targets,
     execute_scan,
@@ -379,9 +379,9 @@ _PROGRESS_FILENAME_ELLIPSIS: str = "…"
 # so a single filename would be misleading).
 _PARALLEL_SCAN_PROGRESS_LABEL: str = "scanning..."
 # Default worker count accepted by the --workers option.
-_DEFAULT_WORKER_COUNT: int = _MIN_WORKER_COUNT
+_DEFAULT_WORKER_COUNT: int = MIN_WORKER_COUNT
 # Error messages for out-of-range --workers values.
-_WORKERS_BELOW_MINIMUM_ERROR: str = f"--workers must be at least {_MIN_WORKER_COUNT}"
+_WORKERS_BELOW_MINIMUM_ERROR: str = f"--workers must be at least {MIN_WORKER_COUNT}"
 _WORKERS_ABOVE_MAXIMUM_ERROR: str = f"--workers must not exceed {MAX_WORKER_COUNT}"
 
 # ---------------------------------------------------------------------------
@@ -598,7 +598,7 @@ class _ScanExecutionOptions:
     should_show_progress: bool = False
 
 
-@dataclass
+@dataclass(frozen=True)
 class _ProgressScanContext:
     """Arguments for _scan_files_with_progress and its sequential/parallel sub-helpers.
 
@@ -710,9 +710,9 @@ def _validate_worker_count(worker_count: int) -> None:
         worker_count: Value supplied by the --workers CLI option.
 
     Raises:
-        typer.BadParameter: If worker_count < _MIN_WORKER_COUNT or > MAX_WORKER_COUNT.
+        typer.BadParameter: If worker_count < MIN_WORKER_COUNT or > MAX_WORKER_COUNT.
     """
-    if worker_count < _MIN_WORKER_COUNT:
+    if worker_count < MIN_WORKER_COUNT:
         raise typer.BadParameter(_WORKERS_BELOW_MINIMUM_ERROR)
     if worker_count > MAX_WORKER_COUNT:
         raise typer.BadParameter(_WORKERS_ABOVE_MAXIMUM_ERROR)
@@ -732,8 +732,9 @@ def _scan_files_sequential_with_progress(
     all_findings: list[ScanFinding] = []
     for file_path in scan.scan_targets:
         progress_label = _truncate_filename_for_progress(file_path)
-        scan.progress.update(scan.task_id, description=progress_label, advance=1)
+        scan.progress.update(scan.task_id, description=progress_label)
         all_findings.extend(scan_file(file_path, scan.config))
+        scan.progress.update(scan.task_id, advance=1)
     return all_findings
 
 
@@ -783,7 +784,7 @@ def _scan_files_with_progress(
     Returns:
         All findings in scan_targets order.
     """
-    if scan.worker_count > _MIN_WORKER_COUNT:
+    if scan.worker_count > MIN_WORKER_COUNT:
         return _scan_files_parallel_with_progress(scan)
     return _scan_files_sequential_with_progress(scan)
 
