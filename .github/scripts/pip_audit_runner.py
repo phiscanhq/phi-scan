@@ -30,11 +30,14 @@ import sys
 import tomllib
 from pathlib import Path
 
-_REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[2]
+from _supply_chain_export import (
+    PIP_AUDIT_REQUIREMENTS_FLAG,
+    REPOSITORY_ROOT,
+    export_production_requirements,
+)
+
 _IGNORE_FILE_NAME: str = ".pip-audit-ignore.toml"
-_IGNORE_FILE_PATH: Path = _REPOSITORY_ROOT / _IGNORE_FILE_NAME
-_REQUIREMENTS_OUTPUT_PATH: Path = _REPOSITORY_ROOT / "pip-audit-requirements.txt"
-_EDITABLE_INSTALL_PREFIX: str = "-e"
+_IGNORE_FILE_PATH: Path = REPOSITORY_ROOT / _IGNORE_FILE_NAME
 
 _IGNORED_ENTRIES_KEY: str = "ignored"
 _ENTRY_ID_KEY: str = "id"
@@ -52,15 +55,6 @@ _ADVISORY_ID_PATTERN: re.Pattern[str] = re.compile(
     r"^(CVE-\d{4}-\d+|GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})$"
 )
 
-_UV_EXPORT_COMMAND: tuple[str, ...] = (
-    "uv",
-    "export",
-    "--quiet",
-    "--no-hashes",
-    "--no-dev",
-    "--format",
-    "requirements-txt",
-)
 _PIP_AUDIT_BASE_COMMAND: tuple[str, ...] = (
     "uv",
     "run",
@@ -72,11 +66,10 @@ _PIP_AUDIT_BASE_COMMAND: tuple[str, ...] = (
     "--disable-pip",
     "--no-deps",
     "--strict",
-    "-r",
 )
+_PIP_AUDIT_IGNORE_FLAG: str = "--ignore-vuln"
 
 _POLICY_VIOLATION_EXIT_CODE: int = 2
-_EXPORT_FAILURE_EXIT_CODE: int = 3
 
 
 class PipAuditPolicyError(Exception):
@@ -160,66 +153,48 @@ def _validate_expiry(entry_index: int, entry: dict[str, object], advisory_id: st
         )
 
 
-def _export_production_requirements() -> Path:
-    try:
-        export_completed = subprocess.run(
-            _UV_EXPORT_COMMAND,
-            cwd=_REPOSITORY_ROOT,
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as export_error:
-        print(
-            f"uv export failed with exit code {export_error.returncode}:\n{export_error.stderr}",
-            file=sys.stderr,
-        )
-        sys.exit(_EXPORT_FAILURE_EXIT_CODE)
-    filtered_lines = [
-        line
-        for line in export_completed.stdout.splitlines()
-        if not line.startswith(_EDITABLE_INSTALL_PREFIX)
-    ]
-    _REQUIREMENTS_OUTPUT_PATH.write_text("\n".join(filtered_lines) + "\n")
-    return _REQUIREMENTS_OUTPUT_PATH
+def _collect_validated_ignore_ids() -> list[str]:
+    raw_entries = _load_ignore_entries()
+    return [_validate_entry(entry_index, entry) for entry_index, entry in enumerate(raw_entries)]
 
 
-def _build_pip_audit_command(requirements_path: Path, ignored_advisory_ids: list[str]) -> list[str]:
-    command: list[str] = list(_PIP_AUDIT_BASE_COMMAND)
-    command.append(str(requirements_path))
-    for advisory_id in ignored_advisory_ids:
-        command.extend(["--ignore-vuln", advisory_id])
-    return command
-
-
-def _run_pip_audit(requirements_path: Path, ignored_advisory_ids: list[str]) -> int:
-    command = _build_pip_audit_command(requirements_path, ignored_advisory_ids)
-    print(f"Running: {' '.join(command)}", flush=True)
-    completed = subprocess.run(command, cwd=_REPOSITORY_ROOT, check=False)
-    return completed.returncode
-
-
-def main() -> int:
-    try:
-        raw_entries = _load_ignore_entries()
-        ignored_advisory_ids = [
-            _validate_entry(entry_index, entry) for entry_index, entry in enumerate(raw_entries)
-        ]
-    except PipAuditPolicyError as policy_error:
-        print(f"Policy violation: {policy_error}", file=sys.stderr)
-        return _POLICY_VIOLATION_EXIT_CODE
-    requirements_path = _export_production_requirements()
+def _log_ignore_list_state(ignored_advisory_ids: list[str]) -> None:
     if ignored_advisory_ids:
         print(
             f"Applying ignore list from {_IGNORE_FILE_NAME}: {ignored_advisory_ids}",
             flush=True,
         )
-    else:
-        print(
-            f"{_IGNORE_FILE_NAME} has no active entries — running pip-audit with zero ignores.",
-            flush=True,
-        )
-    return _run_pip_audit(requirements_path, ignored_advisory_ids)
+        return
+    print(
+        f"{_IGNORE_FILE_NAME} has no active entries — running pip-audit with zero ignores.",
+        flush=True,
+    )
+
+
+def _build_pip_audit_command(requirements_path: Path, ignored_advisory_ids: list[str]) -> list[str]:
+    command: list[str] = list(_PIP_AUDIT_BASE_COMMAND)
+    command.extend([PIP_AUDIT_REQUIREMENTS_FLAG, str(requirements_path)])
+    for advisory_id in ignored_advisory_ids:
+        command.extend([_PIP_AUDIT_IGNORE_FLAG, advisory_id])
+    return command
+
+
+def _execute_pip_audit(requirements_path: Path, ignored_advisory_ids: list[str]) -> int:
+    command = _build_pip_audit_command(requirements_path, ignored_advisory_ids)
+    print(f"Running: {' '.join(command)}", flush=True)
+    audit_completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
+    return audit_completed.returncode
+
+
+def main() -> int:
+    try:
+        ignored_advisory_ids = _collect_validated_ignore_ids()
+    except PipAuditPolicyError as policy_error:
+        print(f"Policy violation: {policy_error}", file=sys.stderr)
+        return _POLICY_VIOLATION_EXIT_CODE
+    requirements_path = export_production_requirements()
+    _log_ignore_list_state(ignored_advisory_ids)
+    return _execute_pip_audit(requirements_path, ignored_advisory_ids)
 
 
 if __name__ == "__main__":

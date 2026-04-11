@@ -16,9 +16,9 @@ Policy is documented in ``docs/supply-chain.md``. The short version:
     * Failure to export requirements or to produce a valid SBOM exits
       non-zero so the release workflow hard-fails before publish.
 
-Local command::
+Local command:
 
-    uv run --python 3.12 python .github/scripts/sbom_generator.py
+    ``uv run --python 3.12 python .github/scripts/sbom_generator.py``
 
 Exits non-zero on export failure or pip-audit SBOM generation failure.
 """
@@ -29,20 +29,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-_REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[2]
-_REQUIREMENTS_OUTPUT_PATH: Path = _REPOSITORY_ROOT / "pip-audit-requirements.txt"
-_SBOM_OUTPUT_PATH: Path = _REPOSITORY_ROOT / "sbom.cyclonedx.json"
-_EDITABLE_INSTALL_PREFIX: str = "-e"
-
-_UV_EXPORT_COMMAND: tuple[str, ...] = (
-    "uv",
-    "export",
-    "--quiet",
-    "--no-hashes",
-    "--no-dev",
-    "--format",
-    "requirements-txt",
+from _supply_chain_export import (
+    PIP_AUDIT_REQUIREMENTS_FLAG,
+    REPOSITORY_ROOT,
+    export_production_requirements,
 )
+
+_SBOM_OUTPUT_PATH: Path = REPOSITORY_ROOT / "sbom.cyclonedx.json"
+
 _PIP_AUDIT_SBOM_COMMAND: tuple[str, ...] = (
     "uv",
     "run",
@@ -55,53 +49,28 @@ _PIP_AUDIT_SBOM_COMMAND: tuple[str, ...] = (
     "--no-deps",
     "--format",
     "cyclonedx-json",
-    "-o",
 )
+_PIP_AUDIT_OUTPUT_FLAG: str = "-o"
 
-_EXPORT_FAILURE_EXIT_CODE: int = 3
 _SBOM_FAILURE_EXIT_CODE: int = 4
 
 
-def _export_production_requirements() -> Path:
-    try:
-        export_completed = subprocess.run(
-            _UV_EXPORT_COMMAND,
-            cwd=_REPOSITORY_ROOT,
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as export_error:
-        print(
-            f"uv export failed with exit code {export_error.returncode}:\n{export_error.stderr}",
-            file=sys.stderr,
-        )
-        sys.exit(_EXPORT_FAILURE_EXIT_CODE)
-    filtered_lines = [
-        line
-        for line in export_completed.stdout.splitlines()
-        if not line.startswith(_EDITABLE_INSTALL_PREFIX)
-    ]
-    _REQUIREMENTS_OUTPUT_PATH.write_text("\n".join(filtered_lines) + "\n")
-    return _REQUIREMENTS_OUTPUT_PATH
-
-
-def _build_sbom_command(requirements_path: Path, sbom_output_path: Path) -> list[str]:
+def _build_sbom_command(requirements_path: Path) -> list[str]:
     command: list[str] = list(_PIP_AUDIT_SBOM_COMMAND)
-    command.append(str(sbom_output_path))
-    command.extend(["-r", str(requirements_path)])
+    command.extend([_PIP_AUDIT_OUTPUT_FLAG, str(_SBOM_OUTPUT_PATH)])
+    command.extend([PIP_AUDIT_REQUIREMENTS_FLAG, str(requirements_path)])
     return command
 
 
 def _generate_sbom(requirements_path: Path) -> int:
-    command = _build_sbom_command(requirements_path, _SBOM_OUTPUT_PATH)
+    command = _build_sbom_command(requirements_path)
     print(f"Running: {' '.join(command)}", flush=True)
-    completed = subprocess.run(command, cwd=_REPOSITORY_ROOT, check=False)
-    return completed.returncode
+    sbom_completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
+    return sbom_completed.returncode
 
 
 def main() -> int:
-    requirements_path = _export_production_requirements()
+    requirements_path = export_production_requirements()
     sbom_exit_code = _generate_sbom(requirements_path)
     if sbom_exit_code != 0:
         print(
