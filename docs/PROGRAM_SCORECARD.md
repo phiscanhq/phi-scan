@@ -4,7 +4,7 @@ Tracks progress toward 10/10 public-repo quality across four categories.
 Each check has a binary pass/fail state. All checks must pass before the repo
 is declared production-ready for v1.0.
 
-**Last updated:** 2026-04-11
+**Last updated:** 2026-04-12
 
 ---
 
@@ -28,10 +28,10 @@ is declared production-ready for v1.0.
 | T5 | Sequential and parallel modes produce identical finding sets and identical output ordering | PASS | Parity tests in `tests/test_scanner.py` cover workers=1 vs workers>1 |
 | T6 | Golden contract tests exist for JSON, SARIF, CSV, and JUnit output formats | PASS | 16 byte-exact goldens under `tests/fixtures/goldens/` driven by `tests/test_output_goldens.py` |
 | T7 | Golden contract tests are a required CI gate (failures block merge) | PASS | `test_output_goldens.py` runs in the standard pytest CI job; any drift fails the merge gate |
-| T8 | Performance benchmark fixtures exist (small / medium / large corpus) | FAIL | Not yet implemented |
-| T9 | CI enforces per-benchmark runtime and files-per-second thresholds | FAIL | Blocked by T8 |
+| T8 | Performance benchmark fixtures exist (small / medium / large corpus) | PASS | 10/100/500-file synthetic corpora generated at test time in `tests/test_performance_benchmarks.py` |
+| T9 | CI enforces per-benchmark runtime and files-per-second thresholds | PASS | Per-size `max_elapsed_seconds` and `min_files_per_second` asserted in the standard pytest CI job on Linux |
 
-**Passing: 7 / 9**
+**Passing: 9 / 9**
 
 ---
 
@@ -92,11 +92,11 @@ is declared production-ready for v1.0.
 
 | Category | Passing | Total | % |
 |----------|---------|-------|---|
-| Technical Maturity | 7 | 9 | 78% |
+| Technical Maturity | 9 | 9 | 100% |
 | Security Posture | 5 | 11 | 45% |
 | Architecture Scalability | 1 | 8 | 13% |
 | Commercial Readiness | 3 | 7 | 43% |
-| **Total** | **16** | **35** | **46%** |
+| **Total** | **18** | **35** | **51%** |
 
 **Target:** 35 / 35 checks passing.
 
@@ -107,6 +107,7 @@ is declared production-ready for v1.0.
 | Date | Tech | Security | Architecture | Commercial | Notes |
 |------|------|----------|--------------|------------|-------|
 | 2026-04-11 | 7/9 | 5/11 | 1/8 | 3/7 | Scorecard created. 7J merged (DNS TOCTOU fix). README link added. Reconciled T4/T5/A7 for shipped parallel scan work ([8F-ext.1]). T6/T7 shipped: byte-exact golden contract tests for JSON/SARIF/CSV/JUnit. |
+| 2026-04-12 | 9/9 | 5/11 | 1/8 | 3/7 | T8/T9 shipped: synthetic small/medium/large corpora and per-size runtime + throughput thresholds enforced in the Linux pytest job. Technical Maturity category now at 100%. |
 
 ---
 
@@ -117,7 +118,7 @@ Checks are addressed in this sequence:
 1. **T4, T5, A7** — Parallel scan + parity tests (single PR) ✓ Done — shipped in [8F-ext.1]
 2. **T6, T7, T8, T9** — Output contract golden tests + performance gates
     - T6, T7 ✓ Done — byte-exact golden tests for JSON/SARIF/CSV/JUnit
-    - T8, T9 pending — performance benchmark fixtures + CI runtime thresholds
+    - T8, T9 ✓ Done — synthetic corpora + runtime/throughput CI thresholds
 3. **S5, S7, S8** — SSRF adversarial tests + threat model doc
 4. **S9, S10, S11** — Supply-chain security gates
 5. **A1–A5** — Plugin API v1 implementation
