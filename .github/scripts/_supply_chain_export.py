@@ -71,6 +71,11 @@ def export_production_requirements() -> Path:
             f"uv export failed with exit code {export_error.returncode}: "
             f"{export_error.stderr.strip()}"
         ) from export_error
+    if REQUIREMENTS_OUTPUT_PATH.is_symlink():
+        raise DependencyExportError(
+            f"{REQUIREMENTS_OUTPUT_PATH.name} is a symlink; refusing to follow it "
+            "during write. Remove the symlink and re-run."
+        )
     filtered_lines = _filter_editable_install_lines(export_completed.stdout)
     REQUIREMENTS_OUTPUT_PATH.write_text("\n".join(filtered_lines) + "\n")
     return REQUIREMENTS_OUTPUT_PATH

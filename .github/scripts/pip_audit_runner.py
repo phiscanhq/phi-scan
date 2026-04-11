@@ -92,13 +92,12 @@ def _load_ignore_entries() -> list[dict[str, object]]:
         raise PipAuditPolicyError(
             f"{_IGNORE_FILE_NAME} top-level 'ignored' must be an array of tables."
         )
-    return [_coerce_entry(entry_index, raw) for entry_index, raw in enumerate(raw_entries)]
-
-
-def _coerce_entry(entry_index: int, raw_entry: object) -> dict[str, object]:
-    if not isinstance(raw_entry, dict):
-        raise PipAuditPolicyError(f"{_IGNORE_FILE_NAME} entry #{entry_index} must be a TOML table.")
-    return dict(raw_entry)
+    for entry_index, raw_entry in enumerate(raw_entries):
+        if not isinstance(raw_entry, dict):
+            raise PipAuditPolicyError(
+                f"{_IGNORE_FILE_NAME} entry #{entry_index} must be a TOML table."
+            )
+    return [dict(raw_entry) for raw_entry in raw_entries]
 
 
 _TRACKING_URL_SCHEMES: tuple[str, ...] = ("http://", "https://")
