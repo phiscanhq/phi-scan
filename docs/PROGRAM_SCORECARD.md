@@ -121,4 +121,4 @@ Checks are addressed in this sequence:
 5. **A1–A5** — Plugin API v1 implementation
 6. **A6** — Suppressor + output-sink design doc (v1.1 shape)
 7. **A8** — CI adapter split design doc
-8. **C3–C7** — Boundary docs, release policy, governance, README link
+8. **C3–C6** — Boundary docs, release policy, governance
