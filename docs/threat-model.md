@@ -1,6 +1,6 @@
 # PhiScan Threat Model
 
-**Last reviewed:** 2026-04-12
+**Last reviewed:** 2026-04-13
 **Scope:** PhiScan v1.x (the `phi-scan` CLI, the `phi_scan` Python package,
 and the artifacts it produces).
 **Audience:** security reviewers, auditors, and downstream integrators who
