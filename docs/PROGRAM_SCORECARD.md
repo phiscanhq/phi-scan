@@ -24,14 +24,14 @@ is declared production-ready for v1.0.
 | T1 | `uv run ruff check` exits 0 on every merge to `main` | PASS | Enforced by CI |
 | T2 | `uv run mypy phi_scan/` exits 0 on every merge to `main` | PASS | Enforced by CI |
 | T3 | Test suite coverage ≥ 80% enforced as a CI gate | PASS | `pytest --cov` gate active |
-| T4 | `--workers N` parallel scan implemented with `ThreadPoolExecutor` | FAIL | Not yet implemented; sequential-only |
-| T5 | Sequential and parallel modes produce identical finding sets and identical output ordering | FAIL | Blocked by T4 |
+| T4 | `--workers N` parallel scan implemented with `ThreadPoolExecutor` | PASS | Shipped in [8F-ext.1] via `run_parallel_scan` |
+| T5 | Sequential and parallel modes produce identical finding sets and identical output ordering | PASS | Parity tests in `tests/test_scanner.py` cover workers=1 vs workers>1 |
 | T6 | Golden contract tests exist for JSON, SARIF, CSV, and JUnit output formats | FAIL | No golden fixtures exist |
 | T7 | Golden contract tests are a required CI gate (failures block merge) | FAIL | Blocked by T6 |
 | T8 | Performance benchmark fixtures exist (small / medium / large corpus) | FAIL | Not yet implemented |
 | T9 | CI enforces per-benchmark runtime and files-per-second thresholds | FAIL | Blocked by T8 |
 
-**Passing: 3 / 9**
+**Passing: 5 / 9**
 
 ---
 
@@ -65,10 +65,10 @@ is declared production-ready for v1.0.
 | A4 | `phi-scan plugins list` command implemented with metadata validation tests | FAIL | Not yet implemented |
 | A5 | Plugin API compatibility and deprecation policy documented | FAIL | Not yet documented |
 | A6 | Suppressor and output-sink plugin hooks designed (v1.1 shape documented, not implemented) | FAIL | Deferred to v1.1; design not yet written |
-| A7 | Parallel scan determinism validated across `workers=1` and `workers>1` | FAIL | Blocked by T4 |
+| A7 | Parallel scan determinism validated across `workers=1` and `workers>1` | PASS | Parity tests in `tests/test_scanner.py` validate identical findings and ordering |
 | A8 | `ci_integration.py` adapter split planned with per-platform interface contract documented | FAIL | Planned in roadmap (8F-ext.2); not yet designed |
 
-**Passing: 0 / 8**
+**Passing: 1 / 8**
 
 ---
 
@@ -92,11 +92,11 @@ is declared production-ready for v1.0.
 
 | Category | Passing | Total | % |
 |----------|---------|-------|---|
-| Technical Maturity | 3 | 9 | 33% |
+| Technical Maturity | 5 | 9 | 56% |
 | Security Posture | 5 | 11 | 45% |
-| Architecture Scalability | 0 | 8 | 0% |
+| Architecture Scalability | 1 | 8 | 13% |
 | Commercial Readiness | 3 | 7 | 43% |
-| **Total** | **11** | **35** | **31%** |
+| **Total** | **14** | **35** | **40%** |
 
 **Target:** 35 / 35 checks passing.
 
@@ -106,7 +106,7 @@ is declared production-ready for v1.0.
 
 | Date | Tech | Security | Architecture | Commercial | Notes |
 |------|------|----------|--------------|------------|-------|
-| 2026-04-11 | 3/9 | 5/11 | 0/8 | 3/7 | Scorecard created. 7J merged (DNS TOCTOU fix). README link added. |
+| 2026-04-11 | 5/9 | 5/11 | 1/8 | 3/7 | Scorecard created. 7J merged (DNS TOCTOU fix). README link added. Reconciled T4/T5/A7 for shipped parallel scan work ([8F-ext.1]). |
 
 ---
 
@@ -114,7 +114,7 @@ is declared production-ready for v1.0.
 
 Checks are addressed in this sequence:
 
-1. **T4, T5, A7** — Parallel scan + parity tests (single PR)
+1. **T4, T5, A7** — Parallel scan + parity tests (single PR) ✓ Done — shipped in [8F-ext.1]
 2. **T6, T7, T8, T9** — Output contract golden tests + performance gates (single PR)
 3. **S5, S7, S8** — SSRF adversarial tests + threat model doc
 4. **S9, S10, S11** — Supply-chain security gates
