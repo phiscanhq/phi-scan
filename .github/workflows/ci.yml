@@ -53,6 +53,25 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
+  dependency-audit:
+    name: Dependency vulnerability audit (S9)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.10.9"
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Run pip-audit with policy-enforced ignore list
+        run: uv run --python 3.12 python .github/scripts/pip_audit_runner.py
+
   phi-scan:
     name: PHI/PII scan
     runs-on: ubuntu-latest

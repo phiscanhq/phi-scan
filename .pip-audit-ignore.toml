@@ -1,0 +1,17 @@
+# PhiScan pip-audit ignore list.
+#
+# Every entry in this file is an explicitly accepted dependency
+# advisory. The policy (required fields, advisory-ID format,
+# expiry rules, no wildcards) is documented in full in
+# docs/supply-chain.md under the S9 section.
+#
+# Entries are honoured by the S9 CI gate
+# (.github/scripts/pip_audit_runner.py, wired in
+# .github/workflows/ci.yml) via repeated --ignore-vuln flags. The
+# runner validates every entry before pip-audit runs and fails
+# the build on any policy violation.
+#
+# Keep this list as short as possible. Remove entries as soon as
+# the upstream fix lands.
+
+ignored = []

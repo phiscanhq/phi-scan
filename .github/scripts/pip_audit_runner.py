@@ -1,0 +1,226 @@
+"""Supply-chain vulnerability scan runner for the S9 CI gate.
+
+Exports the production dependency set from the uv lockfile, applies the
+policy-enforced ignore list from ``.pip-audit-ignore.toml``, and hands
+off to ``pip-audit``. Designed to be invoked as a single step in
+``.github/workflows/ci.yml`` so the gate fails the merge on any
+unexplained dependency advisory.
+
+Policy is documented in ``docs/supply-chain.md``. The short version:
+
+    * Every entry in ``.pip-audit-ignore.toml`` must have an ``id``
+      matching ``CVE-YYYY-N+`` or ``GHSA-xxxx-xxxx-xxxx``, a human
+      ``reason``, and a ``tracking`` URL.
+    * ``expires`` is optional. If set, the runner fails once the date
+      has passed so stale ignores cannot hide in the file.
+    * No wildcards. Any ``id`` that does not match the advisory-ID
+      regex causes the runner to fail before pip-audit is invoked.
+
+Exits non-zero on policy violation, export failure, or any
+pip-audit-reported vulnerability that is not covered by an accepted
+entry in the ignore list.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import re
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+_REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[2]
+_IGNORE_FILE_NAME: str = ".pip-audit-ignore.toml"
+_IGNORE_FILE_PATH: Path = _REPOSITORY_ROOT / _IGNORE_FILE_NAME
+_REQUIREMENTS_OUTPUT_PATH: Path = _REPOSITORY_ROOT / "pip-audit-requirements.txt"
+_EDITABLE_INSTALL_PREFIX: str = "-e"
+
+_IGNORED_ENTRIES_KEY: str = "ignored"
+_ENTRY_ID_KEY: str = "id"
+_ENTRY_REASON_KEY: str = "reason"
+_ENTRY_TRACKING_KEY: str = "tracking"
+_ENTRY_EXPIRES_KEY: str = "expires"
+_REQUIRED_ENTRY_KEYS: frozenset[str] = frozenset(
+    {_ENTRY_ID_KEY, _ENTRY_REASON_KEY, _ENTRY_TRACKING_KEY}
+)
+_ALLOWED_ENTRY_KEYS: frozenset[str] = frozenset(
+    {_ENTRY_ID_KEY, _ENTRY_REASON_KEY, _ENTRY_TRACKING_KEY, _ENTRY_EXPIRES_KEY}
+)
+
+_ADVISORY_ID_PATTERN: re.Pattern[str] = re.compile(
+    r"^(CVE-\d{4}-\d+|GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})$"
+)
+
+_UV_EXPORT_COMMAND: tuple[str, ...] = (
+    "uv",
+    "export",
+    "--quiet",
+    "--no-hashes",
+    "--no-dev",
+    "--format",
+    "requirements-txt",
+)
+_PIP_AUDIT_BASE_COMMAND: tuple[str, ...] = (
+    "uv",
+    "run",
+    "--python",
+    "3.12",
+    "--with",
+    "pip-audit",
+    "pip-audit",
+    "--disable-pip",
+    "--no-deps",
+    "--strict",
+    "-r",
+)
+
+_POLICY_VIOLATION_EXIT_CODE: int = 2
+_EXPORT_FAILURE_EXIT_CODE: int = 3
+
+
+class PipAuditPolicyError(Exception):
+    """Raised when ``.pip-audit-ignore.toml`` violates the documented policy."""
+
+
+def _load_ignore_entries() -> list[dict[str, object]]:
+    if not _IGNORE_FILE_PATH.exists():
+        raise PipAuditPolicyError(
+            f"{_IGNORE_FILE_NAME} is missing from the repository root. "
+            "The file must exist even when empty; see docs/supply-chain.md."
+        )
+    with _IGNORE_FILE_PATH.open("rb") as ignore_file:
+        parsed_document = tomllib.load(ignore_file)
+    raw_entries = parsed_document.get(_IGNORED_ENTRIES_KEY, [])
+    if not isinstance(raw_entries, list):
+        raise PipAuditPolicyError(
+            f"{_IGNORE_FILE_NAME} top-level 'ignored' must be an array of tables."
+        )
+    return [_coerce_entry(entry_index, raw) for entry_index, raw in enumerate(raw_entries)]
+
+
+def _coerce_entry(entry_index: int, raw_entry: object) -> dict[str, object]:
+    if not isinstance(raw_entry, dict):
+        raise PipAuditPolicyError(f"{_IGNORE_FILE_NAME} entry #{entry_index} must be a TOML table.")
+    return dict(raw_entry)
+
+
+def _validate_entry(entry_index: int, entry: dict[str, object]) -> str:
+    present_keys = set(entry.keys())
+    missing_keys = _REQUIRED_ENTRY_KEYS - present_keys
+    if missing_keys:
+        raise PipAuditPolicyError(
+            f"{_IGNORE_FILE_NAME} entry #{entry_index} is missing required "
+            f"key(s) {sorted(missing_keys)}. Every entry must declare id, "
+            "reason, and tracking."
+        )
+    unknown_keys = present_keys - _ALLOWED_ENTRY_KEYS
+    if unknown_keys:
+        raise PipAuditPolicyError(
+            f"{_IGNORE_FILE_NAME} entry #{entry_index} has unknown key(s) "
+            f"{sorted(unknown_keys)}. Allowed: {sorted(_ALLOWED_ENTRY_KEYS)}."
+        )
+    advisory_id = entry[_ENTRY_ID_KEY]
+    if not isinstance(advisory_id, str) or not _ADVISORY_ID_PATTERN.match(advisory_id):
+        raise PipAuditPolicyError(
+            f"{_IGNORE_FILE_NAME} entry #{entry_index} id={advisory_id!r} does "
+            "not match the advisory-ID pattern CVE-YYYY-N+ or "
+            "GHSA-xxxx-xxxx-xxxx. Wildcards and blanket ignores are not allowed."
+        )
+    reason_value = entry[_ENTRY_REASON_KEY]
+    if not isinstance(reason_value, str) or not reason_value.strip():
+        raise PipAuditPolicyError(f"{_IGNORE_FILE_NAME} entry #{entry_index} has empty reason.")
+    tracking_value = entry[_ENTRY_TRACKING_KEY]
+    if not isinstance(tracking_value, str) or not tracking_value.startswith(
+        ("http://", "https://")
+    ):
+        raise PipAuditPolicyError(
+            f"{_IGNORE_FILE_NAME} entry #{entry_index} tracking must be an "
+            "http(s) URL pointing at a tracking issue."
+        )
+    _validate_expiry(entry_index, entry, advisory_id)
+    return advisory_id
+
+
+def _validate_expiry(entry_index: int, entry: dict[str, object], advisory_id: str) -> None:
+    if _ENTRY_EXPIRES_KEY not in entry:
+        return
+    expires_value = entry[_ENTRY_EXPIRES_KEY]
+    if not isinstance(expires_value, dt.date):
+        raise PipAuditPolicyError(
+            f"{_IGNORE_FILE_NAME} entry #{entry_index} expires must be a "
+            "TOML date literal (YYYY-MM-DD), not a string."
+        )
+    today = dt.date.today()
+    if expires_value < today:
+        raise PipAuditPolicyError(
+            f"{_IGNORE_FILE_NAME} entry #{entry_index} ({advisory_id}) "
+            f"expired on {expires_value.isoformat()}. Re-review the risk "
+            "and update or remove the entry."
+        )
+
+
+def _export_production_requirements() -> Path:
+    try:
+        export_completed = subprocess.run(
+            _UV_EXPORT_COMMAND,
+            cwd=_REPOSITORY_ROOT,
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as export_error:
+        print(
+            f"uv export failed with exit code {export_error.returncode}:\n{export_error.stderr}",
+            file=sys.stderr,
+        )
+        sys.exit(_EXPORT_FAILURE_EXIT_CODE)
+    filtered_lines = [
+        line
+        for line in export_completed.stdout.splitlines()
+        if not line.startswith(_EDITABLE_INSTALL_PREFIX)
+    ]
+    _REQUIREMENTS_OUTPUT_PATH.write_text("\n".join(filtered_lines) + "\n")
+    return _REQUIREMENTS_OUTPUT_PATH
+
+
+def _build_pip_audit_command(requirements_path: Path, ignored_advisory_ids: list[str]) -> list[str]:
+    command: list[str] = list(_PIP_AUDIT_BASE_COMMAND)
+    command.append(str(requirements_path))
+    for advisory_id in ignored_advisory_ids:
+        command.extend(["--ignore-vuln", advisory_id])
+    return command
+
+
+def _run_pip_audit(requirements_path: Path, ignored_advisory_ids: list[str]) -> int:
+    command = _build_pip_audit_command(requirements_path, ignored_advisory_ids)
+    print(f"Running: {' '.join(command)}", flush=True)
+    completed = subprocess.run(command, cwd=_REPOSITORY_ROOT, check=False)
+    return completed.returncode
+
+
+def main() -> int:
+    try:
+        raw_entries = _load_ignore_entries()
+        ignored_advisory_ids = [
+            _validate_entry(entry_index, entry) for entry_index, entry in enumerate(raw_entries)
+        ]
+    except PipAuditPolicyError as policy_error:
+        print(f"Policy violation: {policy_error}", file=sys.stderr)
+        return _POLICY_VIOLATION_EXIT_CODE
+    requirements_path = _export_production_requirements()
+    if ignored_advisory_ids:
+        print(
+            f"Applying ignore list from {_IGNORE_FILE_NAME}: {ignored_advisory_ids}",
+            flush=True,
+        )
+    else:
+        print(
+            f"{_IGNORE_FILE_NAME} has no active entries — running pip-audit with zero ignores.",
+            flush=True,
+        )
+    return _run_pip_audit(requirements_path, ignored_advisory_ids)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

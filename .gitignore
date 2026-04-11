@@ -26,6 +26,11 @@ phi-report.json
 .coverage
 coverage.xml
 
+# Ephemeral output from the S9 pip-audit runner — regenerated in CI
+# and locally on every invocation via uv export. See docs/supply-chain.md.
+pip-audit-requirements.txt
+sbom.cyclonedx.json
+
 # Claude Code local configuration — IDE settings and skill definitions.
 # This is development tooling for the maintainer; it has no value to contributors.
 .claude/
