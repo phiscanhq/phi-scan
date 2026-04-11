@@ -16,7 +16,6 @@ code.
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[2]
@@ -38,6 +37,10 @@ PIP_AUDIT_REQUIREMENTS_FLAG: str = "-r"
 EXPORT_FAILURE_EXIT_CODE: int = 3
 
 
+class DependencyExportError(Exception):
+    """Raised when ``uv export`` fails to produce a requirements file."""
+
+
 def _filter_editable_install_lines(raw_export_output: str) -> list[str]:
     return [
         line
@@ -51,9 +54,9 @@ def export_production_requirements() -> Path:
 
     Runs ``uv export`` with the no-dev / no-hashes flags, strips
     editable install lines so pip-audit does not reject the file, and
-    writes the filtered output to ``REQUIREMENTS_OUTPUT_PATH``. Exits
-    the process with ``EXPORT_FAILURE_EXIT_CODE`` on any uv export
-    failure so both callers get identical failure semantics.
+    writes the filtered output to ``REQUIREMENTS_OUTPUT_PATH``. Raises
+    ``DependencyExportError`` on any ``uv export`` failure so callers
+    can decide how to surface the error before exiting.
     """
     try:
         export_completed = subprocess.run(
@@ -64,11 +67,14 @@ def export_production_requirements() -> Path:
             text=True,
         )
     except subprocess.CalledProcessError as export_error:
-        print(
-            f"uv export failed with exit code {export_error.returncode}:\n{export_error.stderr}",
-            file=sys.stderr,
-        )
-        sys.exit(EXPORT_FAILURE_EXIT_CODE)
+        raise DependencyExportError(
+            f"uv export failed with exit code {export_error.returncode}: "
+            f"{export_error.stderr.strip()}"
+        ) from export_error
     filtered_lines = _filter_editable_install_lines(export_completed.stdout)
     REQUIREMENTS_OUTPUT_PATH.write_text("\n".join(filtered_lines) + "\n")
     return REQUIREMENTS_OUTPUT_PATH
+
+
+def log_command_invocation(command: list[str]) -> None:
+    print(f"Running: {' '.join(command)}", flush=True)

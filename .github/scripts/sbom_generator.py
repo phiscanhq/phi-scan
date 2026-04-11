@@ -30,9 +30,12 @@ import sys
 from pathlib import Path
 
 from _supply_chain_export import (
+    EXPORT_FAILURE_EXIT_CODE,
     PIP_AUDIT_REQUIREMENTS_FLAG,
     REPOSITORY_ROOT,
+    DependencyExportError,
     export_production_requirements,
+    log_command_invocation,
 )
 
 _SBOM_OUTPUT_PATH: Path = REPOSITORY_ROOT / "sbom.cyclonedx.json"
@@ -52,6 +55,7 @@ _PIP_AUDIT_SBOM_COMMAND: tuple[str, ...] = (
 )
 _PIP_AUDIT_OUTPUT_FLAG: str = "-o"
 
+_SUCCESS_EXIT_CODE: int = 0
 _SBOM_FAILURE_EXIT_CODE: int = 4
 
 
@@ -62,17 +66,21 @@ def _build_sbom_command(requirements_path: Path) -> list[str]:
     return command
 
 
-def _generate_sbom(requirements_path: Path) -> int:
-    command = _build_sbom_command(requirements_path)
-    print(f"Running: {' '.join(command)}", flush=True)
+def _generate_sbom(command: list[str]) -> int:
     sbom_completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
     return sbom_completed.returncode
 
 
 def main() -> int:
-    requirements_path = export_production_requirements()
-    sbom_exit_code = _generate_sbom(requirements_path)
-    if sbom_exit_code != 0:
+    try:
+        requirements_path = export_production_requirements()
+    except DependencyExportError as export_error:
+        print(f"Dependency export failed: {export_error}", file=sys.stderr)
+        return EXPORT_FAILURE_EXIT_CODE
+    command = _build_sbom_command(requirements_path)
+    log_command_invocation(command)
+    sbom_exit_code = _generate_sbom(command)
+    if sbom_exit_code != _SUCCESS_EXIT_CODE:
         print(
             f"pip-audit SBOM generation failed with exit code {sbom_exit_code}.",
             file=sys.stderr,
@@ -85,7 +93,7 @@ def main() -> int:
         )
         return _SBOM_FAILURE_EXIT_CODE
     print(f"CycloneDX SBOM written to {_SBOM_OUTPUT_PATH}", flush=True)
-    return 0
+    return _SUCCESS_EXIT_CODE
 
 
 if __name__ == "__main__":

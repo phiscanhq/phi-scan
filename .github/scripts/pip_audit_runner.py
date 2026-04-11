@@ -31,9 +31,12 @@ import tomllib
 from pathlib import Path
 
 from _supply_chain_export import (
+    EXPORT_FAILURE_EXIT_CODE,
     PIP_AUDIT_REQUIREMENTS_FLAG,
     REPOSITORY_ROOT,
+    DependencyExportError,
     export_production_requirements,
+    log_command_invocation,
 )
 
 _IGNORE_FILE_NAME: str = ".pip-audit-ignore.toml"
@@ -98,7 +101,10 @@ def _coerce_entry(entry_index: int, raw_entry: object) -> dict[str, object]:
     return dict(raw_entry)
 
 
-def _validate_entry(entry_index: int, entry: dict[str, object]) -> str:
+_TRACKING_URL_SCHEMES: tuple[str, ...] = ("http://", "https://")
+
+
+def _validate_entry_keys(entry_index: int, entry: dict[str, object]) -> None:
     present_keys = set(entry.keys())
     missing_keys = _REQUIRED_ENTRY_KEYS - present_keys
     if missing_keys:
@@ -113,24 +119,36 @@ def _validate_entry(entry_index: int, entry: dict[str, object]) -> str:
             f"{_IGNORE_FILE_NAME} entry #{entry_index} has unknown key(s) "
             f"{sorted(unknown_keys)}. Allowed: {sorted(_ALLOWED_ENTRY_KEYS)}."
         )
-    advisory_id = entry[_ENTRY_ID_KEY]
+
+
+def _validate_advisory_id_format(entry_index: int, advisory_id: object) -> str:
     if not isinstance(advisory_id, str) or not _ADVISORY_ID_PATTERN.match(advisory_id):
         raise PipAuditPolicyError(
             f"{_IGNORE_FILE_NAME} entry #{entry_index} id={advisory_id!r} does "
             "not match the advisory-ID pattern CVE-YYYY-N+ or "
             "GHSA-xxxx-xxxx-xxxx. Wildcards and blanket ignores are not allowed."
         )
-    reason_value = entry[_ENTRY_REASON_KEY]
+    return advisory_id
+
+
+def _validate_reason_field(entry_index: int, reason_value: object) -> None:
     if not isinstance(reason_value, str) or not reason_value.strip():
         raise PipAuditPolicyError(f"{_IGNORE_FILE_NAME} entry #{entry_index} has empty reason.")
-    tracking_value = entry[_ENTRY_TRACKING_KEY]
-    if not isinstance(tracking_value, str) or not tracking_value.startswith(
-        ("http://", "https://")
-    ):
+
+
+def _validate_tracking_field(entry_index: int, tracking_value: object) -> None:
+    if not isinstance(tracking_value, str) or not tracking_value.startswith(_TRACKING_URL_SCHEMES):
         raise PipAuditPolicyError(
             f"{_IGNORE_FILE_NAME} entry #{entry_index} tracking must be an "
             "http(s) URL pointing at a tracking issue."
         )
+
+
+def _validate_entry(entry_index: int, entry: dict[str, object]) -> str:
+    _validate_entry_keys(entry_index, entry)
+    advisory_id = _validate_advisory_id_format(entry_index, entry[_ENTRY_ID_KEY])
+    _validate_reason_field(entry_index, entry[_ENTRY_REASON_KEY])
+    _validate_tracking_field(entry_index, entry[_ENTRY_TRACKING_KEY])
     _validate_expiry(entry_index, entry, advisory_id)
     return advisory_id
 
@@ -179,9 +197,7 @@ def _build_pip_audit_command(requirements_path: Path, ignored_advisory_ids: list
     return command
 
 
-def _execute_pip_audit(requirements_path: Path, ignored_advisory_ids: list[str]) -> int:
-    command = _build_pip_audit_command(requirements_path, ignored_advisory_ids)
-    print(f"Running: {' '.join(command)}", flush=True)
+def _execute_pip_audit(command: list[str]) -> int:
     audit_completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
     return audit_completed.returncode
 
@@ -192,9 +208,15 @@ def main() -> int:
     except PipAuditPolicyError as policy_error:
         print(f"Policy violation: {policy_error}", file=sys.stderr)
         return _POLICY_VIOLATION_EXIT_CODE
-    requirements_path = export_production_requirements()
+    try:
+        requirements_path = export_production_requirements()
+    except DependencyExportError as export_error:
+        print(f"Dependency export failed: {export_error}", file=sys.stderr)
+        return EXPORT_FAILURE_EXIT_CODE
     _log_ignore_list_state(ignored_advisory_ids)
-    return _execute_pip_audit(requirements_path, ignored_advisory_ids)
+    command = _build_pip_audit_command(requirements_path, ignored_advisory_ids)
+    log_command_invocation(command)
+    return _execute_pip_audit(command)
 
 
 if __name__ == "__main__":
