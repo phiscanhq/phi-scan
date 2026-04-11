@@ -52,12 +52,18 @@ def _filter_editable_install_lines(raw_export_output: str) -> list[str]:
 def export_production_requirements() -> Path:
     """Export the production dependency set and return the file path.
 
-    Runs ``uv export`` with the no-dev / no-hashes flags, strips
-    editable install lines so pip-audit does not reject the file, and
-    writes the filtered output to ``REQUIREMENTS_OUTPUT_PATH``. Raises
-    ``DependencyExportError`` on any ``uv export`` failure so callers
-    can decide how to surface the error before exiting.
+    Refuses to follow a symlink at the output path, runs ``uv export``
+    with the no-dev / no-hashes flags, strips editable install lines so
+    pip-audit does not reject the file, and writes the filtered output
+    to ``REQUIREMENTS_OUTPUT_PATH``. Raises ``DependencyExportError`` on
+    symlink presence or any ``uv export`` failure so callers can decide
+    how to surface the error before exiting.
     """
+    if REQUIREMENTS_OUTPUT_PATH.is_symlink():
+        raise DependencyExportError(
+            f"{REQUIREMENTS_OUTPUT_PATH.name} is a symlink; refusing to follow it "
+            "during write. Remove the symlink and re-run."
+        )
     try:
         export_completed = subprocess.run(
             UV_EXPORT_COMMAND,
@@ -71,11 +77,6 @@ def export_production_requirements() -> Path:
             f"uv export failed with exit code {export_error.returncode}: "
             f"{export_error.stderr.strip()}"
         ) from export_error
-    if REQUIREMENTS_OUTPUT_PATH.is_symlink():
-        raise DependencyExportError(
-            f"{REQUIREMENTS_OUTPUT_PATH.name} is a symlink; refusing to follow it "
-            "during write. Remove the symlink and re-run."
-        )
     filtered_lines = _filter_editable_install_lines(export_completed.stdout)
     REQUIREMENTS_OUTPUT_PATH.write_text("\n".join(filtered_lines) + "\n")
     return REQUIREMENTS_OUTPUT_PATH
@@ -83,3 +84,13 @@ def export_production_requirements() -> Path:
 
 def log_command_invocation(command: list[str]) -> None:
     print(f"Running: {' '.join(command)}", flush=True)
+
+
+def execute_audit_command(command: list[str]) -> int:
+    """Execute a pip-audit command and return its exit code.
+
+    Shared by both supply-chain entry points so the subprocess
+    invocation pattern lives in exactly one place.
+    """
+    audit_completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
+    return audit_completed.returncode

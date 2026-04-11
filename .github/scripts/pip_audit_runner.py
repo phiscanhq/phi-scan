@@ -25,16 +25,16 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
-from _supply_chain_export import (
+from supply_chain_export import (
     EXPORT_FAILURE_EXIT_CODE,
     PIP_AUDIT_REQUIREMENTS_FLAG,
     REPOSITORY_ROOT,
     DependencyExportError,
+    execute_audit_command,
     export_production_requirements,
     log_command_invocation,
 )
@@ -197,11 +197,6 @@ def _build_pip_audit_command(requirements_path: Path, ignored_advisory_ids: list
     return command
 
 
-def _execute_pip_audit(command: list[str]) -> int:
-    audit_completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
-    return audit_completed.returncode
-
-
 def main() -> int:
     try:
         ignored_advisory_ids = _collect_validated_ignore_ids()
@@ -216,7 +211,7 @@ def main() -> int:
     _log_ignore_list_state(ignored_advisory_ids)
     command = _build_pip_audit_command(requirements_path, ignored_advisory_ids)
     log_command_invocation(command)
-    return _execute_pip_audit(command)
+    return execute_audit_command(command)
 
 
 if __name__ == "__main__":

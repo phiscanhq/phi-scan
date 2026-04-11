@@ -26,15 +26,15 @@ Exits non-zero on export failure or pip-audit failure.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
-from _supply_chain_export import (
+from supply_chain_export import (
     EXPORT_FAILURE_EXIT_CODE,
     PIP_AUDIT_REQUIREMENTS_FLAG,
     REPOSITORY_ROOT,
     DependencyExportError,
+    execute_audit_command,
     export_production_requirements,
     log_command_invocation,
 )
@@ -67,17 +67,7 @@ def _build_cyclonedx_command(requirements_path: Path) -> list[str]:
     return command
 
 
-def _execute_cyclonedx_command(command: list[str]) -> int:
-    audit_completed = subprocess.run(command, cwd=REPOSITORY_ROOT, check=False)
-    return audit_completed.returncode
-
-
 def main() -> int:
-    try:
-        requirements_path = export_production_requirements()
-    except DependencyExportError as export_error:
-        print(f"Dependency export failed: {export_error}", file=sys.stderr)
-        return EXPORT_FAILURE_EXIT_CODE
     if _CYCLONEDX_OUTPUT_PATH.is_symlink():
         print(
             f"{_CYCLONEDX_OUTPUT_PATH.name} is a symlink; refusing to follow it "
@@ -85,9 +75,14 @@ def main() -> int:
             file=sys.stderr,
         )
         return _CYCLONEDX_FAILURE_EXIT_CODE
+    try:
+        requirements_path = export_production_requirements()
+    except DependencyExportError as export_error:
+        print(f"Dependency export failed: {export_error}", file=sys.stderr)
+        return EXPORT_FAILURE_EXIT_CODE
     command = _build_cyclonedx_command(requirements_path)
     log_command_invocation(command)
-    cyclonedx_exit_code = _execute_cyclonedx_command(command)
+    cyclonedx_exit_code = execute_audit_command(command)
     if cyclonedx_exit_code != _SUCCESS_EXIT_CODE:
         print(
             f"pip-audit CycloneDX generation failed with exit code {cyclonedx_exit_code}.",
