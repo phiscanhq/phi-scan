@@ -30,7 +30,6 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 
 import pytest
 
@@ -118,6 +117,9 @@ class CorpusBenchmarkSpec:
     """Per-corpus-size benchmark configuration.
 
     Attributes:
+        name: Human-readable corpus size identifier (small, medium, large).
+            Folded into the spec so failure messages and pytest test IDs
+            do not need a separate parameter.
         file_count: Number of files to generate into the corpus directory.
         filler_character_count: Number of filler characters appended to
             each file body to reach the target per-file size.
@@ -127,6 +129,7 @@ class CorpusBenchmarkSpec:
             ``file_count / scan_duration``. Tests fail below this floor.
     """
 
+    name: str
     file_count: int
     filler_character_count: int
     max_elapsed_seconds: float
@@ -145,33 +148,28 @@ class CorpusBenchmarkSpec:
 # The gate is intentionally conservative — it is designed to catch
 # 5-10x regressions, not slow creep. Detecting slow creep across time
 # requires trend tracking which is out of scope for this module.
-_CORPUS_BENCHMARK_SPECS: MappingProxyType[str, CorpusBenchmarkSpec] = MappingProxyType(
-    {
-        _CORPUS_SIZE_SMALL: CorpusBenchmarkSpec(
-            file_count=10,
-            filler_character_count=800,
-            max_elapsed_seconds=3.0,
-            min_files_per_second=5.0,
-        ),
-        _CORPUS_SIZE_MEDIUM: CorpusBenchmarkSpec(
-            file_count=100,
-            filler_character_count=4_500,
-            max_elapsed_seconds=10.0,
-            min_files_per_second=15.0,
-        ),
-        _CORPUS_SIZE_LARGE: CorpusBenchmarkSpec(
-            file_count=500,
-            filler_character_count=9_500,
-            max_elapsed_seconds=25.0,
-            min_files_per_second=20.0,
-        ),
-    }
-)
-
-_ALL_CORPUS_SIZE_NAMES: tuple[str, ...] = (
-    _CORPUS_SIZE_SMALL,
-    _CORPUS_SIZE_MEDIUM,
-    _CORPUS_SIZE_LARGE,
+_CORPUS_BENCHMARK_SPECS: tuple[CorpusBenchmarkSpec, ...] = (
+    CorpusBenchmarkSpec(
+        name=_CORPUS_SIZE_SMALL,
+        file_count=10,
+        filler_character_count=800,
+        max_elapsed_seconds=3.0,
+        min_files_per_second=5.0,
+    ),
+    CorpusBenchmarkSpec(
+        name=_CORPUS_SIZE_MEDIUM,
+        file_count=100,
+        filler_character_count=4_500,
+        max_elapsed_seconds=10.0,
+        min_files_per_second=15.0,
+    ),
+    CorpusBenchmarkSpec(
+        name=_CORPUS_SIZE_LARGE,
+        file_count=500,
+        filler_character_count=9_500,
+        max_elapsed_seconds=25.0,
+        min_files_per_second=20.0,
+    ),
 )
 
 _BENCHMARK_WORKER_COUNT: int = 1
@@ -286,16 +284,16 @@ def _measure_scan_performance(corpus_files: list[Path], config: ScanConfig) -> B
 
 
 def _assert_measurement_meets_spec(
-    measurement: BenchmarkMeasurement, spec: CorpusBenchmarkSpec, corpus_size_name: str
+    measurement: BenchmarkMeasurement, spec: CorpusBenchmarkSpec
 ) -> None:
     assert measurement.elapsed_seconds <= spec.max_elapsed_seconds, (
-        f"{corpus_size_name} corpus scan took "
+        f"{spec.name} corpus scan took "
         f"{measurement.elapsed_seconds:.3f}s, exceeding threshold "
         f"{spec.max_elapsed_seconds:.3f}s. Investigate regression before "
         f"loosening the threshold."
     )
     assert measurement.files_per_second >= spec.min_files_per_second, (
-        f"{corpus_size_name} corpus throughput "
+        f"{spec.name} corpus throughput "
         f"{measurement.files_per_second:.2f} files/s is below the floor "
         f"{spec.min_files_per_second:.2f} files/s. Investigate regression "
         f"before loosening the threshold."
@@ -307,13 +305,12 @@ def _assert_measurement_meets_spec(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("corpus_size_name", _ALL_CORPUS_SIZE_NAMES)
+@pytest.mark.parametrize("spec", _CORPUS_BENCHMARK_SPECS, ids=lambda spec: spec.name)
 def test_execute_scan_meets_per_corpus_performance_thresholds(
-    corpus_size_name: str, tmp_path: Path
+    spec: CorpusBenchmarkSpec, tmp_path: Path
 ) -> None:
     """execute_scan stays within the per-size runtime and throughput gates."""
-    spec = _CORPUS_BENCHMARK_SPECS[corpus_size_name]
-    corpus_root = tmp_path / f"corpus_{corpus_size_name}"
+    corpus_root = tmp_path / f"corpus_{spec.name}"
     corpus_files = _generate_corpus_files(corpus_root, spec)
 
     # Default ScanConfig is intentional — benchmarks measure the out-of-box
@@ -327,4 +324,4 @@ def test_execute_scan_meets_per_corpus_performance_thresholds(
     minimum_expected_finding_count = spec.file_count * _MINIMUM_FINDINGS_PER_SYNTHETIC_FILE
     assert measurement.scan_result.files_scanned == spec.file_count
     assert len(measurement.scan_result.findings) >= minimum_expected_finding_count
-    _assert_measurement_meets_spec(measurement, spec, corpus_size_name)
+    _assert_measurement_meets_spec(measurement, spec)
