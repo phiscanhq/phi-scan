@@ -61,6 +61,9 @@ _logger: logging.Logger = get_logger("scanner")
 
 _ROOT_PATH_NOT_FOUND_ERROR: str = "Scan root {path!r} does not exist"
 _ROOT_PATH_NOT_DIRECTORY_ERROR: str = "Scan root {path!r} is not a directory"
+_WORKER_COUNT_OUT_OF_RANGE_ERROR: str = (
+    "worker_count {worker_count} is out of range [{minimum}, {maximum}]"
+)
 _SYMLINK_SKIPPED_WARNING: str = "Skipping symlink {path!r} — symlink traversal is prohibited"
 _OVERSIZED_FILE_SKIPPED_WARNING: str = "Skipping {path!r} — size exceeds the {limit_mb} MB limit"
 _BINARY_FILE_SKIPPED_INFO: str = "Skipping {path!r} — detected as binary"
@@ -363,9 +366,21 @@ def execute_scan(
     Returns:
         A ScanResult aggregating all findings, file counts, timing, and
         risk classification.
+
+    Raises:
+        ValueError: If worker_count is outside
+            [MIN_WORKER_COUNT, MAX_WORKER_COUNT].
     """
     from phi_scan.ai_review import apply_ai_review_to_findings
 
+    if not MIN_WORKER_COUNT <= worker_count <= MAX_WORKER_COUNT:
+        raise ValueError(
+            _WORKER_COUNT_OUT_OF_RANGE_ERROR.format(
+                worker_count=worker_count,
+                minimum=MIN_WORKER_COUNT,
+                maximum=MAX_WORKER_COUNT,
+            ),
+        )
     scan_start = time.monotonic()
     all_findings = _collect_all_findings(scan_targets, config, worker_count)
     reviewed_findings, ai_usage = apply_ai_review_to_findings(all_findings, config.ai_review_config)
@@ -390,11 +405,11 @@ def _collect_all_findings(
         All findings from all files, in scan_targets order.
     """
     if worker_count > MIN_WORKER_COUNT:
-        return _scan_files_parallel(scan_targets, config, worker_count)
-    return _scan_files_sequential(scan_targets, config)
+        return _run_parallel_scan(scan_targets, config, worker_count)
+    return _run_sequential_scan(scan_targets, config)
 
 
-def _scan_files_sequential(
+def _run_sequential_scan(
     scan_targets: list[Path],
     config: ScanConfig,
 ) -> list[ScanFinding]:
@@ -413,7 +428,7 @@ def _scan_files_sequential(
     return all_findings
 
 
-def _scan_files_parallel(
+def _run_parallel_scan(
     scan_targets: list[Path],
     config: ScanConfig,
     worker_count: int,

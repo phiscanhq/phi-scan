@@ -29,8 +29,8 @@ from phi_scan.scanner import (
     MAX_WORKER_COUNT,
     MIN_WORKER_COUNT,
     _passes_decompression_bomb_guards,  # noqa: PLC2701
-    _scan_files_parallel,  # noqa: PLC2701
-    _scan_files_sequential,  # noqa: PLC2701
+    _run_parallel_scan,  # noqa: PLC2701
+    _run_sequential_scan,  # noqa: PLC2701
     collect_scan_targets,
     execute_scan,
     is_binary_file,
@@ -61,6 +61,10 @@ _MINIMUM_SCAN_DURATION: float = 0.0
 _PARITY_FILE_COUNT: int = 6
 # Worker count used in parallel parity tests — must be > 1 to activate the parallel code path.
 _PARITY_WORKER_COUNT: int = 2
+# Out-of-range worker counts used by validation tests.
+_WORKER_COUNT_ZERO: int = 0
+_WORKER_COUNT_NEGATIVE: int = -1
+_WORKER_COUNT_ABOVE_MAX: int = MAX_WORKER_COUNT + 1
 # PHI content written to parity test files. Uses a structurally valid SSN pattern
 # (high confidence regex match) so findings are consistently generated across both code paths.
 # 123-45-6789 uses area number 123, which the SSA has never assigned — it is
@@ -541,6 +545,21 @@ def test_execute_scan_worker_count_two_returns_scan_result() -> None:
     assert isinstance(scan_result, ScanResult)
 
 
+def test_execute_scan_raises_value_error_when_worker_count_is_zero() -> None:
+    with pytest.raises(ValueError, match="out of range"):
+        execute_scan([], _build_default_config(), worker_count=_WORKER_COUNT_ZERO)
+
+
+def test_execute_scan_raises_value_error_when_worker_count_is_negative() -> None:
+    with pytest.raises(ValueError, match="out of range"):
+        execute_scan([], _build_default_config(), worker_count=_WORKER_COUNT_NEGATIVE)
+
+
+def test_execute_scan_raises_value_error_when_worker_count_exceeds_max() -> None:
+    with pytest.raises(ValueError, match="out of range"):
+        execute_scan([], _build_default_config(), worker_count=_WORKER_COUNT_ABOVE_MAX)
+
+
 def test_execute_scan_parallel_files_scanned_matches_target_count(tmp_path: Path) -> None:
     text_files = [tmp_path / f"file_{i}.py" for i in range(_MULTI_FILE_SCAN_COUNT)]
     for text_file in text_files:
@@ -623,28 +642,28 @@ def test_parallel_scan_risk_level_matches_sequential(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _scan_files_sequential and _scan_files_parallel — unit tests
+# _run_sequential_scan and _run_parallel_scan — unit tests
 # ---------------------------------------------------------------------------
 
 
-def test_scan_files_sequential_returns_empty_for_no_targets() -> None:
-    findings = _scan_files_sequential([], _build_default_config())
+def test_run_sequential_scan_returns_empty_for_no_targets() -> None:
+    findings = _run_sequential_scan([], _build_default_config())
 
     assert findings == []
 
 
-def test_scan_files_parallel_returns_empty_for_no_targets() -> None:
-    findings = _scan_files_parallel([], _build_default_config(), worker_count=_PARITY_WORKER_COUNT)
+def test_run_parallel_scan_returns_empty_for_no_targets() -> None:
+    findings = _run_parallel_scan([], _build_default_config(), worker_count=_PARITY_WORKER_COUNT)
 
     assert findings == []
 
 
-def test_scan_files_parallel_preserves_order(tmp_path: Path) -> None:
+def test_run_parallel_scan_preserves_order(tmp_path: Path) -> None:
     phi_files = _build_parity_files(tmp_path, _PARITY_FILE_COUNT)
     config = _build_default_config()
 
-    sequential_findings = _scan_files_sequential(phi_files, config)
-    parallel_findings = _scan_files_parallel(phi_files, config, worker_count=_PARITY_WORKER_COUNT)
+    sequential_findings = _run_sequential_scan(phi_files, config)
+    parallel_findings = _run_parallel_scan(phi_files, config, worker_count=_PARITY_WORKER_COUNT)
 
     sequential_paths = [f.file_path for f in sequential_findings]
     parallel_paths = [f.file_path for f in parallel_findings]

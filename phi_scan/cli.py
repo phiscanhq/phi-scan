@@ -377,7 +377,7 @@ _PROGRESS_FILENAME_ELLIPSIS: str = "…"
 # Label shown in the progress bar description column when parallel scanning is active.
 # Replaces the per-file name shown in sequential mode (multiple files run simultaneously
 # so a single filename would be misleading).
-_PARALLEL_SCAN_PROGRESS_LABEL: str = "scanning..."
+_PARALLEL_SCAN_PROGRESS_LABEL: str = f"scanning{_PROGRESS_FILENAME_ELLIPSIS}"
 # Default worker count accepted by the --workers option.
 _DEFAULT_WORKER_COUNT: int = MIN_WORKER_COUNT
 # Error messages for out-of-range --workers values.
@@ -600,7 +600,7 @@ class _ScanExecutionOptions:
 
 @dataclass(frozen=True)
 class _ProgressScanContext:
-    """Arguments for _scan_files_with_progress and its sequential/parallel sub-helpers.
+    """Arguments for _run_scan_with_progress and its sequential/parallel sub-helpers.
 
     Bundles all five inputs required by the progress-bar scan path into a single
     object so each helper stays within the three-argument limit.
@@ -718,7 +718,7 @@ def _validate_worker_count(worker_count: int) -> None:
         raise typer.BadParameter(_WORKERS_ABOVE_MAXIMUM_ERROR)
 
 
-def _scan_files_sequential_with_progress(
+def _run_sequential_scan_with_progress(
     scan: _ProgressScanContext,
 ) -> list[ScanFinding]:
     """Scan files one at a time, advancing the progress bar after each file.
@@ -738,14 +738,16 @@ def _scan_files_sequential_with_progress(
     return all_findings
 
 
-def _scan_files_parallel_with_progress(
+def _run_parallel_scan_with_progress(
     scan: _ProgressScanContext,
 ) -> list[ScanFinding]:
     """Scan files concurrently, advancing the progress bar as each file completes.
 
     Uses as_completed() so the progress bar fires on actual completion rather than
     submission order. Results are re-sorted by original scan_targets index before
-    returning to ensure deterministic output ordering.
+    returning to ensure deterministic output ordering. Worker-thread exceptions
+    are re-raised by Future.result() and propagate to the caller — matching the
+    re-raise-on-iteration behaviour of executor.map() in scanner._run_parallel_scan.
 
     Args:
         scan: Bundled scan targets, config, worker count, and progress bar state.
@@ -773,7 +775,7 @@ def _scan_files_parallel_with_progress(
     return [finding for file_findings in ordered_per_file for finding in file_findings]
 
 
-def _scan_files_with_progress(
+def _run_scan_with_progress(
     scan: _ProgressScanContext,
 ) -> list[ScanFinding]:
     """Dispatch to sequential or parallel progress scanning based on worker_count.
@@ -785,8 +787,8 @@ def _scan_files_with_progress(
         All findings in scan_targets order.
     """
     if scan.worker_count > MIN_WORKER_COUNT:
-        return _scan_files_parallel_with_progress(scan)
-    return _scan_files_sequential_with_progress(scan)
+        return _run_parallel_scan_with_progress(scan)
+    return _run_sequential_scan_with_progress(scan)
 
 
 def _execute_scan_with_progress(
@@ -818,7 +820,7 @@ def _execute_scan_with_progress(
             progress=progress,
             task_id=task_id,
         )
-        all_findings = _scan_files_with_progress(progress_scan_context)
+        all_findings = _run_scan_with_progress(progress_scan_context)
     scan_duration = time.monotonic() - scan_start
     return build_scan_result(tuple(all_findings), len(scan_targets), scan_duration)
 
