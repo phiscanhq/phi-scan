@@ -13,10 +13,12 @@ Covers all eight Phase 2F tasks:
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
 
+import phi_scan.fixer as fixer_module
 from phi_scan.constants import DEFAULT_TEXT_ENCODING, PhiCategory
 from phi_scan.fixer import (
     FixMode,
@@ -47,6 +49,44 @@ _PATCH_SUFFIX: str = ".patch"
 _DIFF_HUNK_MARKER: str = "@@"
 _DIFF_FROM_MARKER: str = "---"
 _DIFF_TO_MARKER: str = "+++"
+
+# Structural-safety constants for threat-model row F-3 (P0).
+# The fixer is the only module that writes synthetic values back to source
+# files. Any form of dynamic code execution in that path would let an
+# attacker who can stage a crafted input file achieve code execution on
+# the scanning host. This test pins the structural invariant that the
+# module is pure text replacement — no subprocess, no eval/exec, no
+# dynamic import.
+_FIXER_MODULE_PATH: Path = Path(fixer_module.__file__)
+
+_FIXER_BANNED_IMPORT_MODULE_NAMES: frozenset[str] = frozenset(
+    {
+        "subprocess",
+        "os.system",
+        "pty",
+        "importlib",
+    }
+)
+_FIXER_BANNED_CALL_NAMES: frozenset[str] = frozenset(
+    {
+        "eval",
+        "exec",
+        "compile",
+        "__import__",
+    }
+)
+_FIXER_BANNED_ATTRIBUTE_CHAINS: frozenset[tuple[str, ...]] = frozenset(
+    {
+        ("os", "system"),
+        ("os", "popen"),
+        ("os", "exec"),
+        ("os", "execv"),
+        ("os", "execve"),
+        ("os", "execvp"),
+        ("os", "spawn"),
+        ("os", "spawnv"),
+    }
+)
 
 # SHA-256 hex digest of "abc" — fixed reference value for determinism tests.
 _ABC_HASH: str = "ba7816bf8f01cfea414140de5dae2ec73b00361bbef0469432f1cc029d8cbe90"
@@ -475,3 +515,69 @@ def test_fix_replacement_is_immutable() -> None:
 
     with pytest.raises((TypeError, AttributeError)):
         replacement.line_number = 99  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Structural safety — threat-model F-3 (P0)
+# ---------------------------------------------------------------------------
+
+
+def _collect_attribute_chain(node: ast.Attribute) -> tuple[str, ...]:
+    """Return the dotted-name tuple for a chain like ``os.system`` or ``a.b.c``.
+
+    Non-Name roots (subscripts, calls, etc.) return an empty tuple — those
+    cannot match the static banned-chain list and are not a concern for
+    this structural check.
+    """
+    chain: list[str] = []
+    current: ast.AST = node
+    while isinstance(current, ast.Attribute):
+        chain.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return ()
+    chain.append(current.id)
+    return tuple(reversed(chain))
+
+
+def _find_fixer_module_safety_violations(module_source: str) -> list[str]:
+    violations: list[str] = []
+    tree = ast.parse(module_source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in _FIXER_BANNED_IMPORT_MODULE_NAMES:
+                    violations.append(f"import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            if node.module in _FIXER_BANNED_IMPORT_MODULE_NAMES:
+                violations.append(f"from {node.module} import ...")
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in _FIXER_BANNED_CALL_NAMES:
+                violations.append(f"{func.id}(...)")
+            elif isinstance(func, ast.Attribute):
+                chain = _collect_attribute_chain(func)
+                if chain in _FIXER_BANNED_ATTRIBUTE_CHAINS:
+                    violations.append(".".join(chain) + "(...)")
+    return violations
+
+
+def test_fixer_module_contains_no_dynamic_code_execution() -> None:
+    """Structural regression gate for threat-model row F-3 (P0).
+
+    The fixer must remain pure Python text replacement. This test parses
+    ``phi_scan/fixer.py`` with ``ast`` and fails if any banned import,
+    banned call name, or banned attribute chain appears anywhere in the
+    module. Any future change that introduces ``subprocess``, ``eval``,
+    ``exec``, ``os.system``, dynamic import, or similar code-execution
+    primitives will fail this gate and require an explicit security
+    review — not a silent merge.
+    """
+    module_source = _FIXER_MODULE_PATH.read_text(encoding=DEFAULT_TEXT_ENCODING)
+    violations = _find_fixer_module_safety_violations(module_source)
+    assert not violations, (
+        "phi_scan/fixer.py introduced code-execution primitives banned by "
+        "threat-model row F-3 (P0). Violations: "
+        f"{violations}. Any such change requires a security review and an "
+        "update to docs/threat-model.md before merge."
+    )

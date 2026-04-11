@@ -4,7 +4,7 @@ Tracks progress toward 10/10 public-repo quality across four categories.
 Each check has a binary pass/fail state. All checks must pass before the repo
 is declared production-ready for v1.0.
 
-**Last updated:** 2026-04-12
+**Last updated:** 2026-04-13
 
 ---
 
@@ -43,15 +43,15 @@ is declared production-ready for v1.0.
 | S2 | Webhook `http://` scheme rejected at validation time | PASS | Enforced in `notifier.py` since 7E |
 | S3 | Webhook SSRF: RFC1918, loopback, link-local, CGNAT, metadata IPs blocked by default | PASS | DNS resolution + IP range check since 7G.2 |
 | S4 | DNS rebinding (TOCTOU) window closed: validated IP pinned to TCP connection | PASS | `_rewrite_url_hostname_to_ip` + `_PinnedWebhookRequest` since 7J |
-| S5 | SSRF controls validated with adversarial tests (rebind, mixed-resolution, IPv6) | PARTIAL | Basic pin tests present; mixed-resolution and rebind simulation tests missing |
+| S5 | SSRF controls validated with adversarial tests (rebind, mixed-resolution, IPv6) | PASS | Adversarial coverage in `tests/test_notifier_ssrf_adversarial.py` (50 tests) covers IPv4-mapped IPv6, unspecified, multicast, reserved, literal IPv6, mixed-resolution, and deterministic DNS rebind simulation. Notifier unmapping + built-in-property checks added in same PR. |
 | S6 | ZIP decompression bomb protection implemented and tested | PASS | Size + ratio guards since 7E |
-| S7 | `docs/threat-model.md` exists with threat → mitigation → test → residual risk table | FAIL | Not yet written |
-| S8 | All P0/P1 threats in the threat model map to a named test | FAIL | Blocked by S7 |
+| S7 | `docs/threat-model.md` exists with threat → mitigation → test → residual risk table | PASS | Full-attack-surface threat model in `docs/threat-model.md` covering scanner ingestion, archive handling, detectors, notifier, AI review, fixer, output, local artifacts, CI adapters. |
+| S8 | All P0/P1 threats in the threat model map to a named test | PASS | Every P0 and P1 row in `docs/threat-model.md` cites specific test names; all 61 citations verified via `pytest --collect-only`. |
 | S9 | Dependency vulnerability scanning runs in CI (e.g. `pip-audit` or `safety`) | FAIL | Not yet implemented |
 | S10 | SBOM generation policy documented | FAIL | Not yet documented |
 | S11 | Artifact signing policy documented (or explicitly out of scope with rationale) | FAIL | Not yet documented |
 
-**Passing: 5 / 11 (1 partial)**
+**Passing: 8 / 11**
 
 ---
 
@@ -93,10 +93,10 @@ is declared production-ready for v1.0.
 | Category | Passing | Total | % |
 |----------|---------|-------|---|
 | Technical Maturity | 9 | 9 | 100% |
-| Security Posture | 5 | 11 | 45% |
+| Security Posture | 8 | 11 | 73% |
 | Architecture Scalability | 1 | 8 | 13% |
 | Commercial Readiness | 3 | 7 | 43% |
-| **Total** | **18** | **35** | **51%** |
+| **Total** | **21** | **35** | **60%** |
 
 **Target:** 35 / 35 checks passing.
 
@@ -108,6 +108,7 @@ is declared production-ready for v1.0.
 |------|------|----------|--------------|------------|-------|
 | 2026-04-11 | 7/9 | 5/11 | 1/8 | 3/7 | Scorecard created. 7J merged (DNS TOCTOU fix). README link added. Reconciled T4/T5/A7 for shipped parallel scan work ([8F-ext.1]). T6/T7 shipped: byte-exact golden contract tests for JSON/SARIF/CSV/JUnit. |
 | 2026-04-12 | 9/9 | 5/11 | 1/8 | 3/7 | T8/T9 shipped: synthetic small/medium/large corpora and per-size runtime + throughput thresholds enforced in the Linux pytest job. Technical Maturity category now at 100%. |
+| 2026-04-13 | 9/9 | 8/11 | 1/8 | 3/7 | S5/S7/S8 shipped: 50 adversarial SSRF tests (IPv4-mapped IPv6, unspecified, multicast, mixed-resolution, DNS rebind TOCTOU), full-surface threat model at `docs/threat-model.md`, notifier SSRF fix (unmap IPv4-mapped IPv6 + built-in-property checks). Security category now at 73%. |
 
 ---
 
@@ -119,7 +120,7 @@ Checks are addressed in this sequence:
 2. **T6, T7, T8, T9** — Output contract golden tests + performance gates
     - T6, T7 ✓ Done — byte-exact golden tests for JSON/SARIF/CSV/JUnit
     - T8, T9 ✓ Done — synthetic corpora + runtime/throughput CI thresholds
-3. **S5, S7, S8** — SSRF adversarial tests + threat model doc
+3. **S5, S7, S8** ✓ Done — SSRF adversarial tests + threat model doc
 4. **S9, S10, S11** — Supply-chain security gates
 5. **A1–A5** — Plugin API v1 implementation
 6. **A6** — Suppressor + output-sink design doc (v1.1 shape)
