@@ -41,7 +41,7 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse, urlunparse
 
 import httpx
 
@@ -109,6 +109,14 @@ _WEBHOOK_DNS_BLOCKED_ADDRESS_ERROR: str = (
     "ranges are blocked by default. "
     "Set is_private_webhook_url_allowed=True in NotificationConfig to allow self-hosted targets."
 )
+# Transport URL format used to pin the TCP connection to the IP resolved during
+# SSRF validation, preventing DNS rebinding between validation and request.
+_PINNED_HOST_HEADER: str = "Host"
+_CONTENT_TYPE_HEADER: str = "Content-Type"
+_WEBHOOK_BUILD_NO_HOSTNAME_ERROR: str = "cannot build pinned request: URL has no parseable hostname"
+_IPV6_ADDRESS_COLON: str = ":"
+_IPV6_NETLOC_BRACKET_TEMPLATE: str = "[{hostname}]"
+_NETLOC_PORT_TEMPLATE: str = ":{port}"
 
 # IP networks blocked by SSRF protection when is_private_webhook_url_allowed=False.
 # Covers RFC1918 private ranges, link-local, loopback, CGNAT, cloud metadata,
@@ -705,8 +713,11 @@ def _reject_ssrf_resolved_addresses(  # phi-scan:ignore
             )
 
 
-def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> None:
-    """Raise NotificationError if the webhook URL fails SSRF safety checks.
+def _validate_webhook_url(
+    url: str,
+    is_private_webhook_url_allowed: bool,
+) -> str | None:
+    """Validate the webhook URL against SSRF safety checks and return a pinned IP.
 
     Enforces four guards (1–2 always, 3–4 when is_private_webhook_url_allowed is False):
     1. Scheme must be 'https' — plaintext http is rejected.
@@ -716,11 +727,20 @@ def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> Non
     4. Hostname, if a domain name, is resolved via DNS and every returned address
        is validated against the same blocked ranges (closes DNS-rebinding bypass).
 
+    Returns the first resolved IP address as a string so the caller can pin the
+    TCP connection to it, preventing DNS rebinding between validation and delivery.
+    Returns None when the hostname is already a literal IP (no resolution needed).
+
     Args:
         url: The webhook endpoint URL to validate.
         is_private_webhook_url_allowed: When True, skip both the literal-IP check
             and the DNS resolution check (opt-out for self-hosted targets on private
             networks).
+
+    Returns:
+        Pinned IP string to connect to, or None when is_private_webhook_url_allowed
+        is True or the hostname is already a literal IP address (public or private —
+        literal IPs require no DNS resolution and therefore no pinning).
 
     Raises:
         NotificationError: If the URL fails any enabled check.
@@ -737,46 +757,159 @@ def _validate_webhook_url(url: str, is_private_webhook_url_allowed: bool) -> Non
             _WEBHOOK_MISSING_HOSTNAME_ERROR.format(url_hash=compute_value_hash(url))
         )
     if is_private_webhook_url_allowed:
-        return
+        return None
     try:
         address = ipaddress.ip_address(hostname)  # phi-scan:ignore
     except ValueError:
         resolved_addresses = _resolve_hostname_addresses(hostname)  # phi-scan:ignore
         _reject_ssrf_resolved_addresses(hostname, resolved_addresses)
-        return
+        return str(resolved_addresses[0])  # phi-scan:ignore
     if any(address in network for network in _BLOCKED_IP_NETWORKS):  # phi-scan:ignore
         raise NotificationError(
             _WEBHOOK_PRIVATE_IP_ERROR.format(
                 url_hash=compute_value_hash(url), address_hash=compute_value_hash(str(address))
             )
         )
+    return None
 
 
-def _post_with_retry(
-    url: str,
-    payload: dict[str, Any],
-    retry_count: int,
-) -> None:
+@dataclass(frozen=True)
+class _PinnedWebhookRequest:
+    """Pre-computed URL and headers for a TOCTOU-safe webhook POST.
+
+    Produced by ``_build_pinned_webhook_request`` and consumed by ``_post_with_retry``
+    so that URL rewriting and header construction are isolated from the retry loop.
+    """
+
+    target_url: str
+    headers: MappingProxyType[str, str]
+
+
+@dataclass(frozen=True)
+class _WebhookPostRequest:
+    """Input bundle for _post_with_retry.
+
+    Groups the four delivery parameters so the function signature stays within
+    the three-argument limit.
+    """
+
+    url: str
+    payload: dict[str, Any]
+    retry_count: int
+    pinned_ip: str | None
+
+
+def _format_netloc_host_segment(hostname: str) -> str:
+    """Return hostname formatted for insertion into a URL netloc string.
+
+    IPv6 addresses must be bracketed in netloc (e.g. ``[2001:db8::1]``);
+    IPv4 addresses and DNS names are used as-is.
+
+    Args:
+        hostname: Bare hostname or IP address string (no brackets).
+
+    Returns:
+        Hostname ready for insertion into a netloc string.
+    """
+    if _IPV6_ADDRESS_COLON in hostname:
+        return _IPV6_NETLOC_BRACKET_TEMPLATE.format(hostname=hostname)
+    return hostname
+
+
+def _rewrite_url_hostname_to_ip(parsed_webhook_url: ParseResult, pinned_ip: str) -> str:
+    """Return a rewritten URL with its hostname replaced by ``pinned_ip``.
+
+    Reconstructs the netloc from parsed parts (host + port) rather than
+    string-substituting the original netloc, which is fragile when the
+    hostname appears as a substring of the port or other netloc components.
+    The original hostname travels in the Host header (see
+    ``_build_pinned_webhook_request``) so TLS SNI and server routing are preserved.
+    Both IPv4 and IPv6 pinned addresses are handled: IPv6 addresses are
+    bracketed in the netloc (e.g. ``[2001:db8::1]``).
+
+    Args:
+        parsed_webhook_url: Pre-parsed webhook URL from the caller (avoids a
+            redundant ``urlparse`` call when the caller already holds this value).
+        pinned_ip: IP address string returned by ``_validate_webhook_url``.
+
+    Returns:
+        URL with hostname replaced by ``pinned_ip``.
+    """
+    pinned_netloc_host = _format_netloc_host_segment(pinned_ip)
+    if parsed_webhook_url.port:
+        port_suffix = _NETLOC_PORT_TEMPLATE.format(port=parsed_webhook_url.port)
+        pinned_netloc = f"{pinned_netloc_host}{port_suffix}"
+    else:
+        pinned_netloc = pinned_netloc_host
+    return urlunparse(
+        (
+            parsed_webhook_url.scheme,
+            pinned_netloc,
+            parsed_webhook_url.path,
+            parsed_webhook_url.params,
+            parsed_webhook_url.query,
+            parsed_webhook_url.fragment,
+        )
+    )
+
+
+def _build_pinned_webhook_request(url: str, pinned_ip: str | None) -> _PinnedWebhookRequest:
+    """Build the target URL and headers for a webhook POST.
+
+    When ``pinned_ip`` is provided, rewrites the URL to connect to the
+    pre-resolved IP and adds a Host header with the original hostname (TOCTOU
+    mitigation). When None, the URL and headers are used as-is.
+
+    Args:
+        url: Webhook endpoint URL.
+        pinned_ip: IP returned by ``_validate_webhook_url``, or None.
+
+    Returns:
+        ``_PinnedWebhookRequest`` with target_url and headers ready for httpx.
+
+    Raises:
+        NotificationError: If pinned_ip is set but the URL has no parseable hostname.
+    """
+    if pinned_ip is None:
+        return _PinnedWebhookRequest(
+            target_url=url,
+            headers=MappingProxyType({_CONTENT_TYPE_HEADER: _WEBHOOK_CONTENT_TYPE}),
+        )
+    parsed_webhook_url = urlparse(url)
+    original_hostname = parsed_webhook_url.hostname
+    if not original_hostname:
+        raise NotificationError(_WEBHOOK_BUILD_NO_HOSTNAME_ERROR)
+    return _PinnedWebhookRequest(
+        target_url=_rewrite_url_hostname_to_ip(parsed_webhook_url, pinned_ip),
+        headers=MappingProxyType(
+            {
+                _CONTENT_TYPE_HEADER: _WEBHOOK_CONTENT_TYPE,
+                _PINNED_HOST_HEADER: original_hostname,
+            }
+        ),
+    )
+
+
+def _post_with_retry(post_request: _WebhookPostRequest) -> None:
     """POST a JSON payload to a URL with linear retry on failure.
 
     Uses ``httpx`` sync client. Retries on HTTP 4xx/5xx and on network errors.
     The final attempt raises ``NotificationError`` if still failing.
 
     Args:
-        url: The webhook endpoint URL.
-        payload: JSON-serialisable payload dict.
-        retry_count: Total number of attempts (1 = no retry).
+        post_request: Delivery parameters bundled as a ``_WebhookPostRequest``.
 
     Raises:
         NotificationError: If all attempts fail.
     """
+    pinned_request = _build_pinned_webhook_request(post_request.url, post_request.pinned_ip)
     last_error: Exception | None = None
-    for attempt in range(1, retry_count + 1):
+    for attempt in range(1, post_request.retry_count + 1):
         try:
             response = httpx.post(
-                url,
-                json=payload,
-                headers={"Content-Type": _WEBHOOK_CONTENT_TYPE},
+                pinned_request.target_url,
+                json=post_request.payload,
+                headers=pinned_request.headers,
                 timeout=WEBHOOK_DEFAULT_TIMEOUT_SECONDS,
             )
             if response.is_success:
@@ -786,21 +919,26 @@ def _post_with_retry(
             )
             _logger.warning(
                 "Webhook POST to %r returned %d (attempt %d/%d)",
-                url,
+                post_request.url,
                 response.status_code,
                 attempt,
-                retry_count,
+                post_request.retry_count,
             )
         except httpx.RequestError as request_error:
             last_error = request_error
             _logger.warning(
                 "Webhook POST to %r failed (attempt %d/%d): %s",
-                url,
+                post_request.url,
                 attempt,
-                retry_count,
+                post_request.retry_count,
                 request_error,
             )
-    raise NotificationError(_WEBHOOK_SEND_ERROR.format(url=url, detail=last_error)) from last_error
+    final_error = NotificationError(
+        _WEBHOOK_SEND_ERROR.format(url=post_request.url, detail=last_error)
+    )
+    if last_error is not None:
+        raise final_error from last_error
+    raise final_error
 
 
 # ---------------------------------------------------------------------------
@@ -873,9 +1011,16 @@ def send_webhook_notification(
     """
     if not config.webhook_url:
         raise NotificationError(_NO_WEBHOOK_URL_ERROR)
-    _validate_webhook_url(config.webhook_url, config.is_private_webhook_url_allowed)
+    pinned_ip = _validate_webhook_url(config.webhook_url, config.is_private_webhook_url_allowed)
     payload = _build_webhook_payload(config.webhook_type, request)
-    _post_with_retry(config.webhook_url, payload, config.webhook_retry_count)
+    _post_with_retry(
+        _WebhookPostRequest(
+            url=config.webhook_url,
+            payload=payload,
+            retry_count=config.webhook_retry_count,
+            pinned_ip=pinned_ip,
+        )
+    )
     _logger.info(
         "Webhook notification delivered to %r (%s) for %s/%s",
         config.webhook_url,

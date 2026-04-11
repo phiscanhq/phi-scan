@@ -41,6 +41,9 @@ __all__ = [
 
 _NO_REMEDIATION_HINT: str = ""
 _SHA256_HEX_DIGEST_LENGTH: int = 64
+# Lowercase-only hex digits — rejects uppercase A–F that string.hexdigits would
+# permit, enforcing that value_hash always holds a SHA-256 lowercase digest.
+_LOWERCASE_HEX_DIGITS: frozenset[str] = frozenset(string.hexdigits.lower())
 
 
 @dataclass(frozen=True)
@@ -69,10 +72,11 @@ class StructuredFindingRequest:
             ValueError: If value_hash is not exactly 64 lowercase hex characters.
         """
         is_valid_length = len(self.value_hash) == _SHA256_HEX_DIGEST_LENGTH
-        is_valid_hex = all(character in string.hexdigits for character in self.value_hash)
+        is_valid_hex = all(character in _LOWERCASE_HEX_DIGITS for character in self.value_hash)
         if not is_valid_length or not is_valid_hex:
             raise ValueError(
-                f"value_hash must be a 64-character hex digest; got length {len(self.value_hash)}"
+                "value_hash must be a 64-character lowercase hex digest; "
+                f"got length {len(self.value_hash)}"
             )
 
 
