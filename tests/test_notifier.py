@@ -19,6 +19,7 @@ import socket
 from pathlib import Path
 from types import MappingProxyType
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -807,7 +808,7 @@ def test_validate_webhook_url_returns_none_when_private_allowed() -> None:
 
 def test_rewrite_url_hostname_to_ip_replaces_hostname() -> None:
     """_rewrite_url_hostname_to_ip must substitute the hostname with the pinned IP."""
-    pinned = _rewrite_url_hostname_to_ip(_DOMAIN_WEBHOOK_URL, _TEST_PINNED_IP, _DOMAIN_WEBHOOK_HOST)
+    pinned = _rewrite_url_hostname_to_ip(urlparse(_DOMAIN_WEBHOOK_URL), _TEST_PINNED_IP)
     assert _TEST_PINNED_IP in pinned
     assert _DOMAIN_WEBHOOK_HOST not in pinned
 
@@ -866,7 +867,7 @@ _TEST_IPV6_WEBHOOK_URL: str = f"https://[{_TEST_IPV6_HOST}]:8443/notify"
 
 def test_rewrite_url_hostname_to_ip_handles_ipv6_url() -> None:
     """_rewrite_url_hostname_to_ip must produce a valid URL when the original host is IPv6."""
-    pinned = _rewrite_url_hostname_to_ip(_TEST_IPV6_WEBHOOK_URL, _TEST_PINNED_IP, _TEST_IPV6_HOST)
+    pinned = _rewrite_url_hostname_to_ip(urlparse(_TEST_IPV6_WEBHOOK_URL), _TEST_PINNED_IP)
     assert _TEST_PINNED_IP in pinned
     assert _TEST_IPV6_HOST not in pinned
     assert ":8443" in pinned
