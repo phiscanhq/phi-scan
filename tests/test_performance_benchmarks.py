@@ -176,6 +176,19 @@ _ALL_CORPUS_SIZE_NAMES: tuple[str, ...] = (
 
 _BENCHMARK_WORKER_COUNT: int = 1
 
+# Guard against division by zero when computing files-per-second. In practice
+# time.monotonic() always advances between two calls, but a defensive guard
+# avoids a ZeroDivisionError if the measured scan is unexpectedly instant.
+_ZERO_ELAPSED_SECONDS: float = 0.0
+
+# Each synthetic file embeds three explicit PHI values (SSN, phone number,
+# email address). The real finding count observed in practice is higher
+# because quasi-identifier combinations fire additional detections, but
+# three is the guaranteed floor per file. A regression that silently
+# stopped detecting any of the three primary patterns would fail this
+# lower bound before the runtime thresholds even fire.
+_MINIMUM_FINDINGS_PER_SYNTHETIC_FILE: int = 3
+
 
 # ---------------------------------------------------------------------------
 # Synthetic corpus generation
@@ -191,8 +204,9 @@ def _build_synthetic_ssn(file_index: int) -> str:
 
 
 def _build_synthetic_phone(file_index: int) -> str:
-    last_two = (file_index * _SYNTHETIC_PHONE_LAST_TWO_STEP) % _SYNTHETIC_PHONE_LAST_TWO_MODULUS
-    return _SYNTHETIC_PHONE_FORMAT.format(last_two_digits=last_two)
+    phone_step = file_index * _SYNTHETIC_PHONE_LAST_TWO_STEP
+    last_two_digits = phone_step % _SYNTHETIC_PHONE_LAST_TWO_MODULUS
+    return _SYNTHETIC_PHONE_FORMAT.format(last_two_digits=last_two_digits)
 
 
 def _build_synthetic_email(file_index: int) -> str:
@@ -212,9 +226,12 @@ def _build_synthetic_file_body(file_index: int, filler_character_count: int) -> 
 def _generate_corpus_files(corpus_root: Path, spec: CorpusBenchmarkSpec) -> list[Path]:
     """Write ``spec.file_count`` synthetic files into ``corpus_root``.
 
+    Creates ``corpus_root`` (and any missing parents) if it does not
+    already exist so callers can pass a pytest ``tmp_path`` subdirectory
+    directly without a separate mkdir step.
+
     Args:
         corpus_root: Directory that will contain the generated files.
-            Must already exist.
         spec: Corpus specification — file count and filler size.
 
     Returns:
@@ -257,7 +274,10 @@ def _measure_scan_performance(corpus_files: list[Path], config: ScanConfig) -> B
     scan_start = time.monotonic()
     scan_result = execute_scan(corpus_files, config, worker_count=_BENCHMARK_WORKER_COUNT)
     elapsed_seconds = time.monotonic() - scan_start
-    files_per_second = len(corpus_files) / elapsed_seconds if elapsed_seconds > 0 else float("inf")
+    if elapsed_seconds > _ZERO_ELAPSED_SECONDS:
+        files_per_second = len(corpus_files) / elapsed_seconds
+    else:
+        files_per_second = float("inf")
     return BenchmarkMeasurement(
         elapsed_seconds=elapsed_seconds,
         files_per_second=files_per_second,
@@ -296,9 +316,15 @@ def test_execute_scan_meets_per_corpus_performance_thresholds(
     corpus_root = tmp_path / f"corpus_{corpus_size_name}"
     corpus_files = _generate_corpus_files(corpus_root, spec)
 
+    # Default ScanConfig is intentional — benchmarks measure the out-of-box
+    # scan path a typical caller would see. If ScanConfig defaults change
+    # (new detectors enabled, thresholds tightened), the observed runtime
+    # will shift and the thresholds in _CORPUS_BENCHMARK_SPECS should be
+    # re-measured as part of that change.
     config = ScanConfig()
     measurement = _measure_scan_performance(corpus_files, config)
 
+    minimum_expected_finding_count = spec.file_count * _MINIMUM_FINDINGS_PER_SYNTHETIC_FILE
     assert measurement.scan_result.files_scanned == spec.file_count
-    assert len(measurement.scan_result.findings) > 0
+    assert len(measurement.scan_result.findings) >= minimum_expected_finding_count
     _assert_measurement_meets_spec(measurement, spec, corpus_size_name)
