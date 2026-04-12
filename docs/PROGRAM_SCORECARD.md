@@ -80,11 +80,11 @@ is declared production-ready for v1.0.
 | C2 | `SECURITY.md` exists with vulnerability reporting policy | PASS | Present in repo |
 | C3 | Community / Pro / Cloud feature boundary matrix published in docs | PASS | `docs/community-pro-cloud-matrix.md` covers 8 feature categories across Community/Pro/Cloud tiers with guiding principles and "what stays free forever" guarantees. |
 | C4 | "What stays free forever" messaging is explicit in `README.md` | PASS | "Free forever" bullet in Why PhiScan section with link to full boundary matrix. Explicit guarantee that Community capabilities will never be paywalled or degraded. |
-| C5 | Release cadence and versioning policy documented | FAIL | Not yet documented |
-| C6 | Long-term support (LTS) and end-of-life policy documented | FAIL | Not yet documented |
+| C5 | Release cadence and versioning policy documented | PASS | `docs/release-versioning-policy.md` covers semver scheme, patch/minor/major cadence, breaking-change definition, release process, and deprecation cross-reference. |
+| C6 | Long-term support (LTS) and end-of-life policy documented | PASS | `docs/lts-eol-policy.md` covers 12-month LTS window, security backport SLA, EOL process with 90-day notice, LTS overlap, and Python version support policy. |
 | C7 | `docs/PROGRAM_SCORECARD.md` linked from `README.md` | PASS | Added in same PR as scorecard |
 
-**Passing: 5 / 7**
+**Passing: 7 / 7**
 
 ---
 
@@ -95,8 +95,8 @@ is declared production-ready for v1.0.
 | Technical Maturity | 9 | 9 | 100% |
 | Security Posture | 11 | 11 | 100% |
 | Architecture Scalability | 8 | 8 | 100% |
-| Commercial Readiness | 5 | 7 | 71% |
-| **Total** | **33** | **35** | **94%** |
+| Commercial Readiness | 7 | 7 | 100% |
+| **Total** | **35** | **35** | **100%** |
 
 **Target:** 35 / 35 checks passing.
 
@@ -111,7 +111,7 @@ is declared production-ready for v1.0.
 | 2026-04-13 | 9/9 | 8/11 | 1/8 | 3/7 | S5/S7/S8 shipped: 50 adversarial SSRF tests (IPv4-mapped IPv6, unspecified, multicast, mixed-resolution, DNS rebind TOCTOU), full-surface threat model at `docs/threat-model.md`, notifier SSRF fix (unmap IPv4-mapped IPv6 + built-in-property checks). Security category now at 73%. |
 | 2026-04-14 | 9/9 | 11/11 | 1/8 | 3/7 | S9/S10/S11 shipped: pip-audit CI gate with policy-enforced `.pip-audit-ignore.toml`, release-time CycloneDX SBOM via `.github/scripts/sbom_generator.py`, keyless Sigstore signing of wheel+sdist. Baseline CVEs cleared via direct pin bumps (cryptography 46.0.7, pygments 2.20.0). Full supply-chain policy at `docs/supply-chain.md`. Security category at 100%; overall 69%. |
 | 2026-04-15 | 9/9 | 11/11 | 6/8 | 3/7 | A1–A5 shipped: Plugin API v1 core (`BaseRecognizer` ABC, `ScanContext`/`ScanFinding` dataclasses, `PLUGIN_API_VERSION`) in PR #124. `phi-scan plugins list` command with Rich table and `--json` output in PR #125. Plugin compatibility and deprecation policy at `docs/plugin-api-v1.md`. Architecture category at 75%; overall 83%. |
-| 2026-04-16 | 9/9 | 11/11 | 8/8 | 5/7 | A6/A8 shipped: `docs/plugin-hooks-v1_1-design.md` (suppressor + output sink v1.1 design) and `docs/ci-adapter-contract.md` (CI adapter split with `BaseCIAdapter` interface, 3-phase rollout). C3/C4 shipped: `docs/community-pro-cloud-matrix.md` (feature boundary matrix across 8 categories) and "Free forever" messaging in README. Architecture at 100%, Commercial at 71%; overall 94%. |
+| 2026-04-16 | 9/9 | 11/11 | 8/8 | 7/7 | A6/A8 shipped: `docs/plugin-hooks-v1_1-design.md` (suppressor + output sink v1.1 design) and `docs/ci-adapter-contract.md` (CI adapter split with `BaseCIAdapter` interface, 3-phase rollout). C3/C4 shipped: `docs/community-pro-cloud-matrix.md` (feature boundary matrix across 8 categories) and "Free forever" messaging in README. C5/C6 shipped: `docs/release-versioning-policy.md` (semver, cadence, breaking-change rules) and `docs/lts-eol-policy.md` (12-month LTS, 90-day EOL notice). **All 35/35 checks passing — scorecard complete.** |
 
 ---
 
@@ -129,4 +129,4 @@ Checks are addressed in this sequence:
 6. **A6** ✓ Done — Suppressor + output-sink v1.1 design doc (`docs/plugin-hooks-v1_1-design.md`)
 7. **A8** ✓ Done — CI adapter split design doc (`docs/ci-adapter-contract.md`)
 8. **C3, C4** ✓ Done — Feature boundary matrix (`docs/community-pro-cloud-matrix.md`), "Free forever" README messaging
-9. **C5, C6** — Release cadence/versioning policy, LTS/EOL policy
+9. **C5, C6** ✓ Done — Release cadence/versioning policy (`docs/release-versioning-policy.md`), LTS/EOL policy (`docs/lts-eol-policy.md`)
