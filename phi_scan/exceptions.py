@@ -21,6 +21,7 @@ __all__ = [
     "PhiDetectionError",
     "PhiScanError",
     "PhiScanLoggingError",
+    "PluginValidationError",
     "SchemaMigrationError",
     "TraversalError",
 ]
@@ -163,6 +164,24 @@ class SchemaMigrationError(PhiScanError):
     Args:
         message: Description of the migration failure including the source
             version, the target version, and the reason it could not complete.
+    """
+
+
+class PluginValidationError(PhiScanError):
+    """Raised internally by the plugin loader when a discovered recognizer
+    fails Plugin API v1 validation.
+
+    The loader catches every instance before it can reach a scan caller,
+    logs the reason at WARNING level, and records the plugin in the
+    skipped list of the returned ``PluginRegistry`` so PR-2's
+    ``phi-scan plugins list`` command can display the reason. It is
+    exported from ``phi_scan.exceptions`` so the loader and its test
+    suite can reference it as a normal member of the domain-error
+    hierarchy, but scan callers should never see it raised.
+
+    Args:
+        message: Description of the validation failure including the
+            offending attribute or value and what was expected.
     """
 
 
