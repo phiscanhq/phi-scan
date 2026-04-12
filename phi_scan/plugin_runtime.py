@@ -43,6 +43,11 @@ _MAX_WARNINGS_PER_RECOGNIZER: int = 5
 _PLUGIN_REMEDIATION_HINT: str = (
     "Review the matched value and replace or de-identify if it is real PHI/PII."
 )
+# Plugin API v1 does not expose ``hipaa_category`` on ``PluginScanFinding``;
+# every plugin-reported match is tagged ``UNIQUE_ID`` (the least-specific
+# identifier category) until the category is added to the plugin contract
+# in v1.1. Operators who need accurate HIPAA category reporting for plugin
+# findings should track this as a known v1 limitation.
 _DEFAULT_PLUGIN_HIPAA_CATEGORY: PhiCategory = PhiCategory.UNIQUE_ID
 
 _RETURN_TYPE_ERROR: str = "returned {actual_type} instead of list[ScanFinding]"
@@ -174,7 +179,7 @@ def _execute_single_plugin_on_line(
 ) -> list[ScanFinding]:
     """Invoke one plugin on one line, returning validated host findings."""
     recognizer = invocation.loaded_plugin.recognizer
-    unvalidated_plugin_findings = _safely_invoke_detect(invocation, warning_budget)
+    unvalidated_plugin_findings = _invoke_detect_with_isolation(invocation, warning_budget)
     if unvalidated_plugin_findings is None:
         return []
     declared_entity_types = frozenset(recognizer.entity_types)
@@ -191,7 +196,7 @@ def _execute_single_plugin_on_line(
     return host_findings
 
 
-def _safely_invoke_detect(
+def _invoke_detect_with_isolation(
     invocation: _PluginLineInvocation,
     warning_budget: _RecognizerWarningBudget,
 ) -> list[PluginScanFinding] | None:

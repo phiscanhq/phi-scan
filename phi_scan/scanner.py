@@ -598,8 +598,16 @@ def _execute_scan_with_cache(
 
 
 def _execute_plugin_pass_for_file(file_content: str, file_path: Path) -> list[ScanFinding]:
-    """Run the scan-scoped plugin pass against one file and return findings."""
-    registry = _load_cached_plugin_registry()
+    """Run the scan-scoped plugin pass against one file and return findings.
+
+    The registry is fetched under ``_PLUGIN_REGISTRY_CACHE_LOCK`` so
+    every read is explicitly synchronised with the clear+warm-load
+    sequence at the top of ``execute_scan``; this keeps the lock as the
+    single source of truth for cache lifecycle rather than relying on
+    the GIL-level safety of ``functools.cache`` for concurrent reads.
+    """
+    with _PLUGIN_REGISTRY_CACHE_LOCK:
+        registry = _load_cached_plugin_registry()
     return execute_plugin_pass(file_content, file_path, registry)
 
 
