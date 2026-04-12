@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from phi_scan.ci._base import BaseCIAdapter
-from phi_scan.ci._detect import PRContext, read_env_variable
+from phi_scan.ci._detect import PRContext, fetch_env_variable
 from phi_scan.ci._transport import HttpMethod, HttpRequestConfig, execute_http_request
 from phi_scan.models import ScanResult
 
@@ -50,7 +50,7 @@ class AzureAdapter(BaseCIAdapter):
             _LOG.debug("Azure DevOps: missing PR context — skipping comment")
             return
 
-        token = read_env_variable(_ENV_SYSTEM_ACCESSTOKEN)
+        token = fetch_env_variable(_ENV_SYSTEM_ACCESSTOKEN)
         if not token:
             _LOG.warning(
                 "Azure DevOps: SYSTEM_ACCESSTOKEN not set — "
@@ -89,4 +89,4 @@ class AzureAdapter(BaseCIAdapter):
         _LOG.debug("Azure DevOps: PR thread comment posted to PR #%s", pr_id)
 
     def set_commit_status(self, scan_result: ScanResult, pr_context: PRContext) -> None:
-        _LOG.debug("Azure DevOps: commit status not supported via adapter")
+        self._raise_unsupported("commit status")

@@ -75,11 +75,14 @@ class BaseCIAdapter(ABC):
         """Whether this platform supports AWS Security Hub import."""
         return False
 
-    def upload_sarif(self, scan_result: ScanResult, pr_context: PRContext) -> None:
-        """Upload SARIF to the platform's code scanning API."""
+    def _raise_unsupported(self, operation: str) -> None:
         raise CIIntegrationError(
             _UNSUPPORTED_OPERATION_MESSAGE.format(
                 adapter_name=type(self).__name__,
-                operation="SARIF upload",
+                operation=operation,
             )
         )
+
+    def upload_sarif(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+        """Upload SARIF to the platform's code scanning API."""
+        self._raise_unsupported("SARIF upload")

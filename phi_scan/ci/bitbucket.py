@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from phi_scan.ci._base import BaseCIAdapter
-from phi_scan.ci._detect import PRContext, read_env_variable
+from phi_scan.ci._detect import PRContext, fetch_env_variable
 from phi_scan.ci._transport import HttpMethod, HttpRequestConfig, execute_http_request
 from phi_scan.models import ScanResult
 
@@ -52,7 +52,7 @@ class BitbucketAdapter(BaseCIAdapter):
             _LOG.debug("Bitbucket: missing PR context — skipping comment")
             return
 
-        token = read_env_variable(_ENV_BITBUCKET_TOKEN)
+        token = fetch_env_variable(_ENV_BITBUCKET_TOKEN)
         if not token:
             _LOG.warning("Bitbucket: BITBUCKET_TOKEN not set — skipping comment")
             return
@@ -85,12 +85,14 @@ class BitbucketAdapter(BaseCIAdapter):
             _LOG.debug("Bitbucket: missing context — skipping commit status")
             return
 
-        token = read_env_variable(_ENV_BITBUCKET_TOKEN)
+        token = fetch_env_variable(_ENV_BITBUCKET_TOKEN)
         if not token:
             _LOG.warning("Bitbucket: BITBUCKET_TOKEN not set — skipping commit status")
             return
 
-        state = _BITBUCKET_STATUS_SUCCESSFUL if scan_result.is_clean else _BITBUCKET_STATUS_FAILED
+        commit_build_state = (
+            _BITBUCKET_STATUS_SUCCESSFUL if scan_result.is_clean else _BITBUCKET_STATUS_FAILED
+        )
         url = _BITBUCKET_API_BASE_URL + _BITBUCKET_COMMIT_STATUS_PATH.format(
             workspace=workspace,
             repo_slug=repo_slug,
@@ -98,7 +100,7 @@ class BitbucketAdapter(BaseCIAdapter):
         )
         payload = {
             "key": _COMMIT_STATUS_CONTEXT,
-            "state": state,
+            "state": commit_build_state,
             "name": _COMMIT_STATUS_CONTEXT,
             "description": (
                 _COMMIT_STATUS_DESCRIPTION_CLEAN
@@ -117,4 +119,5 @@ class BitbucketAdapter(BaseCIAdapter):
             )
         )
 
-        _LOG.debug("Bitbucket: commit status set to %s for %s", state, sha[:_SHA_LOG_PREFIX_LENGTH])
+        sha_prefix = sha[:_SHA_LOG_PREFIX_LENGTH]
+        _LOG.debug("Bitbucket: commit status set to %s for %s", commit_build_state, sha_prefix)

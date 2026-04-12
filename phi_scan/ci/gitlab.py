@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from phi_scan.ci._base import BaseCIAdapter
-from phi_scan.ci._detect import PRContext, read_env_variable
+from phi_scan.ci._detect import PRContext, fetch_env_variable
 from phi_scan.ci._transport import HttpMethod, HttpRequestConfig, execute_http_request
 from phi_scan.models import ScanResult
 
@@ -39,7 +39,7 @@ class GitLabAdapter(BaseCIAdapter):
             _LOG.debug("GitLab: missing MR IID or project ID — skipping comment")
             return
 
-        token = read_env_variable(_ENV_GITLAB_TOKEN) or read_env_variable(_ENV_CI_JOB_TOKEN)
+        token = fetch_env_variable(_ENV_GITLAB_TOKEN) or fetch_env_variable(_ENV_CI_JOB_TOKEN)
         if not token:
             _LOG.warning("GitLab: GITLAB_TOKEN and CI_JOB_TOKEN not set — skipping comment")
             return
@@ -71,7 +71,7 @@ class GitLabAdapter(BaseCIAdapter):
             _LOG.debug("GitLab: missing SHA or project ID — skipping status")
             return
 
-        token = read_env_variable(_ENV_GITLAB_TOKEN) or read_env_variable(_ENV_CI_JOB_TOKEN)
+        token = fetch_env_variable(_ENV_GITLAB_TOKEN) or fetch_env_variable(_ENV_CI_JOB_TOKEN)
         if not token:
             _LOG.warning("GitLab: no token — skipping commit status")
             return

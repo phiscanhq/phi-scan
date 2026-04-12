@@ -46,7 +46,7 @@ class CodeBuildAdapter(BaseCIAdapter):
             _LOG.warning("CodeBuild: unrecognised source repo URL — skipping PR comment")
 
     def set_commit_status(self, scan_result: ScanResult, pr_context: PRContext) -> None:
-        _LOG.debug("CodeBuild: commit status not supported via adapter")
+        self._raise_unsupported("commit status")
 
 
 def _build_github_context_from_codebuild(repo_url: str, pr_context: PRContext) -> PRContext:

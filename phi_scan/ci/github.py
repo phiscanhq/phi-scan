@@ -11,7 +11,7 @@ import os
 import subprocess
 
 from phi_scan.ci._base import BaseCIAdapter
-from phi_scan.ci._detect import PRContext, read_env_variable
+from phi_scan.ci._detect import PRContext, fetch_env_variable
 from phi_scan.ci._transport import HttpMethod, HttpRequestConfig, execute_http_request
 from phi_scan.exceptions import CIIntegrationError
 from phi_scan.models import ScanResult
@@ -44,7 +44,7 @@ class GitHubAdapter(BaseCIAdapter):
             _LOG.debug("GitHub: no PR number — skipping comment")
             return
 
-        token = read_env_variable(_ENV_GITHUB_TOKEN)
+        token = fetch_env_variable(_ENV_GITHUB_TOKEN)
         if not token:
             _LOG.warning("GitHub: GITHUB_TOKEN not set — skipping comment")
             return
@@ -88,7 +88,7 @@ class GitHubAdapter(BaseCIAdapter):
             _LOG.debug("GitHub: missing SHA or repository — skipping status")
             return
 
-        token = read_env_variable(_ENV_GITHUB_TOKEN)
+        token = fetch_env_variable(_ENV_GITHUB_TOKEN)
         if not token:
             _LOG.warning("GitHub: GITHUB_TOKEN not set — skipping commit status")
             return

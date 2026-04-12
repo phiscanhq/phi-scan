@@ -46,7 +46,7 @@ class JenkinsAdapter(BaseCIAdapter):
             _LOG.warning("Jenkins: unrecognized VCS in CHANGE_URL — skipping comment")
 
     def set_commit_status(self, scan_result: ScanResult, pr_context: PRContext) -> None:
-        _LOG.debug("Jenkins: commit status not supported via adapter")
+        self._raise_unsupported("commit status")
 
 
 def _build_github_context_from_jenkins(change_url: str, pr_context: PRContext) -> PRContext:
