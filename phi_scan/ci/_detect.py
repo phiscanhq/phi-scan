@@ -264,11 +264,15 @@ def _build_bitbucket_context() -> PRContext:
     )
 
 
+def _extract_codebuild_pr_number(webhook_trigger: str) -> str | None:
+    if not webhook_trigger.startswith(_CODEBUILD_PR_TRIGGER_PREFIX):
+        return None
+    return webhook_trigger.removeprefix(_CODEBUILD_PR_TRIGGER_PREFIX) or None
+
+
 def _build_codebuild_context() -> PRContext:
     webhook_trigger = fetch_environment_variable(_ENV_CODEBUILD_WEBHOOK_TRIGGER) or ""
-    pr_number: str | None = None
-    if webhook_trigger.startswith(_CODEBUILD_PR_TRIGGER_PREFIX):
-        pr_number = webhook_trigger[len(_CODEBUILD_PR_TRIGGER_PREFIX) :]
+    pr_number = _extract_codebuild_pr_number(webhook_trigger)
     return PRContext(
         platform=CIPlatform.CODEBUILD,
         pr_number=pr_number,
