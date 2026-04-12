@@ -1,7 +1,9 @@
 # PhiScan Roadmap
 
-PhiScan is a HIPAA-compliant PHI/PII scanner for CI/CD pipelines. It runs entirely
-locally — no PHI is ever transmitted to an external service.
+PhiScan is a HIPAA-compliant PHI/PII scanner for CI/CD pipelines. All scanning
+runs locally by default — no PHI leaves your infrastructure. The optional AI
+confidence review layer sends only redacted code structure (never raw PHI values)
+to the configured AI provider when explicitly enabled.
 
 This roadmap tracks what has been built, what is in progress, and what is planned.
 All core scanning and CI/CD integration is and will remain free and open source.
@@ -114,7 +116,7 @@ Drop-in CI/CD templates for all major platforms and a production Docker image.
 
 ---
 
-## Phase 7 — AI Enhancement _(Optional)_ 🔄 In Progress `→ v0.7.0`
+## Phase 7 — AI Enhancement _(Optional)_ ✅ `v0.7.0`
 
 Reduce false positives using AI confidence scoring. Fully optional — the scanner
 operates at full capability without this phase.
@@ -127,26 +129,60 @@ operates at full capability without this phase.
 - ✅ AI token usage logged in audit trail (`prompt_tokens`, `completion_tokens`, `estimated_cost_usd`)
 - ✅ Disabled by default; opt-in via `ai.enable_ai_review: true` in `.phi-scanner.yml`
 
+> **Note:** GitHub Marketplace publication of
+> [`phi-scan-action`](https://github.com/joeyessak/phi-scan-action) is deferred
+> until the GitHub org migration is complete. The composite action is fully
+> functional; only the Marketplace listing is pending.
+
 ---
 
-## Phase 8 — Pro Tier & VS Code Extension 📋 Planned `→ v0.8.0`
+## Phase 8 — Plugin Ecosystem, Pro Tier & IDE Integration 🔄 In Progress `→ v0.8.0`
 
-Pro features, plugin ecosystem, and IDE integration.
+Plugin ecosystem, pro features, and IDE integration.
 
-- Plugin system: `BaseRecognizer` interface + entry-point registration
+**Shipped:**
+
+- ✅ Plugin API v1: `BaseRecognizer` abstract class, `ScanContext`/`ScanFinding`
+  dataclasses, `PLUGIN_API_VERSION = "1.0"` with exact-match enforcement
+- ✅ Plugin discovery via `phi_scan.plugins` entry-point group with fail-safe
+  validation and skip-on-error semantics
+- ✅ `phi-scan plugins list` command with Rich table and `--json` output
+- ✅ Plugin API compatibility and deprecation policy documented
+  ([docs/plugin-api-v1.md](docs/plugin-api-v1.md))
+- ✅ Suppressor and output-sink plugin hooks designed
+  ([docs/plugin-hooks-v1_1-design.md](docs/plugin-hooks-v1_1-design.md))
+- ✅ CI adapter split: `ci_integration.py` decomposed into `phi_scan/ci/` package
+  with per-platform adapters, shared `BaseCIAdapter` interface, and backward-
+  compatible re-exports ([docs/ci-adapter-contract.md](docs/ci-adapter-contract.md))
+
+**Remaining:**
+
 - Example plugins: `phi-scan-epic`, `phi-scan-cerner`, `phi-scan-hl7`
 - VS Code extension with inline highlighting and quick-fix suggestions
 - Pro license key system (compliance report watermarking, audit export, SLA support)
-- GitHub Marketplace listing
 
 ---
 
-## Phase 9 — Hardening & Public Launch 📋 Planned `→ v1.0.0`
+## Phase 9 — Hardening & Public Launch 🔄 In Progress `→ v1.0.0`
 
 Security audit, performance hardening, enterprise features, and public launch.
 
+**Shipped:**
+
+- ✅ Performance benchmark suite: synthetic small/medium/large corpora with
+  per-size runtime and throughput thresholds enforced in CI
+- ✅ Supply-chain hardening: `pip-audit` CI gate with policy-enforced ignore list,
+  CycloneDX SBOM generated at release time, keyless Sigstore signing of
+  wheel + sdist artifacts
+- ✅ Full-surface threat model documented ([docs/threat-model.md](docs/threat-model.md))
+  with every P0/P1 threat mapped to a named test
+- ✅ SSRF adversarial test suite: 50 tests covering IPv4-mapped IPv6, DNS rebind
+  TOCTOU, multicast, mixed-resolution, and reserved IP ranges
+
+**Remaining:**
+
 - Independent security audit
-- Performance benchmarks and optimisation (target: 10k files/sec)
+- Performance optimisation (target: 10k files/sec)
 - Enterprise SSO and audit log API
 - Signed plugin registry
 - Public launch: ProductHunt, Hacker News, security community outreach
@@ -158,5 +194,7 @@ Security audit, performance hardening, enterprise features, and public launch.
 PhiScan is open source under the MIT license. Contributions are welcome.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines (available Phase 4+).
 
-**Core principle — non-negotiable:** All scanning executes locally. No PHI or PII
-is ever transmitted to an external API or third-party service.
+**Core principle — non-negotiable:** All scanning executes locally by default.
+No raw PHI or PII is ever transmitted externally. The optional AI confidence
+review layer sends only redacted code structure to the configured AI provider
+when explicitly enabled via `ai.enable_ai_review: true`.

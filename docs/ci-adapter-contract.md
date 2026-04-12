@@ -1,6 +1,7 @@
 # CI Adapter Split — Interface Contract and Rollout Plan
 
-Status: **DRAFT** — design document for discussion. No implementation yet.
+Status: **IMPLEMENTED** — shipped in PR #130. The `phi_scan/ci/` package
+contains per-platform adapters matching this contract.
 
 This document describes the planned decomposition of
 `phi_scan/ci_integration.py` (1,960 lines, 7 CI platforms) into a
