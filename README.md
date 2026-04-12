@@ -277,6 +277,7 @@ Copy-paste templates for all CI platforms: [docs/ci-cd-integration.md](docs/ci-c
 | [docs/compliance-frameworks.md](docs/compliance-frameworks.md) | Complete regulatory reference for all 12 frameworks |
 | [docs/remediation-guide.md](docs/remediation-guide.md) | Per-category PHI removal playbook and `phi-scan fix` workflow |
 | [docs/de-identification.md](docs/de-identification.md) | Safe Harbor vs Expert Determination; regulatory scope |
+| [docs/plugin-api-v1.md](docs/plugin-api-v1.md) | Plugin API v1 compatibility, deprecation policy, and authoring constraints |
 | [docs/plugin-developer-guide.md](docs/plugin-developer-guide.md) | Custom recognizer development guide |
 | [docs/ignore-patterns.md](docs/ignore-patterns.md) | `.phi-scanignore` syntax, suppression comments |
 | [docs/ci-cd-integration.md](docs/ci-cd-integration.md) | CI/CD platform copy-paste templates |
@@ -286,6 +287,26 @@ Copy-paste templates for all CI platforms: [docs/ci-cd-integration.md](docs/ci-c
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, standards, PR process |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting policy |
 | [docs/PROGRAM_SCORECARD.md](docs/PROGRAM_SCORECARD.md) | Public-repo quality scorecard (10/10 criteria and status) |
+
+---
+
+## Plugin Development
+
+PhiScan supports third-party recognizer plugins that extend the scanner
+with custom detection logic. Plugins register under the `phi_scan.plugins`
+entry-point group and are discovered automatically at startup.
+
+```bash
+# List all installed plugins and their status
+phi-scan plugins list
+```
+
+Plugins MUST declare `plugin_api_version = "1.0"` to match the current
+host version. Incompatible or invalid plugins are skipped with a warning;
+the core scanner continues functioning.
+
+See [docs/plugin-api-v1.md](docs/plugin-api-v1.md) for the full
+compatibility policy, deprecation rules, and a minimal plugin example.
 
 ---
 
