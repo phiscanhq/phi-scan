@@ -66,7 +66,7 @@ is declared production-ready for v1.0.
 | A5 | Plugin API compatibility and deprecation policy documented | PASS | `docs/plugin-api-v1.md` covers version contract, compatibility surface, deprecation process (2-minor-release window), failure semantics, authoring constraints. |
 | A6 | Suppressor and output-sink plugin hooks designed (v1.1 shape documented, not implemented) | PASS | `docs/plugin-hooks-v1_1-design.md` covers `BaseSuppressor`, `BaseOutputSink` draft interfaces, execution pipeline, PHI safety model, performance budget, config shape, and open questions. |
 | A7 | Parallel scan determinism validated across `workers=1` and `workers>1` | PASS | Parity tests in `tests/test_scanner.py` validate identical findings and ordering |
-| A8 | `ci_integration.py` adapter split planned with per-platform interface contract documented | PASS | `docs/ci-adapter-contract.md` covers target module layout, `BaseCIAdapter` interface, capability flags, shared transport/error model, test strategy, 3-phase rollout plan, and risk/rollback. |
+| A8 | `ci_integration.py` adapter split implemented with per-platform interface contract | PASS | Shipped in PR #130. `phi_scan/ci/` package with 7 per-platform adapters, shared `BaseCIAdapter` interface, capability flags, shared transport/error model. Design doc at `docs/ci-adapter-contract.md`. |
 
 **Passing: 8 / 8**
 

@@ -15,7 +15,7 @@ and are discovered automatically at startup.
 A PhiScan plugin is a Python package that:
 
 1. Implements one or more `PhiRecognizer` subclasses
-2. Registers them via a `phi_scan.recognizers` entry point in `pyproject.toml`
+2. Registers them via a `phi_scan.plugins` entry point in `pyproject.toml`
 3. Returns `ScanFinding` instances from its `recognize()` method
 
 PhiScan discovers and loads all registered recognisers at scan startup.
@@ -169,7 +169,7 @@ name = "phi-scan-myplugin"
 version = "0.1.0"
 dependencies = ["phi-scan>=0.4.0"]
 
-[project.entry-points."phi_scan.recognizers"]
+[project.entry-points."phi_scan.plugins"]
 acme_employee_id = "phi_scan_myplugin.recognizer:MyCustomRecognizer"
 ```
 

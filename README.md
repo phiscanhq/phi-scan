@@ -263,6 +263,11 @@ repos:
 
 Copy-paste templates for all CI platforms: [docs/ci-cd-integration.md](docs/ci-cd-integration.md)
 
+> **GitHub Action:** The [`phi-scan-action`](https://github.com/joeyessak/phi-scan-action)
+> composite action provides one-liner GitHub CI/CD integration with SARIF upload,
+> PR comment, diff-only scanning, and AI review support. GitHub Marketplace
+> publication is pending org migration.
+
 ---
 
 ## Documentation
