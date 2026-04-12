@@ -222,7 +222,7 @@ def test_execute_http_request_wraps_network_error() -> None:
         "phi_scan.ci._transport.httpx.request",
         side_effect=httpx.ConnectError("connection refused"),
     ):
-        with pytest.raises(CIIntegrationError, match="request failed.*ConnectError"):
+        with pytest.raises(CIIntegrationError, match="request failed \\(network error\\)"):
             execute_http_request(
                 HttpRequestConfig(
                     method=HttpMethod.POST,
@@ -246,7 +246,7 @@ def test_execute_http_request_network_error_excludes_url() -> None:
                 )
             )
         assert "secret.example.com" not in str(exc_info.value)
-        assert "ConnectError" in str(exc_info.value)
+        assert "network error" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------

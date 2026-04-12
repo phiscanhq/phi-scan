@@ -19,6 +19,7 @@ from phi_scan.ci._transport import (
     OperationLabel,
     execute_http_request,
 )
+from phi_scan.exceptions import CIIntegrationError
 from phi_scan.models import ScanResult
 
 _LOG: logging.Logger = logging.getLogger(__name__)
@@ -88,16 +89,13 @@ class AzureAdapter(BaseCIAdapter):
         team_project = pr_context.extras.get("team_project", "")
 
         if not all((pr_id, repo_id, collection_uri, team_project)):
-            _LOG.warning("Azure DevOps: missing PR context — skipping comment")
-            return
+            raise CIIntegrationError(
+                "Azure DevOps: missing PR context fields required for PR comment"
+            )
 
         system_access_token = fetch_environment_variable(_ENV_SYSTEM_ACCESSTOKEN)
         if not system_access_token:
-            _LOG.warning(
-                "Azure DevOps: SYSTEM_ACCESSTOKEN not set — "
-                "enable 'Allow scripts to access the OAuth token' in pipeline settings"
-            )
-            return
+            raise CIIntegrationError("Azure DevOps: SYSTEM_ACCESSTOKEN not set")
 
         url = _build_pr_threads_url(pr_context)
         execute_http_request(

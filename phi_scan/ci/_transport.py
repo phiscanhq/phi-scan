@@ -121,6 +121,6 @@ def execute_http_request(request_config: HttpRequestConfig) -> httpx.Response:
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
-            f"{request_config.operation_label} request failed: {type(request_error).__name__}"
+            f"{request_config.operation_label} request failed (network error)"
         ) from request_error
     return response
