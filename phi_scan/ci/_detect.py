@@ -167,12 +167,17 @@ def read_env_variable(name: str) -> str | None:
     return env_value if env_value else None
 
 
+def _extract_github_pr_number(ref: str) -> str | None:
+    if ref.startswith(_GITHUB_PR_REF_PREFIX):
+        return ref.split("/")[_GITHUB_PR_REF_NUMBER_INDEX]
+    return None
+
+
 def _build_github_context() -> PRContext:
     pr_number = read_env_variable(_ENV_PR_NUMBER)
     if not pr_number:
         ref = read_env_variable(_ENV_GITHUB_REF) or ""
-        if ref.startswith(_GITHUB_PR_REF_PREFIX):
-            pr_number = ref.split("/")[_GITHUB_PR_REF_NUMBER_INDEX]
+        pr_number = _extract_github_pr_number(ref)
     return PRContext(
         platform=CIPlatform.GITHUB_ACTIONS,
         pr_number=pr_number,
@@ -221,15 +226,19 @@ def _build_azure_context() -> PRContext:
     )
 
 
+def _extract_pr_number_from_url(pr_url: str) -> str | None:
+    if not pr_url:
+        return None
+    url_segments = pr_url.rstrip("/").split("/")
+    if not url_segments:
+        return None
+    pr_number_candidate = url_segments[-1]
+    return pr_number_candidate if pr_number_candidate.isdigit() else None
+
+
 def _build_circleci_context() -> PRContext:
     pr_url = read_env_variable(_ENV_CIRCLE_PULL_REQUEST) or ""
-    pr_number: str | None = None
-    if pr_url:
-        url_segments = pr_url.rstrip("/").split("/")
-        if url_segments:
-            candidate = url_segments[-1]
-            if candidate.isdigit():
-                pr_number = candidate
+    pr_number = _extract_pr_number_from_url(pr_url)
     return PRContext(
         platform=CIPlatform.CIRCLECI,
         pr_number=pr_number,

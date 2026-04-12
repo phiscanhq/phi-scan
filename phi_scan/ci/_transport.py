@@ -5,7 +5,9 @@ across all platform adapters goes through a single code path with
 consistent error wrapping, timeout handling, and PHI-safety guarantees.
 
 Security contract:
-  - Error messages include only the HTTP status code and reason phrase.
+  - Error messages include only the numeric HTTP status code.
+  - Reason phrases are excluded — proxies and WAFs can echo request
+    fragments in non-standard reason phrases.
   - Response bodies are never included in error messages — API error
     responses for comment endpoints could echo back request content
     containing finding metadata.
@@ -93,9 +95,7 @@ def execute_http_request(request_config: HttpRequestConfig) -> httpx.Response:
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"{request_config.operation_label} failed "
-            f"(HTTP {status_error.response.status_code} "
-            f"{status_error.response.reason_phrase})"
+            f"{request_config.operation_label} failed (HTTP {status_error.response.status_code})"
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
