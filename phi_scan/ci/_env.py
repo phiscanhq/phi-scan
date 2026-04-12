@@ -13,5 +13,5 @@ _UNSET_VARIABLE_FALLBACK: str = ""
 
 def fetch_environment_variable(variable_name: str) -> str | None:
     """Return the environment variable value, or None if unset or empty."""
-    raw_env_string = os.environ.get(variable_name, _UNSET_VARIABLE_FALLBACK).strip()
-    return raw_env_string if raw_env_string else None
+    stripped_variable_value = os.environ.get(variable_name, _UNSET_VARIABLE_FALLBACK).strip()
+    return stripped_variable_value if stripped_variable_value else None

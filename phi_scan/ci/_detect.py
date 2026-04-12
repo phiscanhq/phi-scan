@@ -77,7 +77,7 @@ _GITLAB_DEFAULT_SERVER_URL: str = "https://gitlab.com"
 
 # GitHub ref prefix for PR detection (e.g. "refs/pull/42/merge")
 _GITHUB_PR_REF_PREFIX: str = "refs/pull/"
-_GITHUB_PR_REF_NUMBER_INDEX: int = 2
+_GITHUB_REF_PR_NUMBER_SEGMENT_INDEX: int = 2
 
 # CodeBuild webhook trigger prefix for PR detection (e.g. "pr/42")
 _CODEBUILD_PR_TRIGGER_PREFIX: str = "pr/"
@@ -160,9 +160,9 @@ def _extract_github_pr_number(github_ref: str) -> str | None:
     if not github_ref.startswith(_GITHUB_PR_REF_PREFIX):
         return None
     ref_segments = github_ref.split("/")
-    if len(ref_segments) <= _GITHUB_PR_REF_NUMBER_INDEX:
+    if len(ref_segments) <= _GITHUB_REF_PR_NUMBER_SEGMENT_INDEX:
         return None
-    return ref_segments[_GITHUB_PR_REF_NUMBER_INDEX]
+    return ref_segments[_GITHUB_REF_PR_NUMBER_SEGMENT_INDEX]
 
 
 def _resolve_github_pr_number() -> str | None:

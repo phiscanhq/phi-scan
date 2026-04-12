@@ -32,7 +32,7 @@ _AZURE_PR_THREADS_PATH: str = (
 
 _COMMIT_STATUS_CONTEXT: str = "phi-scan"
 _AZURE_COMMENT_PARENT_ID_ROOT: int = 0
-_AZURE_COMMENT_TYPE_TEXT: int = 1
+_AZURE_COMMENT_TYPE_TEXT: int = 1  # Azure DevOps commentType: 1 = text (see REST API docs)
 _AZURE_THREAD_STATUS_ACTIVE: str = "active"
 
 
@@ -80,8 +80,8 @@ class AzureAdapter(BaseCIAdapter):
             _LOG.warning("Azure DevOps: missing PR context — skipping comment")
             return
 
-        token = fetch_environment_variable(_ENV_SYSTEM_ACCESSTOKEN)
-        if not token:
+        system_access_token = fetch_environment_variable(_ENV_SYSTEM_ACCESSTOKEN)
+        if not system_access_token:
             _LOG.warning(
                 "Azure DevOps: SYSTEM_ACCESSTOKEN not set — "
                 "enable 'Allow scripts to access the OAuth token' in pipeline settings"
@@ -95,7 +95,7 @@ class AzureAdapter(BaseCIAdapter):
                 url=url,
                 operation_label=OperationLabel.AZURE_PR_COMMENT,
                 json_body=_build_azure_thread_payload(comment_body),
-                basic_auth_credentials=("", token),
+                basic_auth_credentials=("", system_access_token),
             )
         )
         _LOG.debug("Azure DevOps: PR thread comment posted to PR #%s", pr_id)
