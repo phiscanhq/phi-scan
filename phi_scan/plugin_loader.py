@@ -134,6 +134,8 @@ def load_plugin_registry() -> PluginRegistry:
     """
     sorted_entry_points = _sort_entry_points_deterministically(_discover_entry_points())
     loaded_plugins, skipped_plugins = _build_registry_lists(sorted_entry_points)
+    for skipped_plugin in skipped_plugins:
+        _log_skipped_plugin(skipped_plugin)
     return PluginRegistry(
         loaded=tuple(loaded_plugins),
         skipped=tuple(skipped_plugins),
@@ -153,7 +155,6 @@ def _build_registry_lists(
             reserved_names.add(load_outcome.recognizer.name)
             continue
         skipped_plugins.append(load_outcome)
-        _log_skipped_plugin(load_outcome)
     return loaded_plugins, skipped_plugins
 
 

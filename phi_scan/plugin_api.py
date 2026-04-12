@@ -42,13 +42,7 @@ from pathlib import Path
 
 __all__ = [
     "BaseRecognizer",
-    "ENTITY_TYPE_PATTERN",
-    "MAX_CONFIDENCE_SCORE",
-    "MIN_CONFIDENCE_SCORE",
-    "MIN_LINE_NUMBER",
-    "MIN_START_OFFSET",
     "PLUGIN_API_VERSION",
-    "RECOGNIZER_NAME_PATTERN",
     "ScanContext",
     "ScanFinding",
 ]
