@@ -59,7 +59,6 @@ _INVALID_ENTITY_TYPE_REASON: str = (
     "entity_types[{index}] {value!r} does not match pattern {pattern}"
 )
 _DUPLICATE_ENTITY_TYPE_REASON: str = "entity_types contains duplicate entry {value!r}"
-_MISSING_API_VERSION_REASON: str = "class does not declare 'plugin_api_version'"
 _API_VERSION_MISMATCH_REASON: str = (
     "plugin_api_version {plugin_version!r} does not match host {host_version!r}"
 )
@@ -134,21 +133,21 @@ def load_plugin_registry() -> PluginRegistry:
         entries and logged at WARNING level.
     """
     sorted_entry_points = _sort_entry_points_deterministically(_discover_entry_points())
-    loaded_plugins, skipped_plugins = _partition_entry_points_into_registry(sorted_entry_points)
+    loaded_plugins, skipped_plugins = _build_registry_lists(sorted_entry_points)
     return PluginRegistry(
         loaded=tuple(loaded_plugins),
         skipped=tuple(skipped_plugins),
     )
 
 
-def _partition_entry_points_into_registry(
+def _build_registry_lists(
     sorted_entry_points: tuple[EntryPoint, ...],
 ) -> tuple[list[LoadedPlugin], list[SkippedPlugin]]:
     loaded_plugins: list[LoadedPlugin] = []
     skipped_plugins: list[SkippedPlugin] = []
     reserved_names: set[str] = set()
     for entry_point in sorted_entry_points:
-        load_outcome = _resolve_plugin_from_entry_point(entry_point, reserved_names)
+        load_outcome = _load_or_skip_entry_point(entry_point, reserved_names)
         if isinstance(load_outcome, LoadedPlugin):
             loaded_plugins.append(load_outcome)
             reserved_names.add(load_outcome.recognizer.name)
@@ -183,7 +182,7 @@ def _resolve_distribution_name(entry_point: EntryPoint) -> str | None:
     return distribution.name
 
 
-def _resolve_plugin_from_entry_point(
+def _load_or_skip_entry_point(
     entry_point: EntryPoint,
     reserved_names: set[str],
 ) -> LoadedPlugin | SkippedPlugin:
@@ -242,9 +241,12 @@ def _validate_recognizer_class(recognizer_class: type[BaseRecognizer]) -> None:
 
 
 def _validate_api_version(recognizer_class: type[BaseRecognizer]) -> None:
-    declared_version = getattr(recognizer_class, "plugin_api_version", None)
-    if declared_version is None:
-        raise PluginValidationError(_MISSING_API_VERSION_REASON)
+    # BaseRecognizer declares ``plugin_api_version: str = PLUGIN_API_VERSION`` as
+    # a class attribute, so any subclass that passed the ``issubclass`` check in
+    # ``_load_entry_point_class`` inherits a value. A deliberate override to a
+    # non-matching value (including ``None``) falls through to the mismatch
+    # error below, which is the correct outcome.
+    declared_version = recognizer_class.plugin_api_version
     if declared_version != PLUGIN_API_VERSION:
         raise PluginValidationError(
             _API_VERSION_MISMATCH_REASON.format(

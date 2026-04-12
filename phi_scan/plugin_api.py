@@ -144,51 +144,35 @@ class ScanFinding:
     confidence: float
 
     def __post_init__(self) -> None:
-        self._reject_invalid_entity_type()
-        self._reject_negative_start_offset()
-        self._reject_non_increasing_end_offset()
-        self._reject_invalid_confidence()
-
-    def _reject_invalid_entity_type(self) -> None:
-        if ENTITY_TYPE_PATTERN.match(self.entity_type):
-            return
-        raise ValueError(
-            _INVALID_ENTITY_TYPE_ERROR.format(
-                entity_type=self.entity_type,
-                pattern=ENTITY_TYPE_PATTERN.pattern,
+        if not ENTITY_TYPE_PATTERN.match(self.entity_type):
+            raise ValueError(
+                _INVALID_ENTITY_TYPE_ERROR.format(
+                    entity_type=self.entity_type,
+                    pattern=ENTITY_TYPE_PATTERN.pattern,
+                )
             )
-        )
-
-    def _reject_negative_start_offset(self) -> None:
-        if self.start_offset >= MIN_START_OFFSET:
-            return
-        raise ValueError(
-            _INVALID_START_OFFSET_ERROR.format(
-                minimum=MIN_START_OFFSET,
-                start_offset=self.start_offset,
+        if self.start_offset < MIN_START_OFFSET:
+            raise ValueError(
+                _INVALID_START_OFFSET_ERROR.format(
+                    minimum=MIN_START_OFFSET,
+                    start_offset=self.start_offset,
+                )
             )
-        )
-
-    def _reject_non_increasing_end_offset(self) -> None:
-        if self.end_offset > self.start_offset:
-            return
-        raise ValueError(
-            _INVALID_END_OFFSET_ERROR.format(
-                end_offset=self.end_offset,
-                start_offset=self.start_offset,
+        if self.end_offset <= self.start_offset:
+            raise ValueError(
+                _INVALID_END_OFFSET_ERROR.format(
+                    end_offset=self.end_offset,
+                    start_offset=self.start_offset,
+                )
             )
-        )
-
-    def _reject_invalid_confidence(self) -> None:
-        if MIN_CONFIDENCE_SCORE <= self.confidence <= MAX_CONFIDENCE_SCORE:
-            return
-        raise ValueError(
-            _INVALID_CONFIDENCE_ERROR.format(
-                minimum=MIN_CONFIDENCE_SCORE,
-                maximum=MAX_CONFIDENCE_SCORE,
-                confidence=self.confidence,
+        if not MIN_CONFIDENCE_SCORE <= self.confidence <= MAX_CONFIDENCE_SCORE:
+            raise ValueError(
+                _INVALID_CONFIDENCE_ERROR.format(
+                    minimum=MIN_CONFIDENCE_SCORE,
+                    maximum=MAX_CONFIDENCE_SCORE,
+                    confidence=self.confidence,
+                )
             )
-        )
 
 
 class BaseRecognizer(ABC):
