@@ -224,10 +224,7 @@ Plugin authors MUST NOT:
 ### Recognizer Class
 
 ```python
-from phi_scan import BaseRecognizer, ScanContext, ScanFinding
-
-# A real plugin should define all literals as module-level constants.
-# This example inlines values for brevity.
+from phi_scan import BaseRecognizer, PLUGIN_API_VERSION, ScanContext, ScanFinding
 
 ENTITY_TYPE_INTERNAL_ID: str = "INTERNAL_ID"
 MARKER_PREFIX: str = "PATIENT-"
@@ -239,7 +236,7 @@ PYTHON_EXTENSION: str = ".py"
 class InternalIdRecognizer(BaseRecognizer):
     name = "internal_id"
     entity_types = [ENTITY_TYPE_INTERNAL_ID]
-    plugin_api_version = "1.0"
+    plugin_api_version = PLUGIN_API_VERSION
     version = "0.1.0"
     description = "Detects internal patient identifiers."
 
