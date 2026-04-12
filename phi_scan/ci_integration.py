@@ -44,10 +44,8 @@ from phi_scan.ci import (  # noqa: F401 — backward-compatible re-exports
     GitHubAdapter,
     GitLabAdapter,
     JenkinsAdapter,
-    PRContext,
     PullRequestContext,
     detect_platform,
-    get_pr_context,
     get_pull_request_context,
     resolve_adapter,
 )
@@ -62,6 +60,9 @@ from phi_scan.constants import SeverityLevel
 from phi_scan.exceptions import CIIntegrationError  # noqa: F401 — backward-compatible re-export
 from phi_scan.models import ScanResult
 from phi_scan.output import format_sarif
+
+PRContext = PullRequestContext
+get_pr_context = get_pull_request_context
 
 __all__ = [
     "AzureAdapter",

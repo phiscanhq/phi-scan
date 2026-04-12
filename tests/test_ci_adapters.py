@@ -164,6 +164,8 @@ _BACKWARD_COMPAT_NAMES: list[str] = [
     "execute_http_request",
 ]
 
+_DEPRECATED_ALIASES: set[str] = {"PRContext", "get_pr_context"}
+
 
 @pytest.mark.parametrize("name", _BACKWARD_COMPAT_NAMES)
 def test_backward_compat_import_from_ci_integration(name: str) -> None:
@@ -179,8 +181,12 @@ _TRANSPORT_NAMES: set[str] = {
     "execute_http_request",
 }
 
+_PARITY_NAMES: list[str] = [
+    name for name in _BACKWARD_COMPAT_NAMES if name not in _DEPRECATED_ALIASES
+]
 
-@pytest.mark.parametrize("name", _BACKWARD_COMPAT_NAMES)
+
+@pytest.mark.parametrize("name", _PARITY_NAMES)
 def test_old_and_new_paths_resolve_to_same_object(name: str) -> None:
     import phi_scan.ci as new_module
     import phi_scan.ci._transport as transport_module

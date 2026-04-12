@@ -33,9 +33,6 @@ from phi_scan.ci.gitlab import GitLabAdapter
 from phi_scan.ci.jenkins import JenkinsAdapter
 from phi_scan.exceptions import CIIntegrationError
 
-PRContext = PullRequestContext
-get_pr_context = get_pull_request_context
-
 _PLATFORM_ADAPTERS: dict[CIPlatform, type[BaseCIAdapter]] = {
     CIPlatform.GITHUB_ACTIONS: GitHubAdapter,
     CIPlatform.GITLAB_CI: GitLabAdapter,
