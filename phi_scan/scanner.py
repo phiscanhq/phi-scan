@@ -403,6 +403,12 @@ def execute_scan(
     Raises:
         ValueError: If worker_count is outside
             [MIN_WORKER_COUNT, MAX_WORKER_COUNT].
+
+    Not safe to call concurrently from multiple threads of a single
+    process: the plugin-registry cache is cleared and warm-loaded at the
+    top of this function, so an overlapping invocation would race the
+    first call's workers. This is a CLI-scoped scanner, not a service;
+    one ``execute_scan`` call per process lifecycle is the supported use.
     """
     from phi_scan.ai_review import apply_ai_review_to_findings
 
@@ -600,14 +606,14 @@ def _execute_scan_with_cache(
 def _execute_plugin_pass_for_file(file_content: str, file_path: Path) -> list[ScanFinding]:
     """Run the scan-scoped plugin pass against one file and return findings.
 
-    The registry is fetched under ``_PLUGIN_REGISTRY_CACHE_LOCK`` so
-    every read is explicitly synchronised with the clear+warm-load
-    sequence at the top of ``execute_scan``; this keeps the lock as the
-    single source of truth for cache lifecycle rather than relying on
-    the GIL-level safety of ``functools.cache`` for concurrent reads.
+    Reads the registry lock-free: ``execute_scan`` has already performed
+    ``cache_clear`` + warm-load under ``_PLUGIN_REGISTRY_CACHE_LOCK``
+    before any worker threads were spawned, so every call here is a
+    GIL-atomic dict lookup against a fully-populated, no-longer-mutated
+    cache. Acquiring the lock on the hot per-file path would serialise
+    the entire parallel scan and defeat the purpose of ThreadPoolExecutor.
     """
-    with _PLUGIN_REGISTRY_CACHE_LOCK:
-        registry = _load_cached_plugin_registry()
+    registry = _load_cached_plugin_registry()
     return execute_plugin_pass(file_content, file_path, registry)
 
 

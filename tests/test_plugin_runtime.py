@@ -29,6 +29,8 @@ _ACME_RECOGNIZER_NAME: str = "acme_employee_id"
 _ACME_CONFIDENCE: float = 0.9
 _PLUGIN_SAMPLE_LINE: str = "employee_id = EMP-123456"
 _RATE_LIMIT_TEST_LINE_COUNT: int = 20
+_OFFSET_OVERRUN_EXTRA: int = 50
+_CONFIDENCE_THRESHOLD_ABOVE_ACME: float = 0.99
 
 
 class _AcmeRecognizer(BaseRecognizer):
@@ -75,8 +77,8 @@ class _OffsetOverrunRecognizer(BaseRecognizer):
             PluginScanFinding(
                 entity_type="OVERRUN_TEST",
                 start_offset=0,
-                end_offset=len(line) + 50,
-                confidence=0.9,
+                end_offset=len(line) + _OFFSET_OVERRUN_EXTRA,
+                confidence=_ACME_CONFIDENCE,
             )
         ]
 
@@ -92,7 +94,7 @@ class _UndeclaredEntityTypeRecognizer(BaseRecognizer):
                 entity_type="NOT_DECLARED",
                 start_offset=0,
                 end_offset=5,
-                confidence=0.9,
+                confidence=_ACME_CONFIDENCE,
             )
         ]
 
@@ -344,7 +346,10 @@ def test_execute_scan_plugin_findings_respect_confidence_threshold(
     sample_file: Path,
 ) -> None:
     registry = _build_registry(_AcmeRecognizer())
-    config = ScanConfig(confidence_threshold=0.99, severity_threshold=SeverityLevel.INFO)
+    config = ScanConfig(
+        confidence_threshold=_CONFIDENCE_THRESHOLD_ABOVE_ACME,
+        severity_threshold=SeverityLevel.INFO,
+    )
 
     with patch("phi_scan.scanner.load_plugin_registry", return_value=registry):
         result = execute_scan([sample_file], config)
