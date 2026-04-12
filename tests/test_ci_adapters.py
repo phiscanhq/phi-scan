@@ -80,20 +80,20 @@ def test_resolve_adapter_unknown_raises_error() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_github_can_upload_sarif() -> None:
-    assert GitHubAdapter().can_upload_sarif is True
+def test_github_can_upload_sarif_report() -> None:
+    assert GitHubAdapter().can_upload_sarif_report is True
 
 
-def test_bitbucket_can_annotate_code() -> None:
-    assert BitbucketAdapter().can_annotate_code is True
+def test_bitbucket_can_annotate_code_findings() -> None:
+    assert BitbucketAdapter().can_annotate_code_findings is True
 
 
-def test_azure_can_create_work_item() -> None:
-    assert AzureAdapter().can_create_work_item is True
+def test_azure_can_create_work_item_from_findings() -> None:
+    assert AzureAdapter().can_create_work_item_from_findings is True
 
 
-def test_codebuild_can_import_to_security_hub() -> None:
-    assert CodeBuildAdapter().can_import_to_security_hub is True
+def test_codebuild_can_import_findings_to_security_hub() -> None:
+    assert CodeBuildAdapter().can_import_findings_to_security_hub is True
 
 
 def test_adapters_with_commit_status_support() -> None:
@@ -111,18 +111,18 @@ def test_adapters_without_commit_status_support() -> None:
 
 def test_gitlab_default_capabilities_are_false() -> None:
     adapter = GitLabAdapter()
-    assert adapter.can_upload_sarif is False
-    assert adapter.can_annotate_code is False
-    assert adapter.can_create_work_item is False
-    assert adapter.can_import_to_security_hub is False
+    assert adapter.can_upload_sarif_report is False
+    assert adapter.can_annotate_code_findings is False
+    assert adapter.can_create_work_item_from_findings is False
+    assert adapter.can_import_findings_to_security_hub is False
 
 
 # ---------------------------------------------------------------------------
-# BaseCIAdapter.upload_sarif raises domain error
+# BaseCIAdapter.upload_sarif_report raises domain error
 # ---------------------------------------------------------------------------
 
 
-def test_upload_sarif_raises_ci_integration_error() -> None:
+def test_upload_sarif_report_raises_ci_integration_error() -> None:
     adapter = GitLabAdapter()
     scan_result_mock = MagicMock()
     pr_context = PRContext(
@@ -134,7 +134,7 @@ def test_upload_sarif_raises_ci_integration_error() -> None:
         base_branch=None,
     )
     with pytest.raises(CIIntegrationError, match="GitLabAdapter.*SARIF upload"):
-        adapter.upload_sarif(scan_result_mock, pr_context)
+        adapter.upload_sarif_report(scan_result_mock, pr_context)
 
 
 # ---------------------------------------------------------------------------

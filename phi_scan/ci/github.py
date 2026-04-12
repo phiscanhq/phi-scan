@@ -49,7 +49,7 @@ class GitHubAdapter(BaseCIAdapter):
     """GitHub Actions adapter using ``gh`` CLI for comments and REST API for statuses."""
 
     @property
-    def can_upload_sarif(self) -> bool:
+    def can_upload_sarif_report(self) -> bool:
         return True
 
     def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:
@@ -58,12 +58,12 @@ class GitHubAdapter(BaseCIAdapter):
             _LOG.warning("GitHub: no PR number — skipping comment")
             return
 
-        token = fetch_environment_variable(_ENV_GITHUB_TOKEN)
-        if not token:
+        github_token = fetch_environment_variable(_ENV_GITHUB_TOKEN)
+        if not github_token:
             _LOG.warning("GitHub: GITHUB_TOKEN not set — skipping comment")
             return
 
-        env = {**os.environ, "GITHUB_TOKEN": token}
+        env = {**os.environ, "GITHUB_TOKEN": github_token}
         if pr_context.repository:
             env["GH_REPO"] = pr_context.repository
 
@@ -102,8 +102,8 @@ class GitHubAdapter(BaseCIAdapter):
             _LOG.warning("GitHub: missing SHA or repository — skipping status")
             return
 
-        token = fetch_environment_variable(_ENV_GITHUB_TOKEN)
-        if not token:
+        github_token = fetch_environment_variable(_ENV_GITHUB_TOKEN)
+        if not github_token:
             _LOG.warning("GitHub: GITHUB_TOKEN not set — skipping commit status")
             return
 
@@ -131,7 +131,7 @@ class GitHubAdapter(BaseCIAdapter):
                 url=url,
                 operation_label=OperationLabel.GITHUB_COMMIT_STATUS,
                 headers={
-                    _HTTP_HEADER_AUTHORIZATION: f"Bearer {token}",
+                    _HTTP_HEADER_AUTHORIZATION: f"Bearer {github_token}",
                     _HTTP_HEADER_ACCEPT: _GITHUB_ACCEPT_HEADER_VALUE,
                     _GITHUB_API_VERSION_HEADER: _GITHUB_API_VERSION_VALUE,
                 },

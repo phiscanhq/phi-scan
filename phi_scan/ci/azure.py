@@ -78,7 +78,7 @@ class AzureAdapter(BaseCIAdapter):
         return False
 
     @property
-    def can_create_work_item(self) -> bool:
+    def can_create_work_item_from_findings(self) -> bool:
         return True
 
     def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:

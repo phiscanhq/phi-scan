@@ -31,7 +31,7 @@ class CodeBuildAdapter(BaseCIAdapter):
         return False
 
     @property
-    def can_import_to_security_hub(self) -> bool:
+    def can_import_findings_to_security_hub(self) -> bool:
         return True
 
     def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:

@@ -72,7 +72,7 @@ class BitbucketAdapter(BaseCIAdapter):
     """Bitbucket Cloud adapter using the Bitbucket REST API."""
 
     @property
-    def can_annotate_code(self) -> bool:
+    def can_annotate_code_findings(self) -> bool:
         return True
 
     def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:

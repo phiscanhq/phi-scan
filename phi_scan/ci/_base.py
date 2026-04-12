@@ -16,7 +16,12 @@ from phi_scan.models import ScanResult
 
 
 class UnsupportedOperation(enum.StrEnum):
-    """Named operations that an adapter may not support."""
+    """Named operations that an adapter may not support.
+
+    ``COMMIT_STATUS`` is used by adapters whose ``set_commit_status``
+    implementation explicitly aborts (e.g. AzureAdapter), since
+    ``set_commit_status`` is abstract rather than a default-abort stub.
+    """
 
     COMMIT_STATUS = "commit status"
     SARIF_UPLOAD = "SARIF upload"
@@ -81,22 +86,22 @@ class BaseCIAdapter(ABC):
         return True
 
     @property
-    def can_upload_sarif(self) -> bool:
+    def can_upload_sarif_report(self) -> bool:
         """Whether this platform supports native SARIF ingestion."""
         return False
 
     @property
-    def can_annotate_code(self) -> bool:
+    def can_annotate_code_findings(self) -> bool:
         """Whether this platform supports inline code annotations."""
         return False
 
     @property
-    def can_create_work_item(self) -> bool:
+    def can_create_work_item_from_findings(self) -> bool:
         """Whether this platform supports creating work items from findings."""
         return False
 
     @property
-    def can_import_to_security_hub(self) -> bool:
+    def can_import_findings_to_security_hub(self) -> bool:
         """Whether this platform supports AWS Security Hub import."""
         return False
 
@@ -108,18 +113,22 @@ class BaseCIAdapter(ABC):
             )
         )
 
-    def upload_sarif(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+    def upload_sarif_report(self, scan_result: ScanResult, pr_context: PRContext) -> None:
         """Upload SARIF to the platform's code scanning API."""
         self._abort_unsupported_operation(UnsupportedOperation.SARIF_UPLOAD)
 
-    def annotate_code(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+    def annotate_code_findings(self, scan_result: ScanResult, pr_context: PRContext) -> None:
         """Post inline code annotations to the platform."""
         self._abort_unsupported_operation(UnsupportedOperation.CODE_ANNOTATIONS)
 
-    def create_work_item(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+    def create_work_item_from_findings(
+        self, scan_result: ScanResult, pr_context: PRContext
+    ) -> None:
         """Create a work item or ticket from scan findings."""
         self._abort_unsupported_operation(UnsupportedOperation.WORK_ITEM_CREATION)
 
-    def import_to_security_hub(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+    def import_findings_to_security_hub(
+        self, scan_result: ScanResult, pr_context: PRContext
+    ) -> None:
         """Import findings into AWS Security Hub."""
         self._abort_unsupported_operation(UnsupportedOperation.SECURITY_HUB_IMPORT)

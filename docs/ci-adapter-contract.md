@@ -108,17 +108,17 @@ class BaseCIAdapter(ABC):
         """
 
     @property
-    def can_upload_sarif(self) -> bool:
+    def can_upload_sarif_report(self) -> bool:
         """Whether this platform supports native SARIF ingestion."""
         return False
 
     @property
-    def can_annotate_code(self) -> bool:
+    def can_annotate_code_findings(self) -> bool:
         """Whether this platform supports inline code annotations."""
         return False
 
     @property
-    def can_create_work_item(self) -> bool:
+    def can_create_work_item_from_findings(self) -> bool:
         """Whether this platform supports creating work items from findings."""
         return False
 ```
@@ -133,13 +133,13 @@ the adapter's capabilities inspectable:
 |-----------|--------|--------|-------|----------|-----------|-----------|---------|
 | `post_pr_comment` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | `set_commit_status` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| `can_upload_sarif` | Yes | No | No | No | No | No | No |
-| `can_annotate_code` | No | No | No | No | Yes | No | No |
-| `can_create_work_item` | No | No | Yes | No | No | No | No |
-| `can_import_to_security_hub` | No | No | No | No | No | Yes | No |
+| `can_upload_sarif_report` | Yes | No | No | No | No | No | No |
+| `can_annotate_code_findings` | No | No | No | No | Yes | No | No |
+| `can_create_work_item_from_findings` | No | No | Yes | No | No | No | No |
+| `can_import_findings_to_security_hub` | No | No | No | No | No | Yes | No |
 
 Platforms that support an extra MUST implement the corresponding method
-(e.g. `upload_sarif()` on `GitHubAdapter`). The base class provides a
+(e.g. `upload_sarif_report()` on `GitHubAdapter`). The base class provides a
 default that raises `CIIntegrationError` (the domain exception) for
 each extra — not `NotImplementedError`, which is a built-in and does
 not conform to the project's custom-exception-for-domain-errors rule.
