@@ -21,13 +21,14 @@ from phi_scan.models import ScanConfig, ScanFinding
 from phi_scan.plugin_api import BaseRecognizer, ScanContext
 from phi_scan.plugin_api import ScanFinding as PluginScanFinding
 from phi_scan.plugin_loader import LoadedPlugin, PluginRegistry
-from phi_scan.plugin_runtime import run_plugin_pass
+from phi_scan.plugin_runtime import _MAX_WARNINGS_PER_RECOGNIZER, run_plugin_pass
 from phi_scan.scanner import _load_cached_plugin_registry, execute_scan
 
 _ACME_ENTITY_TYPE: str = "ACME_EMPLOYEE_ID"
 _ACME_RECOGNIZER_NAME: str = "acme_employee_id"
 _ACME_CONFIDENCE: float = 0.9
 _PLUGIN_SAMPLE_LINE: str = "employee_id = EMP-123456"
+_RATE_LIMIT_TEST_LINE_COUNT: int = 20
 
 
 class _AcmeRecognizer(BaseRecognizer):
@@ -194,7 +195,7 @@ def test_run_plugin_pass_rate_limits_warnings_per_recognizer(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     registry = _build_registry(_RaisingRecognizer())
-    content = "\n".join([_PLUGIN_SAMPLE_LINE] * 20)
+    content = "\n".join([_PLUGIN_SAMPLE_LINE] * _RATE_LIMIT_TEST_LINE_COUNT)
 
     with caplog.at_level(logging.WARNING, logger="phi_scan.plugin_runtime"):
         run_plugin_pass(content, Path("s.py"), registry)
@@ -207,7 +208,7 @@ def test_run_plugin_pass_rate_limits_warnings_per_recognizer(
         for record in caplog.records
         if "produced" in record.message and "warnings" in record.message
     ]
-    assert len(per_line_records) == 5
+    assert len(per_line_records) == _MAX_WARNINGS_PER_RECOGNIZER
     assert len(summary_records) == 1
 
 

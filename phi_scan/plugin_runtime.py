@@ -64,13 +64,14 @@ class _RecognizerWarningBudget:
         self._limit = limit
         self._counts: Counter[str] = Counter()
 
-    def register_warning_and_check_budget(self, recognizer_name: str) -> bool:
-        """Record a warning for ``recognizer_name`` and report whether it should be logged.
+    def claim_warning_slot(self, recognizer_name: str) -> bool:
+        """Claim one warning slot for ``recognizer_name``; return ``True`` if granted.
 
-        Mutation and predicate are fused intentionally: every warning emission
-        site must both count toward the per-recognizer budget and gate logging
-        on that same count. Splitting the two would let callers log without
-        incrementing (or vice versa), breaking the rate-limit invariant.
+        Each call consumes one slot regardless of the return value — the
+        count is the authoritative tally used by the end-of-scan summary.
+        Returns ``True`` while the per-recognizer budget still has capacity
+        (first ``limit`` calls) and ``False`` afterward so the caller can
+        suppress the log line.
         """
         self._counts[recognizer_name] += 1
         return self._counts[recognizer_name] <= self._limit
@@ -144,17 +145,17 @@ def _run_single_plugin_on_line(
 ) -> list[ScanFinding]:
     """Invoke one plugin on one line, returning validated host findings."""
     recognizer = loaded_plugin.recognizer
-    raw_findings = _safely_invoke_detect(
+    unvalidated_plugin_findings = _safely_invoke_detect(
         recognizer=recognizer,
         line_text=line_text,
         context=context,
         warning_budget=warning_budget,
     )
-    if raw_findings is None:
+    if unvalidated_plugin_findings is None:
         return []
     declared_entity_types = frozenset(recognizer.entity_types)
     host_findings: list[ScanFinding] = []
-    for plugin_finding in raw_findings:
+    for plugin_finding in unvalidated_plugin_findings:
         host_finding = _translate_plugin_finding_to_host(
             plugin_finding=plugin_finding,
             line_text=line_text,
@@ -186,7 +187,7 @@ def _safely_invoke_detect(
     to one line from one plugin so unrelated scan work proceeds unaffected.
     """
     try:
-        raw_plugin_findings = recognizer.detect(line_text, context)
+        unvalidated_plugin_findings = recognizer.detect(line_text, context)
     except Exception as exception:  # noqa: BLE001 — plugin isolation boundary (see docstring)
         _log_plugin_warning(
             recognizer_name=recognizer.name,
@@ -198,15 +199,17 @@ def _safely_invoke_detect(
             warning_budget=warning_budget,
         )
         return None
-    if not isinstance(raw_plugin_findings, list):
+    if not isinstance(unvalidated_plugin_findings, list):
         _log_plugin_warning(
             recognizer_name=recognizer.name,
             context=context,
-            message=_RETURN_TYPE_ERROR.format(actual_type=type(raw_plugin_findings).__name__),
+            message=_RETURN_TYPE_ERROR.format(
+                actual_type=type(unvalidated_plugin_findings).__name__
+            ),
             warning_budget=warning_budget,
         )
         return None
-    return raw_plugin_findings
+    return unvalidated_plugin_findings
 
 
 def _translate_plugin_finding_to_host(
@@ -251,7 +254,6 @@ def _translate_plugin_finding_to_host(
             warning_budget=warning_budget,
         )
         return None
-    matched_slice = line_text[plugin_finding.start_offset : plugin_finding.end_offset]
     redacted_context = (
         line_text[: plugin_finding.start_offset]
         + CODE_CONTEXT_REDACTED_VALUE
@@ -264,7 +266,9 @@ def _translate_plugin_finding_to_host(
         hipaa_category=_DEFAULT_PLUGIN_HIPAA_CATEGORY,
         confidence=plugin_finding.confidence,
         detection_layer=DetectionLayer.PLUGIN,
-        value_hash=compute_value_hash(matched_slice),
+        value_hash=compute_value_hash(
+            line_text[plugin_finding.start_offset : plugin_finding.end_offset]
+        ),
         severity=severity_from_confidence(plugin_finding.confidence),
         code_context=redacted_context,
         remediation_hint=_PLUGIN_REMEDIATION_HINT,
@@ -277,7 +281,7 @@ def _log_plugin_warning(
     message: str,
     warning_budget: _RecognizerWarningBudget,
 ) -> None:
-    if not warning_budget.register_warning_and_check_budget(recognizer_name):
+    if not warning_budget.claim_warning_slot(recognizer_name):
         return
     _logger.warning(
         _PLUGIN_WARNING_LOG,
