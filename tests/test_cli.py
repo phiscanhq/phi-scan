@@ -587,10 +587,10 @@ def test_aggregate_category_totals_missing_findings_json_skips_row() -> None:
 
 
 def test_build_watch_result_returns_clean_text_for_no_findings() -> None:
-    from phi_scan.cli import _build_watch_result
+    from phi_scan.cli_watch import build_watch_result
     from phi_scan.output import WATCH_RESULT_CLEAN_TEXT
 
-    scan_outcome = _build_watch_result([])
+    scan_outcome = build_watch_result([])
 
     assert scan_outcome.result_text == WATCH_RESULT_CLEAN_TEXT
     assert scan_outcome.is_clean is True
@@ -599,13 +599,13 @@ def test_build_watch_result_returns_clean_text_for_no_findings() -> None:
 def test_build_watch_result_returns_violation_text_for_findings(
     tmp_path: Path,
 ) -> None:
-    from phi_scan.cli import _build_watch_result
+    from phi_scan.cli_watch import build_watch_result
 
     finding = _make_watch_scan_finding(
         _WATCH_FINDING_FILE_PATH, line_number=1, value_hash_seed=b"x"
     )
 
-    scan_outcome = _build_watch_result([finding])
+    scan_outcome = build_watch_result([finding])
 
     assert "1" in scan_outcome.result_text
     assert scan_outcome.is_clean is False
@@ -614,7 +614,7 @@ def test_build_watch_result_returns_violation_text_for_findings(
 def test_build_watch_result_violation_count_matches_findings_length(
     tmp_path: Path,
 ) -> None:
-    from phi_scan.cli import _build_watch_result
+    from phi_scan.cli_watch import build_watch_result
 
     finding_one = _make_watch_scan_finding(
         _WATCH_FINDING_FILE_PATH, line_number=1, value_hash_seed=b"x"
@@ -623,7 +623,7 @@ def test_build_watch_result_violation_count_matches_findings_length(
         _WATCH_FINDING_FILE_PATH, line_number=2, value_hash_seed=b"y"
     )
 
-    scan_outcome = _build_watch_result([finding_one, finding_two])
+    scan_outcome = build_watch_result([finding_one, finding_two])
 
     assert "2" in scan_outcome.result_text
 
@@ -637,18 +637,18 @@ _INVALID_OUTPUT_FORMAT_VALUE: str = "unknown_format"
 
 
 def test_resolve_output_format_returns_enum_for_valid_value() -> None:
-    from phi_scan.cli import _resolve_output_format
+    from phi_scan.cli_report import resolve_output_format
 
-    result = _resolve_output_format(_VALID_OUTPUT_FORMAT_VALUE)
+    result = resolve_output_format(_VALID_OUTPUT_FORMAT_VALUE)
 
     assert result == OutputFormat.JSON
 
 
 def test_resolve_output_format_exits_with_error_for_unknown_format() -> None:
-    from phi_scan.cli import _resolve_output_format
+    from phi_scan.cli_report import resolve_output_format
 
     with pytest.raises(typer.Exit):
-        _resolve_output_format(_INVALID_OUTPUT_FORMAT_VALUE)
+        resolve_output_format(_INVALID_OUTPUT_FORMAT_VALUE)
 
 
 # ---------------------------------------------------------------------------

@@ -5,9 +5,9 @@ Verifies that:
   - generate_pdf_report and generate_html_report produce valid file content
   - --report-path is respected: output is written to the specified file
   - PDF and HTML report files contain the expected content signatures
-  - _ScanOutputOptions wires scan_target and framework_annotations correctly
-  - _generate_report_bytes returns bytes for both PDF and HTML formats
-  - _generate_report_bytes raises ValueError for non-binary formats
+  - ScanOutputOptions wires scan_target and framework_annotations correctly
+  - generate_report_bytes returns bytes for both PDF and HTML formats
+  - generate_report_bytes raises ValueError for non-binary formats
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from types import MappingProxyType
 
 import pytest
 
-from phi_scan.cli import (
-    _generate_report_bytes,  # type: ignore[attr-defined]
-    _ScanOutputOptions,  # type: ignore[attr-defined]
+from phi_scan.cli_report import (
+    ScanOutputOptions,
+    generate_report_bytes,
 )
 from phi_scan.compliance import ComplianceFramework, annotate_findings
 from phi_scan.constants import (
@@ -102,8 +102,8 @@ def _make_output_options(
     output_format: OutputFormat,
     report_path: Path | None = None,
     scan_target: Path = _SAMPLE_SCAN_TARGET,
-) -> _ScanOutputOptions:
-    return _ScanOutputOptions(
+) -> ScanOutputOptions:
+    return ScanOutputOptions(
         output_format=output_format,
         is_rich_mode=False,
         report_path=report_path,
@@ -176,29 +176,29 @@ def test_html_file_contains_embedded_chart(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _ScanOutputOptions: scan_target wiring
+# ScanOutputOptions: scan_target wiring
 # ---------------------------------------------------------------------------
 
 
 def test_scan_output_options_stores_scan_target() -> None:
-    """_ScanOutputOptions must store the provided scan_target."""
+    """ScanOutputOptions must store the provided scan_target."""
     custom_target = Path("services/patient-api")
     options = _make_output_options(OutputFormat.PDF, scan_target=custom_target)
     assert options.scan_target == custom_target
 
 
 def test_scan_output_options_stores_report_path(tmp_path: Path) -> None:
-    """_ScanOutputOptions must store the provided report_path."""
+    """ScanOutputOptions must store the provided report_path."""
     report_file = tmp_path / _EXPECTED_PDF_FILENAME
     options = _make_output_options(OutputFormat.PDF, report_path=report_file)
     assert options.report_path == report_file
 
 
 def test_scan_output_options_stores_framework_annotations() -> None:
-    """_ScanOutputOptions must store framework_annotations when provided."""
+    """ScanOutputOptions must store framework_annotations when provided."""
     finding = _make_finding()
     annotations = annotate_findings((finding,), frozenset({ComplianceFramework.SOC2}))
-    options = _ScanOutputOptions(
+    options = ScanOutputOptions(
         output_format=OutputFormat.PDF,
         is_rich_mode=False,
         report_path=None,
@@ -209,8 +209,8 @@ def test_scan_output_options_stores_framework_annotations() -> None:
 
 
 def test_scan_output_options_default_scan_target_is_current_dir() -> None:
-    """_ScanOutputOptions default scan_target must be Path('.')."""
-    options = _ScanOutputOptions(
+    """ScanOutputOptions default scan_target must be Path('.')."""
+    options = ScanOutputOptions(
         output_format=OutputFormat.TABLE,
         is_rich_mode=True,
         report_path=None,
@@ -219,42 +219,42 @@ def test_scan_output_options_default_scan_target_is_current_dir() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _generate_report_bytes: format dispatch
+# generate_report_bytes: format dispatch
 # ---------------------------------------------------------------------------
 
 
-def test_generate_report_bytes_returns_pdf_for_pdf_format() -> None:
-    """_generate_report_bytes must return PDF bytes when format is PDF."""
+def testgenerate_report_bytes_returns_pdf_for_pdf_format() -> None:
+    """generate_report_bytes must return PDF bytes when format is PDF."""
     result = _make_scan_result()
     options = _make_output_options(OutputFormat.PDF)
-    output = _generate_report_bytes(result, options, [])
+    output = generate_report_bytes(result, options, [])
     assert isinstance(output, bytes)
     assert output.startswith(_PDF_MAGIC_HEADER)
 
 
-def test_generate_report_bytes_returns_html_for_html_format() -> None:
-    """_generate_report_bytes must return HTML bytes when format is HTML."""
+def testgenerate_report_bytes_returns_html_for_html_format() -> None:
+    """generate_report_bytes must return HTML bytes when format is HTML."""
     result = _make_scan_result()
     options = _make_output_options(OutputFormat.HTML)
-    output = _generate_report_bytes(result, options, [])
+    output = generate_report_bytes(result, options, [])
     assert isinstance(output, bytes)
     assert _HTML_OPEN_TAG in output.decode("utf-8")
 
 
-def test_generate_report_bytes_raises_for_non_binary_format() -> None:
-    """_generate_report_bytes must raise ValueError for non-binary formats."""
+def testgenerate_report_bytes_raises_for_non_binary_format() -> None:
+    """generate_report_bytes must raise ValueError for non-binary formats."""
     result = _make_scan_result()
     options = _make_output_options(OutputFormat.JSON)
     with pytest.raises(ValueError):
-        _generate_report_bytes(result, options, [])
+        generate_report_bytes(result, options, [])
 
 
-def test_generate_report_bytes_raises_for_sarif_format() -> None:
-    """_generate_report_bytes must raise ValueError for SARIF format."""
+def testgenerate_report_bytes_raises_for_sarif_format() -> None:
+    """generate_report_bytes must raise ValueError for SARIF format."""
     result = _make_scan_result()
     options = _make_output_options(OutputFormat.SARIF)
     with pytest.raises(ValueError):
-        _generate_report_bytes(result, options, [])
+        generate_report_bytes(result, options, [])
 
 
 # ---------------------------------------------------------------------------

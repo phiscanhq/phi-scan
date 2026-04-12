@@ -7,16 +7,14 @@ import json
 import logging
 import time
 from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, NoReturn
+from typing import Annotated, Any
 
 import pathspec
 import typer
 from rich.live import Live
 from rich.progress import Progress, TaskID
-from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from phi_scan import __version__
@@ -27,11 +25,6 @@ from phi_scan.audit import (
     insert_scan_event,
     query_recent_scans,
     verify_audit_chain,
-)
-from phi_scan.baseline import (
-    BaselineSnapshot,
-    filter_baselined_findings,
-    load_baseline,
 )
 from phi_scan.ci_integration import (
     CIIntegrationError,
@@ -49,7 +42,20 @@ from phi_scan.cli_baseline import baseline_app
 from phi_scan.cli_config import config_app
 from phi_scan.cli_explain import explain_app
 from phi_scan.cli_plugins import plugins_app
+from phi_scan.cli_report import (
+    ScanOutputOptions,
+    display_report_phase_header,
+    emit_report_output,
+    emit_verbose_phase,
+    resolve_output_format,
+)
 from phi_scan.cli_scan_config import load_scan_config
+from phi_scan.cli_watch import (
+    WATCH_LOG_MAX_EVENTS,
+    FileChangeMonitor,
+    WatchConfig,
+    display_watch_live_screen,
+)
 from phi_scan.compliance import (
     ComplianceFramework,
     InvalidFrameworkError,
@@ -57,15 +63,12 @@ from phi_scan.compliance import (
     parse_framework_flag,
 )
 from phi_scan.constants import (
-    BASELINE_LOAD_ERROR_MESSAGE,
-    DEFAULT_BASELINE_FILENAME,
     DEFAULT_DATABASE_PATH,
     DEFAULT_IGNORE_FILENAME,
     DEFAULT_TEXT_ENCODING,
     EXIT_CODE_CLEAN,
     EXIT_CODE_ERROR,
     EXIT_CODE_VIOLATION,
-    IMPLEMENTED_OUTPUT_FORMATS,
     OutputFormat,
     PathspecMatchStyle,
 )
@@ -73,7 +76,6 @@ from phi_scan.diff import get_changed_files_from_diff
 from phi_scan.exceptions import (
     AuditKeyMissingError,
     AuditLogError,
-    BaselineError,
     MissingOptionalDependencyError,
     NotificationError,
 )
@@ -93,41 +95,18 @@ from phi_scan.notifier import (
     send_webhook_notification,
 )
 from phi_scan.output import (
-    WATCH_RESULT_CLEAN_TEXT,
-    WATCH_RESULT_VIOLATION_FORMAT,
     WatchEvent,
     build_dashboard_layout,
-    build_watch_layout,
     create_scan_progress,
     display_banner,
-    display_baseline_scan_notice,
-    display_category_breakdown,
-    display_clean_result,
-    display_clean_summary_panel,
-    display_code_context_panel,
-    display_exit_code_message,
-    display_file_tree,
     display_file_type_summary,
-    display_findings_table,
     display_phase_audit,
     display_phase_collecting,
-    display_phase_report,
     display_phase_scanning,
-    display_risk_level_badge,
     display_scan_header,
-    display_severity_inline,
     display_status_spinner,
-    display_violation_alert,
-    display_violation_summary_panel,
-    format_codequality,
-    format_csv,
-    format_gitlab_sast,
-    format_json,
-    format_junit,
-    format_sarif,
     get_console,
 )
-from phi_scan.report import generate_html_report, generate_pdf_report
 from phi_scan.scanner import (
     MAX_WORKER_COUNT,
     MIN_WORKER_COUNT,
@@ -139,11 +118,6 @@ from phi_scan.scanner import (
     run_parallel_scan,
     scan_file,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
-
-    from phi_scan.compliance import ComplianceControl
 
 __all__ = ["app"]
 
@@ -208,39 +182,12 @@ _SCAN_FRAMEWORK_HELP: str = (
 # (e.g. "nonexistent"). It never carries PHI or scan-result content because
 # parse_framework_flag operates solely on the --framework CLI flag string.
 _FRAMEWORK_PARSE_ERROR: str = "Invalid --framework value: {error}"
-_REPORT_PATH_TABLE_FORMAT_ERROR: str = (
-    "--report-path requires a serialized output format. "
-    "Use --output json, sarif, csv, junit, codequality, gitlab-sast, pdf, or html."
-)
-_REPORT_PATH_BINARY_FORMAT_REQUIRED_ERROR: str = (
-    "--output {format} requires --report-path <file.{format}> "
-    "-- binary formats cannot be written to stdout."
-)
-_UNEXPECTED_BINARY_FORMAT_ERROR: str = (
-    "_generate_report_bytes received unexpected output format {format!r} — "
-    "only OutputFormat.PDF and OutputFormat.HTML are supported"
-)
-_TREND_CHART_LOOKBACK_DAYS: int = 30
-_REPORT_PATH_WRITE_ERROR: str = "Failed to write report to {path!r}: {error}"
-_REPORT_PATH_WRITTEN_MESSAGE: str = "Report written to {path}"
-_VERBOSE_TIMESTAMP_FORMAT: str = "%Y-%m-%d %H:%M:%S"
-_VERBOSE_PHASE_PREFIX: str = "[{timestamp}] Phase: {message}"
-_VERBOSE_PHASE_COLLECTING: str = "collecting scan targets"
-_VERBOSE_PHASE_SCANNING: str = "scanning {count} file(s)"
-_VERBOSE_PHASE_AUDIT: str = "writing audit record"
-_VERBOSE_PHASE_REPORT: str = "rendering report"
 
 # ---------------------------------------------------------------------------
 # Watch command
 # ---------------------------------------------------------------------------
 
 _WATCH_PATH_HELP: str = "Directory to watch for file system changes."
-_WATCH_POLL_INTERVAL_SECONDS: float = 1.0
-_WATCH_LIVE_REFRESH_RATE: float = 4.0
-_WATCH_LOG_MAX_EVENTS: int = 10
-# Sentinel shown when a changed path cannot be relativised to watch_root (edge case).
-# The bare filename is NOT used because filenames may contain PHI (patient IDs, MRNs).
-_WATCH_PATH_OUTSIDE_ROOT_DISPLAY: str = "[outside watch root]"
 
 # ---------------------------------------------------------------------------
 # History command
@@ -410,12 +357,7 @@ _AUDIT_CHAIN_SKIPPED_ROWS_WARNING: str = (
 )
 _AUDIT_CHAIN_VERIFY_FLAG: str = "--verify"
 _SPINNER_NOTIFY_MESSAGE: str = "Sending notifications…"
-_IMPLEMENTED_FORMAT_NAMES: str = ", ".join(sorted(fmt.value for fmt in IMPLEMENTED_OUTPUT_FORMATS))
-_UNSUPPORTED_OUTPUT_FORMAT_ERROR: str = (
-    "Output format {fmt!r} is not yet implemented. "
-    f"Currently supported: {_IMPLEMENTED_FORMAT_NAMES}. "
-    "Additional formats are not yet available."
-)
+
 # ---------------------------------------------------------------------------
 # Log level configuration
 # ---------------------------------------------------------------------------
@@ -433,113 +375,12 @@ _LOG_LEVEL_MAP: dict[str, int] = {
 }
 
 # ---------------------------------------------------------------------------
-# Output format serializer dispatch table
+# Verbose phase messages (kept here — used by scan command orchestration)
 # ---------------------------------------------------------------------------
 
-# Must stay in sync with IMPLEMENTED_OUTPUT_FORMATS - {OutputFormat.TABLE}.
-# TABLE is handled before this dict is consulted (_emit_scan_output checks it
-# first as a special case). Using .get() on this dict is the runtime gate —
-# a missing key means the format is not yet implemented.
-_FORMAT_SERIALIZERS: dict[OutputFormat, Callable[[ScanResult], str]] = {
-    OutputFormat.JSON: format_json,
-    OutputFormat.CSV: format_csv,
-    OutputFormat.SARIF: format_sarif,
-    OutputFormat.JUNIT: format_junit,
-    OutputFormat.CODEQUALITY: format_codequality,
-    OutputFormat.GITLAB_SAST: format_gitlab_sast,
-}
-
-_RGLOB_ALL_FILES_PATTERN: str = "*"
-
-# ---------------------------------------------------------------------------
-# Watch file-count helper and event handler
-# ---------------------------------------------------------------------------
-
-
-def _count_files_in_directory(directory: Path) -> int:
-    """Return the number of regular files under directory (non-recursive cap is not applied).
-
-    Args:
-        directory: Root directory to traverse.
-
-    Returns:
-        Count of all regular files found via rglob.
-    """
-    return sum(
-        1
-        for candidate in directory.rglob(_RGLOB_ALL_FILES_PATTERN)
-        if candidate.is_file() and not candidate.is_symlink()
-    )
-
-
-@dataclass(frozen=True)
-class _WatchScanOutcome:
-    """The outcome of scanning one file during watch mode.
-
-    Carries the human-readable result text and a typed boolean that
-    output.py uses to derive the Rich style for the rolling event table.
-    """
-
-    result_text: str
-    is_clean: bool
-
-
-@dataclass
-@dataclass(frozen=True)
-class _WatchConfig:
-    """Immutable configuration shared between watch() and _FileChangeMonitor.
-
-    Frozen enforces the invariant that watch_root and scan_config are read-only
-    once constructed — mutation on the watchdog background thread would be an
-    unsynchronized write with no lock protection.
-    The mutable watch_events deque is kept separate and passed explicitly so
-    that immutable and mutable state are never mixed in one dataclass.
-    """
-
-    watch_root: Path
-    scan_config: ScanConfig
-
-
-class _FileChangeMonitor(FileSystemEventHandler):
-    """Watchdog event handler — appends a watch event to the rolling log on each file change.
-
-    Each file-change event triggers a full scan of the changed file. Findings are
-    displayed inline; the watch header shows cumulative session state.
-    """
-
-    def __init__(self, watch_config: _WatchConfig, watch_events: deque[WatchEvent]) -> None:
-        """Bind the immutable watch configuration and the mutable event buffer.
-
-        watch_config and watch_events are kept separate so that frozen=True on
-        _WatchConfig enforces the read-only invariant — scan_config must not be
-        mutated on the watchdog background thread.
-
-        Args:
-            watch_config: Frozen config holding watch_root and scan_config.
-            watch_events: Shared rolling deque appended to on each file change.
-        """
-        super().__init__()
-        self._watch_config = watch_config
-        self._watch_events = watch_events
-
-    def on_any_event(self, event: FileSystemEvent) -> None:
-        """Append a timestamped event record on any non-directory file change.
-
-        Args:
-            event: The watchdog file system event.
-        """
-        if event.is_directory:
-            return
-        changed_path = Path(str(event.src_path))
-        # HIPAA traversal rule: never follow symlinks — a watchdog event can fire
-        # for a symlinked path, which could point outside the watched directory and
-        # expose files containing PHI that were never intended to be scanned.
-        if changed_path.is_symlink():
-            return
-        scan_outcome = _scan_changed_file(changed_path, self._watch_config)
-        if scan_outcome is not None:
-            _append_watch_event(changed_path, scan_outcome, self._watch_config, self._watch_events)
-
+_VERBOSE_PHASE_COLLECTING: str = "collecting scan targets"
+_VERBOSE_PHASE_SCANNING: str = "scanning {count} file(s)"
+_VERBOSE_PHASE_AUDIT: str = "writing audit record"
 
 # ---------------------------------------------------------------------------
 # Internal helpers — scan command
@@ -561,25 +402,10 @@ class _ScanTargetOptions:
 
 
 @dataclass(frozen=True)
-class _ScanOutputOptions:
-    """Options controlling how scan results are rendered or serialized.
-
-    Groups output-rendering flags passed to _emit_scan_output and its helpers.
-    Execution-phase flags (verbosity, baseline mode) live in _ScanPhaseOptions.
-    """
-
-    output_format: OutputFormat
-    is_rich_mode: bool
-    report_path: Path | None
-    scan_target: Path = field(default_factory=lambda: Path("."))
-    framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None
-
-
-@dataclass(frozen=True)
 class _ScanPhaseOptions:
     """Execution-phase flags controlling phase headers and data selection.
 
-    Kept separate from _ScanOutputOptions because these flags control when and
+    Kept separate from ScanOutputOptions because these flags control when and
     how scan phases execute, not how results are rendered.
     """
 
@@ -904,25 +730,6 @@ def _dispatch_notifications(
     return sent_channels
 
 
-def _resolve_output_format(output_format: str) -> OutputFormat:
-    """Parse the output format string and exit with an error on unknown values.
-
-    Args:
-        output_format: Raw string value of the --output flag.
-
-    Returns:
-        The matching OutputFormat enum member.
-
-    Raises:
-        typer.Exit: If output_format does not match any OutputFormat member.
-    """
-    try:
-        return OutputFormat(output_format)
-    except ValueError as value_error:
-        typer.echo(_UNSUPPORTED_OUTPUT_FORMAT_ERROR.format(fmt=output_format), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR) from value_error
-
-
 def _resolve_framework_flag(framework_flag_value: str | None) -> frozenset[ComplianceFramework]:
     """Parse the --framework flag and exit with an error on unknown framework names.
 
@@ -963,255 +770,13 @@ def _prepare_scan_phase(
     """
     if is_rich_mode:
         display_phase_collecting()
-    _emit_verbose_phase(_VERBOSE_PHASE_COLLECTING, is_verbose)
+    emit_verbose_phase(_VERBOSE_PHASE_COLLECTING, is_verbose)
     scan_targets = _resolve_scan_targets(target_options)
     if is_rich_mode:
         display_file_type_summary(scan_targets)
         display_phase_scanning()
-    _emit_verbose_phase(_VERBOSE_PHASE_SCANNING.format(count=len(scan_targets)), is_verbose)
+    emit_verbose_phase(_VERBOSE_PHASE_SCANNING.format(count=len(scan_targets)), is_verbose)
     return scan_targets
-
-
-def _display_rich_scan_results(scan_result: ScanResult) -> None:
-    """Render the full Rich terminal UI for a completed scan.
-
-    Only called when in Rich/table mode. Callers are responsible for
-    checking is_rich_mode before calling this function.
-
-    Args:
-        scan_result: The completed scan result.
-    """
-    if scan_result.findings:
-        display_violation_alert(scan_result)
-        display_risk_level_badge(scan_result)
-        display_severity_inline(scan_result)
-        display_category_breakdown(scan_result)
-        display_file_tree(scan_result.findings)
-        for finding in scan_result.findings:
-            display_code_context_panel(finding)
-        display_findings_table(scan_result.findings)
-        display_violation_summary_panel(scan_result)
-        display_exit_code_message(is_clean=False)
-    else:
-        display_clean_result()
-        display_clean_summary_panel(scan_result)
-        display_exit_code_message(is_clean=True)
-
-
-def _emit_verbose_phase(message: str, is_verbose: bool) -> None:
-    """Write a timestamped phase marker to stderr when verbose mode is active.
-
-    Args:
-        message: Short description of the current scan phase.
-        is_verbose: When False this function is a no-op.
-    """
-    if not is_verbose:
-        return
-    timestamp = datetime.now().strftime(_VERBOSE_TIMESTAMP_FORMAT)
-    typer.echo(_VERBOSE_PHASE_PREFIX.format(timestamp=timestamp, message=message), err=True)
-
-
-def _invoke_report_writer(write_callable: Callable[[Path], object], report_path: Path) -> None:
-    try:
-        write_callable(report_path)
-    except OSError as write_error:
-        typer.echo(_REPORT_PATH_WRITE_ERROR.format(path=report_path, error=write_error), err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR) from write_error
-    typer.echo(_REPORT_PATH_WRITTEN_MESSAGE.format(path=report_path), err=True)
-
-
-def _write_report_to_file(content: str, report_path: Path) -> None:
-    """Write serialized report content to a file and confirm on stderr.
-
-    Args:
-        content: The serialized report string (JSON, XML, CSV, etc.).
-        report_path: Destination file path.
-
-    Raises:
-        typer.Exit: If the file cannot be written (e.g. permission error).
-    """
-    _invoke_report_writer(
-        lambda p: p.write_text(content, encoding=DEFAULT_TEXT_ENCODING), report_path
-    )
-
-
-def _write_report_bytes_to_file(content: bytes, report_path: Path) -> None:
-    """Write binary report content (PDF or HTML) to a file and confirm on stderr.
-
-    Args:
-        content: Raw bytes to write (PDF or UTF-8 HTML).
-        report_path: Destination file path.
-
-    Raises:
-        typer.Exit: If the file cannot be written (e.g. permission error).
-    """
-    _invoke_report_writer(lambda p: p.write_bytes(content), report_path)
-
-
-def _generate_report_bytes(
-    scan_result: ScanResult,
-    options: _ScanOutputOptions,
-    audit_rows: list[dict[str, object]],
-) -> bytes:
-    """Generate PDF or HTML report bytes from a scan result.
-
-    Args:
-        scan_result: The completed scan result.
-        options: Must have output_format in (OutputFormat.PDF, OutputFormat.HTML).
-            scan_target defaults to Path(".") when not supplied by the caller.
-        audit_rows: Recent audit rows for the trend chart.
-
-    Returns:
-        Raw bytes of the generated report (PDF or UTF-8 HTML).
-    """
-    if options.output_format not in {OutputFormat.PDF, OutputFormat.HTML}:
-        raise ValueError(_UNEXPECTED_BINARY_FORMAT_ERROR.format(format=options.output_format))
-    if options.output_format == OutputFormat.PDF:
-        return generate_pdf_report(
-            scan_result,
-            options.scan_target,
-            audit_rows,
-            options.framework_annotations,
-        )
-    return generate_html_report(
-        scan_result,
-        options.scan_target,
-        audit_rows,
-        options.framework_annotations,
-    )
-
-
-def _fetch_report_audit_rows() -> list[dict[str, object]]:
-    """Return recent audit rows for the binary report trend chart."""
-    database_path = Path(DEFAULT_DATABASE_PATH).expanduser()
-    return query_recent_scans(database_path, _TREND_CHART_LOOKBACK_DAYS)
-
-
-def _write_binary_report(scan_result: ScanResult, options: _ScanOutputOptions) -> None:
-    """Write the rendered binary report to the path specified in options.
-
-    Args:
-        scan_result: The completed scan result.
-        options: Must have output_format in (pdf, html) and a non-None report_path.
-
-    Raises:
-        typer.Exit: If report_path is missing or the file cannot be written.
-    """
-    if options.report_path is None:
-        typer.echo(
-            _REPORT_PATH_BINARY_FORMAT_REQUIRED_ERROR.format(format=options.output_format.value),
-            err=True,
-        )
-        raise typer.Exit(code=EXIT_CODE_ERROR)
-    audit_rows = _fetch_report_audit_rows()
-    report_bytes = _generate_report_bytes(scan_result, options, audit_rows)
-    _write_report_bytes_to_file(report_bytes, options.report_path)
-
-
-def _emit_scan_output(scan_result: ScanResult, options: _ScanOutputOptions) -> None:
-    """Render or serialize scan results in the requested output format.
-
-    For table format in Rich mode, delegates to _display_rich_scan_results.
-    For serialized formats, writes to options.report_path when set, or stdout.
-
-    Args:
-        scan_result: The completed scan result.
-        options: Output format, Rich mode flag, and optional report file path.
-
-    Raises:
-        typer.Exit: If the format is not implemented or report file cannot be written.
-    """
-    if options.output_format == OutputFormat.TABLE:
-        if options.report_path is not None:
-            typer.echo(_REPORT_PATH_TABLE_FORMAT_ERROR, err=True)
-            raise typer.Exit(code=EXIT_CODE_ERROR)
-        if options.is_rich_mode:
-            _display_rich_scan_results(scan_result)
-        return
-    if options.output_format in (OutputFormat.PDF, OutputFormat.HTML):
-        _write_binary_report(scan_result, options)
-        return
-    serializer = _FORMAT_SERIALIZERS.get(options.output_format)
-    if serializer is None:
-        error_message = _UNSUPPORTED_OUTPUT_FORMAT_ERROR.format(fmt=options.output_format.value)
-        typer.echo(error_message, err=True)
-        raise typer.Exit(code=EXIT_CODE_ERROR)
-    serialized = serializer(scan_result)
-    if options.report_path is not None:
-        _write_report_to_file(serialized, options.report_path)
-    else:
-        typer.echo(serialized)
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers — baseline-aware scan output
-# ---------------------------------------------------------------------------
-
-
-def _load_optional_baseline(baseline_path: Path) -> BaselineSnapshot | None:
-    """Load a baseline snapshot, returning None and printing a warning on failure.
-
-    Args:
-        baseline_path: Path to the .phi-scanbaseline file.
-
-    Returns:
-        Loaded snapshot, or None when the file is missing or unreadable.
-    """
-    try:
-        return load_baseline(baseline_path=baseline_path)
-    except BaselineError as baseline_load_error:
-        typer.echo(BASELINE_LOAD_ERROR_MESSAGE.format(error=baseline_load_error), err=True)
-        return None
-
-
-def _emit_scan_output_with_baseline(
-    scan_result: ScanResult, output_options: _ScanOutputOptions
-) -> NoReturn:
-    """Apply baseline filtering and emit output; always raises typer.Exit.
-
-    Every code path terminates with raise typer.Exit — the NoReturn annotation
-    is accurate. When no baseline file exists, emits standard scan output then
-    raises; when a baseline is found, emits new-findings output then raises.
-    The exit code reflects new (non-baselined) findings only.
-
-    Args:
-        scan_result: The completed scan result from the full detection pass.
-        output_options: Output format, rich-mode flag, and report path.
-    """
-    baseline_path = Path(DEFAULT_BASELINE_FILENAME)
-    snapshot = _load_optional_baseline(baseline_path)
-    if snapshot is None:
-        _emit_scan_output(scan_result, output_options)
-        raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
-    new_findings, baselined_findings = filter_baselined_findings(scan_result.findings, snapshot)
-    if output_options.is_rich_mode:
-        _display_rich_baseline_results(scan_result, new_findings, len(baselined_findings))
-    else:
-        _emit_scan_output(scan_result, output_options)
-    raise typer.Exit(code=EXIT_CODE_CLEAN if not new_findings else EXIT_CODE_VIOLATION)
-
-
-def _display_rich_baseline_results(
-    scan_result: ScanResult,
-    new_findings: list[ScanFinding],
-    baselined_count: int,
-) -> None:
-    """Render rich output for a baseline-filtered scan.
-
-    New findings are displayed with the standard violation UI. A baseline notice
-    panel is always shown to communicate how many findings were suppressed.
-
-    Args:
-        scan_result: Full scan result (used for the summary panel metadata).
-        new_findings: Findings not covered by any active baseline entry.
-        baselined_count: Count of findings suppressed by the baseline.
-    """
-    if new_findings:
-        display_violation_alert(scan_result)
-        display_findings_table(tuple(new_findings))
-    else:
-        display_clean_result()
-    display_baseline_scan_notice(len(new_findings), baselined_count)
 
 
 # ---------------------------------------------------------------------------
@@ -1321,126 +886,6 @@ def _reject_missing_git_directory() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers — watch command
-# ---------------------------------------------------------------------------
-
-
-def _build_relative_display_path(changed_path: Path, watch_root: Path) -> str:
-    """Return changed_path relative to watch_root for PHI-safe display.
-
-    File paths can contain PHI (patient IDs, names) in directory components.
-    Storing the absolute path verbatim would persist raw PHI in the shared deque.
-    Converting to a watch-root-relative path removes the sensitive prefix that
-    appears in deep patient-directory structures. If relativisation fails (edge
-    case where the path is outside watch_root), a safe sentinel is returned —
-    the bare filename is NOT used because filenames themselves may contain PHI
-    (e.g. john_doe_mrn_123456.hl7).
-
-    Args:
-        changed_path: Absolute path to the changed file.
-        watch_root: The watched directory root.
-
-    Returns:
-        A relative path string safe for terminal display, or a fixed sentinel
-        when the path cannot be relativised.
-    """
-    try:
-        return str(changed_path.relative_to(watch_root))
-    except ValueError:
-        return _WATCH_PATH_OUTSIDE_ROOT_DISPLAY
-
-
-def _scan_changed_file(changed_path: Path, watch_config: _WatchConfig) -> _WatchScanOutcome | None:
-    """Run scan_file on a watchdog-reported path and return a structured outcome.
-
-    Returns None when the file cannot be read (deleted or permissions changed between
-    the watchdog event and the scan call) — caller skips appending to the deque.
-
-    Args:
-        changed_path: The file that changed, already confirmed non-symlink.
-        watch_config: Immutable watch configuration; provides the scan config.
-
-    Returns:
-        _WatchScanOutcome with result text and is_clean flag, or None on I/O error.
-    """
-    try:
-        findings = scan_file(changed_path, watch_config.scan_config)
-    except (PermissionError, FileNotFoundError):
-        # File deleted or permissions revoked between watchdog event and scan call —
-        # log and signal skip rather than crashing the watchdog background thread.
-        _logger.warning("Skipping unreadable or deleted file during watch: %s", changed_path.name)
-        return None
-    return _build_watch_result(findings)
-
-
-def _append_watch_event(
-    changed_path: Path,
-    scan_outcome: _WatchScanOutcome,
-    watch_config: _WatchConfig,
-    watch_events: deque[WatchEvent],
-) -> None:
-    """Build a WatchEvent from the scan outcome and append it to the rolling deque.
-
-    Args:
-        changed_path: The file that changed; used to compute the display path.
-        scan_outcome: Structured result from _scan_changed_file.
-        watch_config: Immutable watch configuration; provides the watch root path.
-        watch_events: Mutable rolling event buffer; receives the new WatchEvent.
-    """
-    # deque.append is atomic under CPython's GIL, so no explicit lock is needed here.
-    # The main thread reads the deque via list(watch_events) (also atomic), making
-    # this cross-thread access safe without threading.Lock for CPython.
-    watch_events.append(
-        WatchEvent(
-            event_time=datetime.now(),
-            file_path=_build_relative_display_path(changed_path, watch_config.watch_root),
-            result_text=scan_outcome.result_text,
-            is_clean=scan_outcome.is_clean,
-        )
-    )
-
-
-def _build_watch_result(findings: list[ScanFinding]) -> _WatchScanOutcome:
-    """Return a structured scan outcome for a per-file watch event.
-
-    Maps the finding list to a display-ready outcome and clean/not-clean flag.
-
-    Args:
-        findings: Findings returned by scan_file for the changed file.
-
-    Returns:
-        _WatchScanOutcome with display text and a typed is_clean boolean.
-    """
-    if findings:
-        return _WatchScanOutcome(
-            result_text=WATCH_RESULT_VIOLATION_FORMAT.format(count=len(findings)),
-            is_clean=False,
-        )
-    return _WatchScanOutcome(result_text=WATCH_RESULT_CLEAN_TEXT, is_clean=True)
-
-
-def _display_watch_live_screen(
-    watch_path: Path,
-    watch_events: deque[WatchEvent],
-) -> None:
-    """Drive the Rich Live render loop, refreshing until the caller's context ends.
-
-    Single responsibility: render only. KeyboardInterrupt is not caught here —
-    it propagates naturally to watch(), which translates it to a clean exit code.
-    Rich's Live context manager handles alternate-screen teardown via __exit__
-    when any exception (including KeyboardInterrupt) unwinds the with block.
-
-    Args:
-        watch_path: The watched directory, shown in the persistent header.
-        watch_events: Shared deque updated by _FileChangeMonitor on the watchdog thread.
-    """
-    with Live(refresh_per_second=_WATCH_LIVE_REFRESH_RATE, screen=True) as live:
-        while True:
-            live.update(build_watch_layout(watch_path, list(watch_events)))
-            time.sleep(_WATCH_POLL_INTERVAL_SECONDS)
-
-
-# ---------------------------------------------------------------------------
 # --version callback
 # ---------------------------------------------------------------------------
 
@@ -1478,19 +923,19 @@ def main_callback(
 
 
 def _display_audit_phase_header(
-    output_options: _ScanOutputOptions,
+    output_options: ScanOutputOptions,
     phase_options: _ScanPhaseOptions,
 ) -> None:
     """Display the audit phase Rich banner and verbose marker."""
     if output_options.is_rich_mode:
         display_phase_audit()
-    _emit_verbose_phase(_VERBOSE_PHASE_AUDIT, phase_options.is_verbose)
+    emit_verbose_phase(_VERBOSE_PHASE_AUDIT, phase_options.is_verbose)
 
 
 def _persist_audit_record(
     scan_result: ScanResult,
     scan_config: ScanConfig,
-    output_options: _ScanOutputOptions,
+    output_options: ScanOutputOptions,
 ) -> None:
     """Dispatch notifications then persist the scan result with audit metadata.
 
@@ -1611,39 +1056,6 @@ def _call_ci_integration(
             get_console().print(f"[yellow]Warning:[/yellow] {label} failed — {integration_error}")
 
 
-def _display_report_phase_header(
-    output_options: _ScanOutputOptions,
-    phase_options: _ScanPhaseOptions,
-) -> None:
-    """Display the report phase Rich banner and verbose marker."""
-    if output_options.is_rich_mode:
-        display_phase_report()
-    _emit_verbose_phase(_VERBOSE_PHASE_REPORT, phase_options.is_verbose)
-
-
-def _emit_report_output(
-    scan_result: ScanResult,
-    output_options: _ScanOutputOptions,
-    phase_options: _ScanPhaseOptions,
-) -> NoReturn:
-    """Emit scan output via the appropriate path; always raises typer.Exit.
-
-    Both branches terminate via typer.Exit: the baseline path delegates to
-    _emit_scan_output_with_baseline, which raises before returning; the
-    standard path raises explicitly below.
-
-    Args:
-        scan_result: Completed scan result from _execute_scan_with_progress.
-        output_options: Controls output format, rich mode, and report path.
-        phase_options: Controls baseline mode selection.
-    """
-    if phase_options.should_use_baseline:
-        _emit_scan_output_with_baseline(scan_result, output_options)
-    else:
-        _emit_scan_output(scan_result, output_options)
-        raise typer.Exit(code=EXIT_CODE_CLEAN if scan_result.is_clean else EXIT_CODE_VIOLATION)
-
-
 @app.command()
 def scan(
     path: Annotated[Path, typer.Argument(help=_SCAN_PATH_HELP)] = Path("."),
@@ -1701,7 +1113,7 @@ def scan(
     _validate_worker_count(worker_count)
     effective_log_level = _LOG_LEVEL_DEBUG if is_verbose else log_level
     _configure_logging(effective_log_level, log_file, is_quiet)
-    output_format_enum = _resolve_output_format(output_format)
+    output_format_enum = resolve_output_format(output_format)
     enabled_frameworks = _resolve_framework_flag(framework)
     is_rich_mode = not is_quiet and output_format_enum is OutputFormat.TABLE
     with display_status_spinner(_SPINNER_CONFIG_LOAD_MESSAGE, is_active=is_rich_mode):
@@ -1716,7 +1128,7 @@ def scan(
     # Intentional ordering: scan runs before output_options is constructed because
     # framework_annotations depend on scan_result.findings. Any error raised by
     # _execute_scan_with_progress will propagate before output_options is configured,
-    # which is acceptable — output_options has no effect until _emit_scan_output is called.
+    # which is acceptable — output_options has no effect until emit_scan_output is called.
     execution_options = _ScanExecutionOptions(
         worker_count=worker_count,
         should_show_progress=is_rich_mode,
@@ -1725,7 +1137,7 @@ def scan(
     framework_annotations = (
         annotate_findings(scan_result.findings, enabled_frameworks) if enabled_frameworks else None
     )
-    output_options = _ScanOutputOptions(
+    output_options = ScanOutputOptions(
         output_format=output_format_enum,
         is_rich_mode=is_rich_mode,
         report_path=report_path,
@@ -1745,8 +1157,8 @@ def scan(
         should_upload_sarif,
         is_rich_mode,
     )
-    _display_report_phase_header(output_options, phase_options)
-    _emit_report_output(scan_result, output_options, phase_options)
+    display_report_phase_header(output_options, phase_options.is_verbose)
+    emit_report_output(scan_result, output_options, phase_options.should_use_baseline)
 
 
 @app.command()
@@ -1759,14 +1171,14 @@ def watch(
         raise typer.BadParameter(f"Path does not exist: {watch_path}", param_hint="'PATH'")
     if not watch_path.is_dir():
         raise typer.BadParameter(f"Path is not a directory: {watch_path}", param_hint="'PATH'")
-    watch_config = _WatchConfig(watch_root=watch_path, scan_config=ScanConfig())
-    watch_events: deque[WatchEvent] = deque(maxlen=_WATCH_LOG_MAX_EVENTS)
-    event_handler = _FileChangeMonitor(watch_config, watch_events)
+    watch_config = WatchConfig(watch_root=watch_path, scan_config=ScanConfig())
+    watch_events: deque[WatchEvent] = deque(maxlen=WATCH_LOG_MAX_EVENTS)
+    event_handler = FileChangeMonitor(watch_config, watch_events)
     observer = Observer()
     observer.schedule(event_handler, str(watch_path), recursive=True)  # type: ignore[no-untyped-call]
     observer.start()  # type: ignore[no-untyped-call]
     try:
-        _display_watch_live_screen(watch_path, watch_events)
+        display_watch_live_screen(watch_path, watch_events)
     except KeyboardInterrupt:
         # Ctrl+C is the standard exit for watch mode. Translate the BaseException
         # into a clean exit code before the finally block tears down the observer.
