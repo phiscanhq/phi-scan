@@ -36,14 +36,12 @@ _AZURE_COMMENT_TYPE_TEXT: int = 1
 _AZURE_THREAD_STATUS_ACTIVE: str = "active"
 
 
-def _build_pr_threads_url(
-    collection_uri: str, team_project: str, repo_id: str | None, pr_id: str | None
-) -> str:
+def _build_pr_threads_url(pr_context: PRContext) -> str:
     return _AZURE_PR_THREADS_PATH.format(
-        collection_uri=collection_uri,
-        team_project=team_project,
-        repo_id=repo_id,
-        pr_id=pr_id,
+        collection_uri=pr_context.extras.get("collection_uri", ""),
+        team_project=pr_context.extras.get("team_project", ""),
+        repo_id=pr_context.repository,
+        pr_id=pr_context.pr_number,
         api_version=_AZURE_API_VERSION,
     )
 
@@ -90,7 +88,7 @@ class AzureAdapter(BaseCIAdapter):
             )
             return
 
-        url = _build_pr_threads_url(collection_uri, team_project, repo_id, pr_id)
+        url = _build_pr_threads_url(pr_context)
         execute_http_request(
             HttpRequestConfig(
                 method=HttpMethod.POST,
