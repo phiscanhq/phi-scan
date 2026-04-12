@@ -1,183 +1,112 @@
+# phi-scan:ignore-file
 """CI/CD platform integration for phi-scan.
 
-Provides auto-detection of the running CI/CD platform, extraction of PR/MR
-context from environment variables, PR/MR comment posting, and commit status
-reporting across all seven supported platforms:
+This module is the backward-compatible entry point for CI/CD integration.
+Platform detection, PR context extraction, and per-platform adapters now
+live in the ``phi_scan.ci`` package. This module provides:
 
-  - GitHub Actions    (via ``gh`` CLI)
-  - GitLab CI         (via GitLab REST API)
-  - Jenkins           (via GitHub/GitLab API depending on VCS source)
-  - Azure DevOps      (via Azure DevOps REST API)
-  - CircleCI          (via GitHub/Bitbucket API depending on VCS)
-  - Bitbucket         (via Bitbucket Cloud REST API)
-  - AWS CodeBuild     (via GitHub/Bitbucket API depending on webhook source)
-
-Each public function accepts a ``ScanResult`` and a ``PRContext`` and returns
-``None``. Network errors are caught and re-raised as ``CIIntegrationError`` so
-the caller (CLI scan command) can decide whether to fail the build or continue.
-
-Design constraints:
-  - No PHI leaves the process — comment bodies contain only counts, file names,
-    and line numbers. Raw entity values are never included.
-  - HTTP error messages include only the status code and reason phrase, never the
-    response body — API error responses for comment endpoints could echo back
-    request content containing finding metadata (HIPAA categories, file paths).
-  - All HTTP calls use ``httpx`` (already a project dependency).
-  - ``gh`` CLI is used for GitHub because it handles token auth and API versioning.
-  - Authentication tokens are read from environment variables only — never from
-    config files (which may be committed to version control).
+  1. **Orchestration**: ``post_pr_comment`` and ``set_commit_status``
+     dispatch to per-platform adapters via ``phi_scan.ci.resolve_adapter``.
+  2. **Comment formatting**: ``build_comment_body`` and
+     ``build_comment_body_with_baseline`` produce the markdown PR body.
+  3. **Platform-specific extras**: SARIF upload, Bitbucket Code Insights,
+     Azure build tags/PR statuses/Boards work items, and AWS Security Hub
+     ASFF import remain here pending a follow-up migration PR.
+  4. **Backward-compatible re-exports**: all names previously importable
+     from ``phi_scan.ci_integration`` continue to work.
 
 Security audit summary
 ----------------------
-This section is placed at the top of the module so it remains visible within
-GitHub's 30,000-character diff truncation limit. All claims are machine-verified
-by tests in ``tests/test_ci_integration_remaining.py``.
-
-**Exception handling** — all 12 outbound HTTP calls go through
-``_execute_http_request``, which re-raises both ``httpx.HTTPStatusError`` and
-``httpx.RequestError`` as ``CIIntegrationError``. None swallow. Verify:
-``grep -c "raise_for_status" phi_scan/ci_integration.py`` == 2 (one in the
-helper body, one in the docstring). Sentinel tests confirm error messages never
-include ``response.text``:
-  - ``test_upload_sarif_http_error_excludes_response_body``
-  - ``test_set_azure_build_tag_http_error_excludes_response_body``
-  - ``test_set_azure_pr_status_http_error_excludes_response_body``
-  - ``test_post_bitbucket_code_insights_http_error_excludes_response_body``
-
-**SARIF message text** — ``format_sarif`` delegates to
-``_build_sarif_finding_message`` (``phi_scan/output/serializers.py``). That function uses
-only ``hipaa_category.value`` (enum label), ``detection_layer.value`` (enum
-label), ``confidence`` (float), and ``remediation_hint`` (pre-canned guidance
-string). Raw entity values, ``code_context``, and ``value_hash`` are explicitly
-excluded. PHI-safety is documented in the expanded docstring in ``output.py`` and
-enforced by ``_verify_sarif_excludes_code_snippets()`` before every upload.
-
-**Outbound payload fields** — all payload builders are audited:
-  - Azure work item: only aggregate count (int) + PR number (str). Verified by
-    ``test_create_azure_boards_work_item_payload_excludes_phi_fields`` which
-    asserts entity_type, hipaa_category, value_hash, code_context, and
-    remediation_hint are all absent from the POST body.
-  - ASFF (Security Hub): file_path, line_number, entity_type,
-    hipaa_category.value, confidence (float) — zero PHI-derived data. The ASFF
-    Id field uses repository + file_path + line_number + entity_type (structural
-    fields only). value_hash and all derivatives are excluded because SSNs have
-    ~30 bits of entropy: any SHA-256 output is reversible over the 30-bit input
-    space regardless of output length. Verified by
-    ``test_convert_findings_to_asff_excludes_code_context``,
-    ``test_convert_findings_to_asff_fields_are_enumerated_types_and_counts``, and
-    ``test_convert_findings_to_asff_excludes_full_value_hash``.
-  - Bitbucket Code Insights annotations: file_path, line_number,
-    hipaa_category.value, severity label, confidence (float) — never raw entity
-    value or code_context.
+All outbound HTTP calls go through ``phi_scan.ci._transport.execute_http_request``,
+which re-raises both ``httpx.HTTPStatusError`` and ``httpx.RequestError`` as
+``CIIntegrationError``. Error messages include only the status code and reason
+phrase — never the response body.
 """
 
 from __future__ import annotations
 
 import base64
-import enum
 import gzip
 import json
 import logging
 import os
 import subprocess
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
+from phi_scan.ci import (  # noqa: F401 — backward-compatible re-exports
+    AzureAdapter,
+    BaseCIAdapter,
+    BitbucketAdapter,
+    CIPlatform,
+    CircleCIAdapter,
+    CodeBuildAdapter,
+    GitHubAdapter,
+    GitLabAdapter,
+    JenkinsAdapter,
+    PullRequestContext,
+    detect_platform,
+    get_pull_request_context,
+    resolve_adapter,
+)
+from phi_scan.ci._base import SanitisedCommentBody
+from phi_scan.ci._transport import (
+    HttpMethod,
+    HttpRequestConfig,
+    OperationLabel,
+    execute_http_request,
+)
 from phi_scan.constants import SeverityLevel
-from phi_scan.exceptions import PhiScanError
+from phi_scan.exceptions import CIIntegrationError  # noqa: F401 — backward-compatible re-export
 from phi_scan.models import ScanResult
 from phi_scan.output import format_sarif
+
+PRContext = PullRequestContext
+get_pr_context = get_pull_request_context
+
+__all__ = [
+    "AzureAdapter",
+    "BaseCIAdapter",
+    "BaselineComparison",
+    "BitbucketAdapter",
+    "CIIntegrationError",
+    "CIPlatform",
+    "CircleCIAdapter",
+    "CodeBuildAdapter",
+    "GitHubAdapter",
+    "GitLabAdapter",
+    "HttpMethod",
+    "HttpRequestConfig",
+    "JenkinsAdapter",
+    "OperationLabel",
+    "PRContext",
+    "PullRequestContext",
+    "SanitisedCommentBody",
+    "build_comment_body",
+    "build_comment_body_with_baseline",
+    "convert_findings_to_asff",
+    "create_azure_boards_work_item",
+    "detect_platform",
+    "execute_http_request",
+    "get_pr_context",
+    "get_pull_request_context",
+    "import_findings_to_security_hub",
+    "post_bitbucket_code_insights",
+    "post_pr_comment",
+    "post_pull_request_comment",
+    "resolve_adapter",
+    "set_azure_build_tag",
+    "set_azure_pr_status",
+    "set_commit_status",
+    "upload_sarif_to_github",
+]
 
 _LOG: logging.Logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants — environment variable names
+# Constants — comment formatting
 # ---------------------------------------------------------------------------
 
-# GitHub Actions
-_ENV_GITHUB_ACTIONS: str = "GITHUB_ACTIONS"
-_ENV_GITHUB_TOKEN: str = "GITHUB_TOKEN"
-_ENV_GITHUB_REPOSITORY: str = "GITHUB_REPOSITORY"
-_ENV_GITHUB_SHA: str = "GITHUB_SHA"
-_ENV_GITHUB_REF: str = "GITHUB_REF"
-_ENV_PR_NUMBER: str = "PR_NUMBER"
-
-# GitLab CI
-_ENV_GITLAB_CI: str = "GITLAB_CI"
-_ENV_GITLAB_TOKEN: str = "GITLAB_TOKEN"
-_ENV_CI_JOB_TOKEN: str = "CI_JOB_TOKEN"
-_ENV_CI_PROJECT_ID: str = "CI_PROJECT_ID"
-_ENV_CI_MERGE_REQUEST_IID: str = "CI_MERGE_REQUEST_IID"
-_ENV_CI_SERVER_URL: str = "CI_SERVER_URL"
-_ENV_CI_COMMIT_SHA: str = "CI_COMMIT_SHA"
-_ENV_CI_COMMIT_REF_NAME: str = "CI_COMMIT_REF_NAME"
-
-# Jenkins
-_ENV_JENKINS_URL: str = "JENKINS_URL"
-_ENV_CHANGE_ID: str = "CHANGE_ID"
-_ENV_CHANGE_URL: str = "CHANGE_URL"
-
-# Azure DevOps
-_ENV_TF_BUILD: str = "TF_BUILD"
-_ENV_SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: str = "SYSTEM_TEAMFOUNDATIONCOLLECTIONURI"
-_ENV_SYSTEM_TEAMPROJECT: str = "SYSTEM_TEAMPROJECT"
-_ENV_SYSTEM_ACCESSTOKEN: str = "SYSTEM_ACCESSTOKEN"
-_ENV_BUILD_REPOSITORY_ID: str = "BUILD_REPOSITORY_ID"
-_ENV_BUILD_REPOSITORY_URI: str = "BUILD_REPOSITORY_URI"
-_ENV_SYSTEM_PULLREQUEST_PULLREQUESTID: str = "SYSTEM_PULLREQUEST_PULLREQUESTID"
-_ENV_BUILD_BUILDID: str = "BUILD_BUILDID"
-_ENV_BUILD_SOURCEVERSION: str = "BUILD_SOURCEVERSION"
-
-# CircleCI
-_ENV_CIRCLECI: str = "CIRCLECI"
-_ENV_CIRCLE_PULL_REQUEST: str = "CIRCLE_PULL_REQUEST"
-_ENV_CIRCLE_SHA1: str = "CIRCLE_SHA1"
-_ENV_CIRCLE_BRANCH: str = "CIRCLE_BRANCH"
-
-# Bitbucket Pipelines
-_ENV_BITBUCKET_BUILD_NUMBER: str = "BITBUCKET_BUILD_NUMBER"
-_ENV_BITBUCKET_TOKEN: str = "BITBUCKET_TOKEN"
-_ENV_BITBUCKET_PR_ID: str = "BITBUCKET_PR_ID"
-_ENV_BITBUCKET_REPO_SLUG: str = "BITBUCKET_REPO_SLUG"
-_ENV_BITBUCKET_WORKSPACE: str = "BITBUCKET_WORKSPACE"
-_ENV_BITBUCKET_COMMIT: str = "BITBUCKET_COMMIT"
-
-# AWS CodeBuild
-_ENV_CODEBUILD_BUILD_ID: str = "CODEBUILD_BUILD_ID"
-_ENV_CODEBUILD_WEBHOOK_TRIGGER: str = "CODEBUILD_WEBHOOK_TRIGGER"
-_ENV_CODEBUILD_SOURCE_VERSION: str = "CODEBUILD_SOURCE_VERSION"
-_ENV_CODEBUILD_WEBHOOK_BASE_REF: str = "CODEBUILD_WEBHOOK_BASE_REF"
-
-# GitHub API
-_GITHUB_API_BASE_URL: str = "https://api.github.com"
-_GITHUB_API_PR_COMMENTS_PATH: str = "/repos/{repository}/issues/{pr_number}/comments"
-_GITHUB_API_COMMIT_STATUSES_PATH: str = "/repos/{repository}/statuses/{sha}"
-
-# GitLab API
-_GITLAB_DEFAULT_SERVER_URL: str = "https://gitlab.com"
-_GITLAB_API_MR_NOTES_PATH: str = "/api/v4/projects/{project_id}/merge_requests/{mr_iid}/notes"
-_GITLAB_API_COMMIT_STATUSES_PATH: str = "/api/v4/projects/{project_id}/statuses/{sha}"
-
-# Azure DevOps API
-_AZURE_API_VERSION: str = "7.1"
-_AZURE_PR_THREADS_PATH: str = (
-    "{collection_uri}{team_project}/_apis/git/repositories/{repo_id}"
-    "/pullRequests/{pr_id}/threads?api-version={api_version}"
-)
-
-# Bitbucket Cloud API
-_BITBUCKET_API_BASE_URL: str = "https://api.bitbucket.org/2.0"
-_BITBUCKET_PR_COMMENTS_PATH: str = (
-    "/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments"
-)
-_BITBUCKET_COMMIT_STATUS_PATH: str = (
-    "/repositories/{workspace}/{repo_slug}/commit/{commit}/statuses/build"
-)
-
-# Comment templates
 _COMMENT_HEADER_CLEAN: str = "## phi-scan: No PHI/PII Violations Found"
 _COMMENT_HEADER_VIOLATIONS: str = "## phi-scan: PHI/PII Violations Detected"
 _COMMENT_BADGE_CLEAN: str = "![clean](https://img.shields.io/badge/phi--scan-clean-green)"
@@ -185,26 +114,10 @@ _COMMENT_BADGE_VIOLATIONS: str = (
     "![violations](https://img.shields.io/badge/phi--scan-violations-red)"
 )
 
-# Commit status context name used across all platforms
 _COMMIT_STATUS_CONTEXT: str = "phi-scan"
 _COMMIT_STATUS_DESCRIPTION_CLEAN: str = "No PHI/PII violations found"
 _COMMIT_STATUS_DESCRIPTION_VIOLATIONS: str = "{count} PHI/PII violation(s) found"
 
-# HTTP timeout for all API calls
-_HTTP_TIMEOUT_SECONDS: float = 15.0
-
-# Content-Type header values used across platform API calls
-_JSON_CONTENT_TYPE: str = "application/json"
-_AZURE_PATCH_CONTENT_TYPE: str = "application/json-patch+json"
-
-# Bitbucket PR comment body structure keys
-_BITBUCKET_COMMENT_CONTENT_KEY: str = "content"
-_BITBUCKET_COMMENT_RAW_KEY: str = "raw"
-
-# Azure DevOps build tag PUT requires an empty body
-_AZURE_BUILD_TAG_EMPTY_BODY: bytes = b""
-
-# Maximum characters in a PR comment to stay within GitHub's 65536-char limit
 _MAX_COMMENT_LENGTH: int = 60_000
 _MAX_ERROR_RESPONSE_LOG_LENGTH: int = 200
 _DEFAULT_GIT_REF: str = "refs/heads/main"
@@ -216,16 +129,26 @@ _BASELINE_CONTEXT_FORMAT: str = (
     "{resolved_count} resolved since last scan"
 )
 
-# Maximum length of a SARIF result message.text before upload is aborted.
-# _build_sarif_finding_message() produces at most ~1200 chars
-# (remediation_hint max 1024 + category/layer/confidence overhead).
-# Values well above this indicate unexpected content was embedded.
+_MAX_FINDINGS_IN_COMMENT_TABLE: int = 50
+
+# ---------------------------------------------------------------------------
+# Constants — platform-specific extras
+# ---------------------------------------------------------------------------
+
+_ENV_GITHUB_TOKEN: str = "GITHUB_TOKEN"
+_ENV_SYSTEM_ACCESSTOKEN: str = "SYSTEM_ACCESSTOKEN"
+_ENV_BITBUCKET_TOKEN: str = "BITBUCKET_TOKEN"
+
+_HTTP_TIMEOUT_SECONDS: float = 15.0
+_JSON_CONTENT_TYPE: str = "application/json"
+_AZURE_PATCH_CONTENT_TYPE: str = "application/json-patch+json"
+_AZURE_BUILD_TAG_EMPTY_BODY: bytes = b""
+
+_GITHUB_API_BASE_URL: str = "https://api.github.com"
+_GITHUB_API_SARIF_UPLOAD_PATH: str = "/repos/{repository}/code-scanning/sarifs"
 _SARIF_MAX_MESSAGE_TEXT_LENGTH: int = 1_500
 
-# GitHub Code Scanning SARIF upload API
-_GITHUB_API_SARIF_UPLOAD_PATH: str = "/repos/{repository}/code-scanning/sarifs"
-
-# Azure DevOps build tag + PR status API paths
+_AZURE_API_VERSION: str = "7.1"
 _AZURE_BUILD_TAGS_PATH: str = (
     "{collection_uri}{team_project}/_apis/build/builds/{build_id}"
     "/tags/{tag}?api-version={api_version}"
@@ -234,11 +157,8 @@ _AZURE_PR_STATUSES_PATH: str = (
     "{collection_uri}{team_project}/_apis/git/repositories/{repo_id}"
     "/pullRequests/{pr_id}/statuses?api-version={api_version}"
 )
-# Azure build tag values
 _AZURE_TAG_CLEAN: str = "phi-scan:clean"
 _AZURE_TAG_VIOLATIONS: str = "phi-scan:violations-found"
-
-# Azure Boards work-item API
 _AZURE_WORK_ITEM_TYPE: str = "Task"
 _AZURE_WORK_ITEMS_PATH: str = (
     "{collection_uri}{team_project}/_apis/wit/workitems/${work_item_type}?api-version={api_version}"
@@ -247,16 +167,12 @@ _AZURE_WORK_ITEM_TITLE_FORMAT: str = (
     "phi-scan: {count} HIGH severity PHI/PII violation(s) in PR #{pull_request_number}"
 )
 
-# AWS Security Hub ASFF (Amazon Security Finding Format)
 _AWS_SECURITY_HUB_PRODUCT_ARN_FORMAT: str = (
     "arn:aws:securityhub:{region}:{account_id}:product/{account_id}/default"
 )
-# Explicit ASFF severity label constants — must not derive from enum internals at
-# runtime because the ASFF API contract is independent of SeverityLevel enum values.
 _AWS_SECURITY_HUB_HIGH_SEVERITY_LABEL: str = "HIGH"
 _AWS_SECURITY_HUB_MEDIUM_SEVERITY_LABEL: str = "MEDIUM"
 _AWS_SECURITY_HUB_LOW_SEVERITY_LABEL: str = "LOW"
-# ASFF uses "INFORMATIONAL" for INFO-level findings — no SeverityLevel enum equivalent.
 _AWS_SECURITY_HUB_INFO_SEVERITY_LABEL: str = "INFORMATIONAL"
 _AWS_SECURITY_HUB_SEVERITY_MAP: dict[SeverityLevel, str] = {
     SeverityLevel.HIGH: _AWS_SECURITY_HUB_HIGH_SEVERITY_LABEL,
@@ -265,7 +181,7 @@ _AWS_SECURITY_HUB_SEVERITY_MAP: dict[SeverityLevel, str] = {
     SeverityLevel.INFO: _AWS_SECURITY_HUB_INFO_SEVERITY_LABEL,
 }
 
-# Bitbucket Code Insights API
+_BITBUCKET_API_BASE_URL: str = "https://api.bitbucket.org/2.0"
 _BITBUCKET_REPORTS_PATH: str = (
     "/repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_id}"
 )
@@ -273,12 +189,9 @@ _BITBUCKET_ANNOTATIONS_PATH: str = (
     "/repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_id}/annotations"
 )
 _BITBUCKET_REPORT_ID: str = "phi-scan"
-# Explicit Bitbucket annotation severity label constants — must not derive from enum
-# internals at runtime because the Bitbucket API contract is independent of SeverityLevel.
 _BITBUCKET_HIGH_SEVERITY_LABEL: str = "HIGH"
 _BITBUCKET_MEDIUM_SEVERITY_LABEL: str = "MEDIUM"
 _BITBUCKET_LOW_SEVERITY_LABEL: str = "LOW"
-# Bitbucket Code Insights does not have an INFO severity level — INFO findings map to LOW.
 _BITBUCKET_INFO_SEVERITY_LABEL: str = _BITBUCKET_LOW_SEVERITY_LABEL
 _BITBUCKET_ANNOTATION_SEVERITY_MAP: dict[SeverityLevel, str] = {
     SeverityLevel.HIGH: _BITBUCKET_HIGH_SEVERITY_LABEL,
@@ -289,52 +202,13 @@ _BITBUCKET_ANNOTATION_SEVERITY_MAP: dict[SeverityLevel, str] = {
 
 
 # ---------------------------------------------------------------------------
-# Public types
+# Backward-compatible type re-exports
 # ---------------------------------------------------------------------------
-
-
-class CIPlatform(enum.Enum):
-    """Enumeration of supported CI/CD platforms."""
-
-    GITHUB_ACTIONS = "github_actions"
-    GITLAB_CI = "gitlab_ci"
-    JENKINS = "jenkins"
-    AZURE_DEVOPS = "azure_devops"
-    CIRCLECI = "circleci"
-    BITBUCKET = "bitbucket"
-    CODEBUILD = "codebuild"
-    UNKNOWN = "unknown"
-
-
-@dataclass(frozen=True)
-class PRContext:
-    """Platform-neutral PR/MR context extracted from environment variables.
-
-    Fields that are not available on the current platform are ``None``.
-    The CLI passes this object to ``post_pr_comment`` and ``set_commit_status``.
-    """
-
-    platform: CIPlatform
-    pr_number: str | None
-    repository: str | None
-    sha: str | None
-    branch: str | None
-    base_branch: str | None
-    # Platform-specific extras stored as a plain dict
-    extras: dict[str, str] = field(default_factory=dict)
-
-
-class CIIntegrationError(PhiScanError):
-    """Raised when a CI/CD platform API call fails."""
 
 
 @dataclass(frozen=True)
 class BaselineComparison:
-    """Counts from a baseline comparison to include in PR/MR comment context.
-
-    Wraps the three integer counts produced by comparing the current scan
-    against an accepted findings baseline.
-    """
+    """Counts from a baseline comparison to include in PR/MR comment context."""
 
     new_findings_count: int
     baselined_count: int
@@ -342,149 +216,7 @@ class BaselineComparison:
 
 
 # ---------------------------------------------------------------------------
-# HTTP helper — shared request/error pattern
-# ---------------------------------------------------------------------------
-
-
-class _HttpMethod(enum.StrEnum):
-    """HTTP methods used by CI/CD platform API calls in this module."""
-
-    POST = "POST"
-    PUT = "PUT"
-
-
-@dataclass(frozen=True)
-class _HttpRequestConfig:
-    """Parameters for a single outbound HTTP request.
-
-    Bundles all variable parts of the ``httpx.METHOD → raise_for_status →
-    HTTPStatusError → RequestError → CIIntegrationError`` pattern so that
-    ``_execute_http_request`` can centralise the try/except scaffolding.
-
-    The ``timeout_seconds`` field defaults to ``_HTTP_TIMEOUT_SECONDS`` so
-    callers do not need to supply it in normal use, but can override it for
-    testing or platform-specific requirements.
-    """
-
-    method: _HttpMethod
-    url: str
-    operation_label: str
-    headers: dict[str, str] | None = None
-    json_body: dict[str, Any] | list[Any] | None = None
-    binary_body: bytes | None = None
-    auth: tuple[str, str] | None = None
-    timeout_seconds: float = _HTTP_TIMEOUT_SECONDS
-
-
-def _build_request_keyword_arguments(request_config: _HttpRequestConfig) -> dict[str, Any]:
-    """Build the keyword-argument dict for ``httpx.request`` from a config object.
-
-    All values, including timeout, come exclusively from ``request_config``.
-    Omits keys whose config value is ``None`` so httpx uses its own defaults.
-
-    Args:
-        request_config: Populated request configuration.
-
-    Returns:
-        Dict ready to unpack into ``httpx.request(..., **request_keyword_arguments)``.
-    """
-    request_keyword_arguments: dict[str, Any] = {"timeout": request_config.timeout_seconds}
-    if request_config.headers is not None:
-        request_keyword_arguments["headers"] = request_config.headers
-    if request_config.json_body is not None:
-        request_keyword_arguments["json"] = request_config.json_body
-    if request_config.binary_body is not None:
-        request_keyword_arguments["content"] = request_config.binary_body
-    if request_config.auth is not None:
-        request_keyword_arguments["auth"] = request_config.auth
-    return request_keyword_arguments
-
-
-def _execute_http_request(request_config: _HttpRequestConfig) -> httpx.Response:
-    """Execute one HTTP request and translate httpx errors to CIIntegrationError.
-
-    Centralises the 12 identical try/except blocks scattered across the module.
-    The caller builds an ``_HttpRequestConfig`` with the platform-specific URL,
-    headers, payload, and a short ``operation_label`` used in the error message.
-
-    Args:
-        request_config: All parameters for the HTTP call.
-
-    Returns:
-        The successful ``httpx.Response``.
-
-    Raises:
-        CIIntegrationError: On HTTP 4xx/5xx or any network error.
-    """
-    request_keyword_arguments = _build_request_keyword_arguments(request_config)
-    try:
-        response = httpx.request(
-            request_config.method, request_config.url, **request_keyword_arguments
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as status_error:
-        raise CIIntegrationError(
-            f"{request_config.operation_label} failed "
-            f"(HTTP {status_error.response.status_code} "
-            f"{status_error.response.reason_phrase})"
-        ) from status_error
-    except httpx.RequestError as request_error:
-        raise CIIntegrationError(
-            f"{request_config.operation_label} request failed: {request_error}"
-        ) from request_error
-    return response
-
-
-# ---------------------------------------------------------------------------
-# Platform detection
-# ---------------------------------------------------------------------------
-
-
-def detect_platform() -> CIPlatform:
-    """Detect the currently running CI/CD platform from environment variables.
-
-    Checks well-known platform sentinel variables in order of specificity.
-    Returns ``CIPlatform.UNKNOWN`` when none of the known sentinels are set.
-
-    Returns:
-        The detected ``CIPlatform`` enum member.
-    """
-    env_get = os.environ.get
-
-    if env_get(_ENV_GITHUB_ACTIONS) == "true":
-        return CIPlatform.GITHUB_ACTIONS
-    if env_get(_ENV_GITLAB_CI) == "true":
-        return CIPlatform.GITLAB_CI
-    if env_get(_ENV_TF_BUILD) == "True":
-        return CIPlatform.AZURE_DEVOPS
-    if env_get(_ENV_CIRCLECI) == "true":
-        return CIPlatform.CIRCLECI
-    if env_get(_ENV_BITBUCKET_BUILD_NUMBER):
-        return CIPlatform.BITBUCKET
-    if env_get(_ENV_CODEBUILD_BUILD_ID):
-        return CIPlatform.CODEBUILD
-    if env_get(_ENV_JENKINS_URL):
-        return CIPlatform.JENKINS
-    return CIPlatform.UNKNOWN
-
-
-def get_pr_context() -> PRContext:
-    """Build a ``PRContext`` from the current environment.
-
-    Reads platform-specific environment variables to extract the PR number,
-    repository, commit SHA, and branch. Works for all seven supported platforms.
-    Auto-detects the platform via ``detect_platform()``.
-
-    Returns:
-        A ``PRContext`` populated with whatever context is available.
-    """
-    platform = detect_platform()
-    builder = _PLATFORM_CONTEXT_BUILDERS.get(platform, _build_unknown_context)
-    return builder()
-
-
-# ---------------------------------------------------------------------------
-# Context builders — one per platform
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -494,159 +226,17 @@ def _env(name: str) -> str | None:
     return env_value if env_value else None
 
 
-def _build_github_context() -> PRContext:
-    pr_number = _env(_ENV_PR_NUMBER)
-    if not pr_number:
-        # Fall back to extracting from GITHUB_REF (refs/pull/N/merge)
-        ref = _env(_ENV_GITHUB_REF) or ""
-        if ref.startswith("refs/pull/"):
-            pr_number = ref.split("/")[2]
-    return PRContext(
-        platform=CIPlatform.GITHUB_ACTIONS,
-        pr_number=pr_number,
-        repository=_env(_ENV_GITHUB_REPOSITORY),
-        sha=_env(_ENV_GITHUB_SHA),
-        branch=_env(_ENV_GITHUB_REF),
-        base_branch=None,
-    )
-
-
-def _build_gitlab_context() -> PRContext:
-    return PRContext(
-        platform=CIPlatform.GITLAB_CI,
-        pr_number=_env(_ENV_CI_MERGE_REQUEST_IID),
-        repository=_env(_ENV_CI_PROJECT_ID),
-        sha=_env(_ENV_CI_COMMIT_SHA),
-        branch=_env(_ENV_CI_COMMIT_REF_NAME),
-        base_branch=None,
-        extras={
-            "ci_server_url": _env(_ENV_CI_SERVER_URL) or _GITLAB_DEFAULT_SERVER_URL,
-        },
-    )
-
-
-def _build_azure_context() -> PRContext:
-    collection_uri = _env(_ENV_SYSTEM_TEAMFOUNDATIONCOLLECTIONURI) or ""
-    # Normalize: ensure trailing slash
-    if collection_uri and not collection_uri.endswith("/"):
-        collection_uri += "/"
-    return PRContext(
-        platform=CIPlatform.AZURE_DEVOPS,
-        pr_number=_env(_ENV_SYSTEM_PULLREQUEST_PULLREQUESTID),
-        repository=_env(_ENV_BUILD_REPOSITORY_ID),
-        sha=_env(_ENV_BUILD_SOURCEVERSION),
-        branch=None,
-        base_branch=None,
-        extras={
-            "collection_uri": collection_uri,
-            "team_project": _env(_ENV_SYSTEM_TEAMPROJECT) or "",
-            "build_id": _env(_ENV_BUILD_BUILDID) or "",
-        },
-    )
-
-
-def _build_circleci_context() -> PRContext:
-    pr_url = _env(_ENV_CIRCLE_PULL_REQUEST) or ""
-    pr_number: str | None = None
-    if pr_url:
-        # URL form: https://github.com/org/repo/pull/42
-        parts = pr_url.rstrip("/").split("/")
-        if parts:
-            candidate = parts[-1]
-            if candidate.isdigit():
-                pr_number = candidate
-    return PRContext(
-        platform=CIPlatform.CIRCLECI,
-        pr_number=pr_number,
-        repository=None,
-        sha=_env(_ENV_CIRCLE_SHA1),
-        branch=_env(_ENV_CIRCLE_BRANCH),
-        base_branch=None,
-        extras={"circle_pull_request_url": pr_url},
-    )
-
-
-def _build_bitbucket_context() -> PRContext:
-    return PRContext(
-        platform=CIPlatform.BITBUCKET,
-        pr_number=_env(_ENV_BITBUCKET_PR_ID),
-        repository=_env(_ENV_BITBUCKET_REPO_SLUG),
-        sha=_env(_ENV_BITBUCKET_COMMIT),
-        branch=None,
-        base_branch=None,
-        extras={
-            "workspace": _env(_ENV_BITBUCKET_WORKSPACE) or "",
-            "repo_slug": _env(_ENV_BITBUCKET_REPO_SLUG) or "",
-        },
-    )
-
-
-def _build_codebuild_context() -> PRContext:
-    trigger = _env(_ENV_CODEBUILD_WEBHOOK_TRIGGER) or ""
-    pr_number: str | None = None
-    if trigger.startswith("pr/"):
-        pr_number = trigger[3:]
-    return PRContext(
-        platform=CIPlatform.CODEBUILD,
-        pr_number=pr_number,
-        repository=None,
-        sha=_env(_ENV_CODEBUILD_SOURCE_VERSION),
-        branch=None,
-        base_branch=_env(_ENV_CODEBUILD_WEBHOOK_BASE_REF),
-    )
-
-
-def _build_jenkins_context() -> PRContext:
-    return PRContext(
-        platform=CIPlatform.JENKINS,
-        pr_number=_env(_ENV_CHANGE_ID),
-        repository=None,
-        sha=None,
-        branch=None,
-        base_branch=None,
-        extras={"change_url": _env(_ENV_CHANGE_URL) or ""},
-    )
-
-
-def _build_unknown_context() -> PRContext:
-    return PRContext(
-        platform=CIPlatform.UNKNOWN,
-        pr_number=None,
-        repository=None,
-        sha=None,
-        branch=None,
-        base_branch=None,
-    )
-
-
-_PLATFORM_CONTEXT_BUILDERS: dict[CIPlatform, Callable[[], PRContext]] = {
-    CIPlatform.GITHUB_ACTIONS: _build_github_context,
-    CIPlatform.GITLAB_CI: _build_gitlab_context,
-    CIPlatform.AZURE_DEVOPS: _build_azure_context,
-    CIPlatform.CIRCLECI: _build_circleci_context,
-    CIPlatform.BITBUCKET: _build_bitbucket_context,
-    CIPlatform.CODEBUILD: _build_codebuild_context,
-    CIPlatform.JENKINS: _build_jenkins_context,
-}
-
-
 # ---------------------------------------------------------------------------
 # Comment body builder
 # ---------------------------------------------------------------------------
 
 
-def build_comment_body(scan_result: ScanResult) -> str:
+def build_comment_body(scan_result: ScanResult) -> SanitisedCommentBody:
     """Build a markdown PR/MR comment body from a ``ScanResult``.
 
     The body contains only counts, file names, and line numbers — never raw
     entity values. Truncated to ``_MAX_COMMENT_LENGTH`` characters to stay
     within platform comment size limits.
-
-    Args:
-        scan_result: The completed scan result to summarise.
-
-    Returns:
-        Markdown string suitable for posting as a PR/MR comment.
     """
     if scan_result.is_clean:
         header = _COMMENT_HEADER_CLEAN
@@ -660,7 +250,7 @@ def build_comment_body(scan_result: ScanResult) -> str:
             "",
             f"*Scan duration: {scan_result.scan_duration:.2f}s*",
         ]
-        return "\n".join(body_lines)
+        return SanitisedCommentBody("\n".join(body_lines))
 
     findings_count = len(scan_result.findings)
     header = _COMMENT_HEADER_VIOLATIONS
@@ -670,7 +260,7 @@ def build_comment_body(scan_result: ScanResult) -> str:
         f"{count} {level.value}"
         for level, count in sorted(
             scan_result.severity_counts.items(),
-            key=lambda item: item[0].value,
+            key=lambda severity_item: severity_item[0].value,
         )
         if count > 0
     )
@@ -692,7 +282,7 @@ def build_comment_body(scan_result: ScanResult) -> str:
         "|------|------|------|----------|------------|",
     ]
 
-    for finding in scan_result.findings[:50]:  # cap table at 50 rows
+    for finding in scan_result.findings[:_MAX_FINDINGS_IN_COMMENT_TABLE]:
         body_lines.append(
             f"| `{finding.file_path}` | {finding.line_number} "
             f"| {finding.hipaa_category.value} "
@@ -700,8 +290,10 @@ def build_comment_body(scan_result: ScanResult) -> str:
             f"| {finding.confidence:.0%} |"
         )
 
-    if findings_count > 50:
-        body_lines.append(f"| … and {findings_count - 50} more | | | | |")
+    if findings_count > _MAX_FINDINGS_IN_COMMENT_TABLE:
+        body_lines.append(
+            f"| … and {findings_count - _MAX_FINDINGS_IN_COMMENT_TABLE} more | | | | |"
+        )
 
     body_lines += [
         "",
@@ -717,28 +309,16 @@ def build_comment_body(scan_result: ScanResult) -> str:
         comment_body = (
             comment_body[:_MAX_COMMENT_LENGTH] + "\n\n*(comment truncated — too many findings)*"
         )
-    return comment_body
+    return SanitisedCommentBody(comment_body)
 
 
 def _insert_baseline_context_into_comment(
     comment_body: str,
     baseline_line: str,
 ) -> str:
-    """Insert a baseline context line after the first header line of a comment body.
-
-    Splits on the first newline to separate the badge/header from the rest of the
-    comment, then reassembles with the baseline line inserted between them.
-
-    Args:
-        comment_body:   Standard comment body produced by ``build_comment_body()``.
-        baseline_line:  Pre-formatted baseline summary line to insert.
-
-    Returns:
-        Comment body with the baseline line inserted after the first header line.
-    """
+    """Insert a baseline context line after the first header line of a comment body."""
     lines = comment_body.split("\n", _COMMENT_BODY_SPLIT_MAX_PARTS)
     if len(lines) < _COMMENT_MIN_SECTION_COUNT:
-        # Comment body has no header/body split — prepend baseline line instead
         return baseline_line + "\n\n" + comment_body
     return "\n".join([lines[0], "", baseline_line, "", *lines[1:]])
 
@@ -746,55 +326,91 @@ def _insert_baseline_context_into_comment(
 def build_comment_body_with_baseline(
     scan_result: ScanResult,
     baseline_comparison: BaselineComparison,
-) -> str:
-    """Build a PR/MR comment body that includes baseline comparison context.
-
-    Adds a summary line of the form:
-    "N new findings | M baselined | K resolved since last scan"
-
-    Args:
-        scan_result:          The completed scan result (all findings, pre-baseline filtering).
-        baseline_comparison:  Counts from comparing the scan against an accepted baseline.
-
-    Returns:
-        Markdown string with baseline context prepended to the standard comment body.
-    """
+) -> SanitisedCommentBody:
+    """Build a PR/MR comment body that includes baseline comparison context."""
     baseline_line = _BASELINE_CONTEXT_FORMAT.format(
         new_findings_count=baseline_comparison.new_findings_count,
         baselined_count=baseline_comparison.baselined_count,
         resolved_count=baseline_comparison.resolved_count,
     )
-    return _insert_baseline_context_into_comment(build_comment_body(scan_result), baseline_line)
+    return SanitisedCommentBody(
+        _insert_baseline_context_into_comment(build_comment_body(scan_result), baseline_line)
+    )
 
 
 # ---------------------------------------------------------------------------
-# Public API — upload SARIF to GitHub Code Scanning (6C.5)
+# Public API — post PR/MR comment (dispatches to adapter)
+# ---------------------------------------------------------------------------
+
+
+def post_pr_comment(scan_result: ScanResult, pr_context: PRContext) -> None:
+    """Post a PR/MR comment with scan findings to the detected CI/CD platform.
+
+    Selects the platform-specific adapter based on ``pr_context.platform``.
+    Does nothing and logs a warning when the platform is ``UNKNOWN`` or when
+    required context (PR number, token) is missing.
+    """
+    if not pr_context.pull_request_number:
+        _LOG.debug("No PR number in context — skipping comment posting")
+        return
+
+    try:
+        adapter = resolve_adapter(pr_context.platform)
+    except CIIntegrationError:
+        _LOG.warning(
+            "PR comment posting not implemented for platform %s",
+            pr_context.platform.value,
+        )
+        return
+
+    comment_body = build_comment_body(scan_result)
+    adapter.post_pull_request_comment(comment_body, pr_context)
+
+
+post_pull_request_comment = post_pr_comment
+
+
+# ---------------------------------------------------------------------------
+# Public API — set commit status (dispatches to adapter)
+# ---------------------------------------------------------------------------
+
+
+def set_commit_status(scan_result: ScanResult, pr_context: PRContext) -> None:
+    """Set the commit status (PASS/FAIL) on the CI/CD platform.
+
+    Selects the platform-specific adapter based on ``pr_context.platform``.
+    Does nothing and logs a warning when required context (SHA, token) is missing.
+    """
+    if not pr_context.sha:
+        _LOG.debug("No commit SHA in context — skipping status posting")
+        return
+
+    try:
+        adapter = resolve_adapter(pr_context.platform)
+    except CIIntegrationError:
+        _LOG.warning(
+            "Commit status not implemented for platform %s",
+            pr_context.platform.value,
+        )
+        return
+
+    if not adapter.can_post_commit_status:
+        _LOG.debug(
+            "Adapter %s does not support commit status — skipping",
+            type(adapter).__name__,
+        )
+        return
+
+    adapter.set_commit_status(scan_result, pr_context)
+
+
+# ---------------------------------------------------------------------------
+# Public API — upload SARIF to GitHub Code Scanning
 # ---------------------------------------------------------------------------
 
 
 def _verify_sarif_excludes_code_snippets(sarif_content: str) -> None:
-    """Verify the SARIF output contains no code snippet or contextRegion fields.
-
-    This is a structural PHI-safety guard at the network boundary. It checks for
-    two specific SARIF fields that would expose raw source content:
-
-    - ``region.snippet``: inline code snippet of the matched line.
-    - ``physicalLocation.contextRegion``: surrounding context lines.
-
-    What this check does NOT cover: ``message.text`` content, file path strings,
-    rule descriptions, or any other free-text fields. Those are trusted to be safe
-    by the ``format_sarif()`` contract (which uses only PHI-safe ``ScanFinding``
-    fields) and by ``ScanFinding.__post_init__`` validation. This guard defends
-    against structural additions to the SARIF formatter (e.g. adding snippets),
-    not against PHI inadvertently embedded in text fields.
-
-    Args:
-        sarif_content: SARIF 2.1.0 JSON string to validate.
-
-    Raises:
-        CIIntegrationError: When any result location contains a ``snippet`` or
-            ``contextRegion`` field that could expose raw source content.
-    """
+    """Verify the SARIF output contains no code snippet or contextRegion fields."""
     sarif_doc: dict[str, Any] = json.loads(sarif_content)
     for sarif_run in sarif_doc.get("runs", []):
         for sarif_result in sarif_run.get("results", []):
@@ -821,52 +437,15 @@ def _verify_sarif_excludes_code_snippets(sarif_content: str) -> None:
 
 
 def _gzip_compress_sarif(sarif_content: str) -> bytes:
-    """Gzip-compress a SARIF JSON string to bytes.
-
-    Args:
-        sarif_content: Raw SARIF 2.1.0 JSON string.
-
-    Returns:
-        Gzip-compressed bytes of the UTF-8 encoded SARIF content.
-    """
     return gzip.compress(sarif_content.encode("utf-8"))
 
 
 def _base64_encode_bytes(raw_bytes: bytes) -> str:
-    """Base64-encode bytes to an ASCII string.
-
-    Args:
-        raw_bytes: Bytes to encode.
-
-    Returns:
-        Base64-encoded ASCII string.
-    """
     return base64.b64encode(raw_bytes).decode("ascii")
 
 
 def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Upload a SARIF report to the GitHub Code Scanning API for inline annotations.
-
-    Each finding appears as an inline annotation on the exact line in the PR diff.
-    Severity is mapped: HIGH→error, MEDIUM→warning, LOW/INFO→note.
-
-    PHI-safety: ``scan_result`` is passed to ``format_sarif()`` internally — this
-    function is the only path by which SARIF reaches the GitHub API, ensuring the
-    formatter's PHI exclusions are always applied. ``format_sarif()`` emits only
-    file path, line number, entity type, HIPAA category, detection layer, and
-    remediation hint. It deliberately omits ``value_hash``, ``code_context``, and
-    any raw matched values. This is enforced by ``ScanFinding.__post_init__``
-    validation, not by caller discipline.
-
-    Requires the ``security-events: write`` permission in the GitHub Actions workflow.
-
-    Args:
-        scan_result: Completed scan result — SARIF is generated internally.
-        pr_context:  GitHub PR context with repository and SHA.
-
-    Raises:
-        CIIntegrationError: When the API call fails or authentication is missing.
-    """
+    """Upload a SARIF report to the GitHub Code Scanning API for inline annotations."""
     repository = pr_context.repository
     sha = pr_context.sha
     if not repository or not sha:
@@ -882,9 +461,7 @@ def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> No
     _verify_sarif_excludes_code_snippets(sarif_content)
     sarif_base64_encoded = _base64_encode_bytes(_gzip_compress_sarif(sarif_content))
 
-    url = _GITHUB_API_BASE_URL + _GITHUB_API_SARIF_UPLOAD_PATH.format(
-        repository=repository,
-    )
+    url = _GITHUB_API_BASE_URL + _GITHUB_API_SARIF_UPLOAD_PATH.format(repository=repository)
     sarif_upload_payload = {
         "commit_sha": sha,
         "ref": pr_context.branch or _DEFAULT_GIT_REF,
@@ -892,11 +469,11 @@ def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> No
         "tool_name": "phi-scan",
     }
 
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
+    execute_http_request(
+        HttpRequestConfig(
+            method=HttpMethod.POST,
             url=url,
-            operation_label="GitHub SARIF upload",
+            operation_label=OperationLabel.GITHUB_SARIF_UPLOAD,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github+json",
@@ -910,23 +487,12 @@ def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> No
 
 
 # ---------------------------------------------------------------------------
-# Public API — Bitbucket Code Insights annotations (6C.23 supplement)
+# Public API — Bitbucket Code Insights annotations
 # ---------------------------------------------------------------------------
 
 
 def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Post Bitbucket Code Insights report and inline annotations.
-
-    Creates a Code Insights report on the commit and then adds one annotation
-    per finding, pointing to the exact file and line in the PR diff.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  Bitbucket context with commit SHA and workspace/repo.
-
-    Raises:
-        CIIntegrationError: When any API call fails.
-    """
+    """Post Bitbucket Code Insights report and inline annotations."""
     sha = pr_context.sha
     workspace = pr_context.extras.get("workspace", "")
     repo_slug = pr_context.extras.get("repo_slug", "")
@@ -951,7 +517,6 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
         report_id=_BITBUCKET_REPORT_ID,
     )
 
-    # Create / update the report summary
     findings_count = len(scan_result.findings)
     report_payload: dict[str, Any] = {
         "title": "phi-scan PHI/PII Scan",
@@ -968,11 +533,11 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
         ],
     }
 
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.PUT,
+    execute_http_request(
+        HttpRequestConfig(
+            method=HttpMethod.PUT,
             url=report_url,
-            operation_label="Bitbucket Code Insights report",
+            operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_REPORT,
             headers=headers,
             json_body=report_payload,
         )
@@ -981,7 +546,6 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
     if not scan_result.findings:
         return
 
-    # Post inline annotations (capped at 1000 — Bitbucket API limit)
     annotations_url = _BITBUCKET_API_BASE_URL + _BITBUCKET_ANNOTATIONS_PATH.format(
         workspace=workspace,
         repo_slug=repo_slug,
@@ -1003,11 +567,11 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
         for idx, finding in enumerate(scan_result.findings[:1000])
     ]
 
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
+    execute_http_request(
+        HttpRequestConfig(
+            method=HttpMethod.POST,
             url=annotations_url,
-            operation_label="Bitbucket Code Insights annotations",
+            operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_ANNOTATIONS,
             headers=headers,
             json_body=annotations,
         )
@@ -1021,28 +585,17 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext)
 
 
 # ---------------------------------------------------------------------------
-# Public API — Azure DevOps build tag + PR status (6C.17)
+# Public API — Azure DevOps build tag + PR status
 # ---------------------------------------------------------------------------
 
 
 def set_azure_build_tag(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Tag the Azure DevOps build with phi-scan:clean or phi-scan:violations-found.
-
-    Uses ``SYSTEM_ACCESSTOKEN`` for authentication. The build ID is read from
-    the ``BUILD_BUILDID`` environment variable.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  Azure DevOps context with collection URI, team project, build ID.
-
-    Raises:
-        CIIntegrationError: When the API call fails.
-    """
+    """Tag the Azure DevOps build with phi-scan:clean or phi-scan:violations-found."""
     collection_uri = pr_context.extras.get("collection_uri", "")
     team_project = pr_context.extras.get("team_project", "")
     build_id = pr_context.extras.get("build_id", "")
 
-    if not all([collection_uri, team_project, build_id]):
+    if not all((collection_uri, team_project, build_id)):
         _LOG.debug("Azure DevOps build tag: missing context — skipping")
         return
 
@@ -1060,13 +613,13 @@ def set_azure_build_tag(scan_result: ScanResult, pr_context: PRContext) -> None:
         api_version=_AZURE_API_VERSION,
     )
 
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.PUT,
+    execute_http_request(
+        HttpRequestConfig(
+            method=HttpMethod.PUT,
             url=url,
-            operation_label="Azure DevOps build tag",
+            operation_label=OperationLabel.AZURE_BUILD_TAG,
             binary_body=_AZURE_BUILD_TAG_EMPTY_BODY,
-            auth=("", token),
+            basic_auth_credentials=("", token),
         )
     )
 
@@ -1074,24 +627,13 @@ def set_azure_build_tag(scan_result: ScanResult, pr_context: PRContext) -> None:
 
 
 def set_azure_pr_status(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Set an Azure DevOps PR status to block or allow completion via branch policy.
-
-    Posts to the Pull Request Statuses API so that a branch policy requiring
-    a green phi-scan status can block PR completion on violations.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  Azure DevOps PR context.
-
-    Raises:
-        CIIntegrationError: When the API call fails.
-    """
-    pr_id = pr_context.pr_number
+    """Set an Azure DevOps PR status to block or allow completion via branch policy."""
+    pr_id = pr_context.pull_request_number
     repo_id = pr_context.repository
     collection_uri = pr_context.extras.get("collection_uri", "")
     team_project = pr_context.extras.get("team_project", "")
 
-    if not all([pr_id, repo_id, collection_uri, team_project]):
+    if not all((pr_id, repo_id, collection_uri, team_project)):
         _LOG.debug("Azure DevOps PR status: missing context — skipping")
         return
 
@@ -1123,13 +665,13 @@ def set_azure_pr_status(scan_result: ScanResult, pr_context: PRContext) -> None:
         },
     }
 
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
+    execute_http_request(
+        HttpRequestConfig(
+            method=HttpMethod.POST,
             url=url,
-            operation_label="Azure DevOps PR status",
+            operation_label=OperationLabel.AZURE_PR_STATUS,
             json_body=payload,
-            auth=("", token),
+            basic_auth_credentials=("", token),
         )
     )
 
@@ -1137,24 +679,12 @@ def set_azure_pr_status(scan_result: ScanResult, pr_context: PRContext) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Public API — Azure Boards work-item linking (6C.18, optional)
+# Public API — Azure Boards work-item linking
 # ---------------------------------------------------------------------------
 
 
 def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Create an Azure Boards Task work item for HIGH severity PHI/PII findings.
-
-    Only creates a work item when there are HIGH severity findings and the
-    ``AZURE_BOARDS_INTEGRATION`` environment variable is set to ``true``.
-    Work items are linked to the current build for traceability.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  Azure DevOps context.
-
-    Raises:
-        CIIntegrationError: When the API call fails.
-    """
+    """Create an Azure Boards Task work item for HIGH severity PHI/PII findings."""
     if _env("AZURE_BOARDS_INTEGRATION") != "true":
         _LOG.debug("Azure Boards: AZURE_BOARDS_INTEGRATION not enabled — skipping")
         return
@@ -1166,9 +696,9 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
 
     collection_uri = pr_context.extras.get("collection_uri", "")
     team_project = pr_context.extras.get("team_project", "")
-    pr_id = pr_context.pr_number or "unknown"
+    pr_id = pr_context.pull_request_number or "unknown"
 
-    if not all([collection_uri, team_project]):
+    if not all((collection_uri, team_project)):
         _LOG.debug("Azure Boards: missing context — skipping work item")
         return
 
@@ -1177,12 +707,6 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
         _LOG.warning("Azure Boards: SYSTEM_ACCESSTOKEN not set — skipping")
         return
 
-    # PHI-SAFE OUTBOUND FIELDS (Azure Boards work item):
-    #   System.Title       — _AZURE_WORK_ITEM_TITLE_FORMAT: count (int) + pr_id (str) only
-    #   System.Description — count (int) + pr_id (str) + static text only
-    #   System.Tags        — static string literal
-    # Excluded from all fields: entity values, value_hash, hipaa_category,
-    # entity_type, file_path, line_number, code_context, remediation_hint.
     title = _AZURE_WORK_ITEM_TITLE_FORMAT.format(
         count=len(high_findings), pull_request_number=pr_id
     )
@@ -1192,13 +716,12 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
         work_item_type=_AZURE_WORK_ITEM_TYPE,
         api_version=_AZURE_API_VERSION,
     )
-    # Azure DevOps work-item PATCH format
+
     patch_payload = [
         {"op": "add", "path": "/fields/System.Title", "value": title},
         {
             "op": "add",
             "path": "/fields/System.Description",
-            # PHI-SAFE: count (int) + pr_id (str) — no per-finding fields included
             "value": (
                 f"phi-scan detected {len(high_findings)} HIGH severity PHI/PII "
                 f"violation(s) in PR #{pr_id}. "
@@ -1208,14 +731,14 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
         {"op": "add", "path": "/fields/System.Tags", "value": "phi-scan;security;phi-pii"},
     ]
 
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
+    execute_http_request(
+        HttpRequestConfig(
+            method=HttpMethod.POST,
             url=url,
-            operation_label="Azure Boards work item",
+            operation_label=OperationLabel.AZURE_WORK_ITEM,
             headers={"Content-Type": _AZURE_PATCH_CONTENT_TYPE},
             json_body=patch_payload,
-            auth=("", token),
+            basic_auth_credentials=("", token),
         )
     )
 
@@ -1227,7 +750,7 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
 
 
 # ---------------------------------------------------------------------------
-# Public API — AWS Security Hub ASFF import (6C.27, optional)
+# Public API — AWS Security Hub ASFF import
 # ---------------------------------------------------------------------------
 
 
@@ -1237,21 +760,7 @@ def convert_findings_to_asff(
     aws_region: str,
     repository: str,
 ) -> list[dict[str, Any]]:
-    """Convert phi-scan findings to AWS Security Finding Format (ASFF).
-
-    Produces one ASFF finding per phi-scan finding. Each ASFF finding includes:
-    file path, line number, severity, HIPAA category, confidence, and remediation hint.
-    No raw entity values are included — only the value hash.
-
-    Args:
-        scan_result:    The completed scan result.
-        aws_account_id: AWS account ID (12-digit string).
-        aws_region:     AWS region (e.g. ``us-east-1``).
-        repository:     Repository identifier for the ProductArn.
-
-    Returns:
-        List of ASFF finding dicts ready to pass to BatchImportFindings.
-    """
+    """Convert phi-scan findings to AWS Security Finding Format (ASFF)."""
     from datetime import UTC, datetime
 
     product_arn = _AWS_SECURITY_HUB_PRODUCT_ARN_FORMAT.format(
@@ -1263,31 +772,9 @@ def convert_findings_to_asff(
     asff_findings = []
     for finding in scan_result.findings:
         severity_label = _AWS_SECURITY_HUB_SEVERITY_MAP.get(finding.severity, "MEDIUM")
-        # ASFF severity normalised score: HIGH=70, MEDIUM=40, LOW=10, INFO=0
         severity_score_map = {"HIGH": 70, "MEDIUM": 40, "LOW": 10, "INFORMATIONAL": 0}
         severity_score = severity_score_map.get(severity_label, 40)
 
-        # PHI-SAFE OUTBOUND FIELDS (ASFF — every field enumerated):
-        #   Id              — repository + file_path + line_number + entity_type
-        #                     Structural fields only — no PHI-derived data of any kind.
-        #                     value_hash and all truncations/derivatives are excluded because
-        #                     SSNs have ~30 bits of entropy: any SHA-256 output (full or
-        #                     truncated) is reversible by brute-force over the input space,
-        #                     not the hash output space. ASFF deduplication only requires
-        #                     a stable unique key per finding location, which file_path +
-        #                     line_number + entity_type provides without encoding the value.
-        #   GeneratorId     — "phi-scan/" + entity_type (pattern name, e.g. "us_ssn")
-        #   AwsAccountId    — caller-supplied AWS account ID
-        #   Title           — hipaa_category.value (enum label) + file_path + line_number
-        #   Description     — hipaa_category.value + entity_type + confidence (float) +
-        #                     file_path + line_number + static "No raw value" note
-        #   Remediation     — remediation_hint (pre-canned guidance text, see ScanFinding)
-        #   SourceUrl       — GitHub blob URL built from repository + file_path + line_number
-        #   Resources.Id    — "file://" + file_path
-        #   Resources.Other — line_number, entity_type, hipaa_category.value,
-        #                     confidence (float)
-        # Excluded from ALL fields: raw entity value, code_context, value_hash and all
-        # derivatives (truncations, prefixes). No PHI-derived data leaves this process.
         asff_finding: dict[str, Any] = {
             "SchemaVersion": "2018-10-08",
             "Id": (f"{repository}/{finding.file_path}/{finding.line_number}/{finding.entity_type}"),
@@ -1342,20 +829,7 @@ def import_findings_to_security_hub(
     scan_result: ScanResult,
     pr_context: PRContext,
 ) -> None:
-    """Import phi-scan findings to AWS Security Hub via BatchImportFindings.
-
-    Only runs when ``AWS_SECURITY_HUB`` environment variable is set to ``true``
-    and ``AWS_ACCOUNT_ID`` / ``AWS_DEFAULT_REGION`` are available. Uses the
-    AWS CLI (``aws securityhub batch-import-findings``) to avoid adding boto3
-    as a hard dependency.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  Context providing the repository identifier.
-
-    Raises:
-        CIIntegrationError: When the AWS CLI invocation fails.
-    """
+    """Import phi-scan findings to AWS Security Hub via BatchImportFindings."""
     if _env("AWS_SECURITY_HUB") != "true":
         _LOG.debug("Security Hub: AWS_SECURITY_HUB not enabled — skipping")
         return
@@ -1366,7 +840,7 @@ def import_findings_to_security_hub(
 
     account_id = _env("AWS_ACCOUNT_ID") or ""
     region = _env("AWS_DEFAULT_REGION") or _env("AWS_REGION") or "us-east-1"
-    repository = pr_context.repository or _env(_ENV_GITHUB_REPOSITORY) or "unknown/repo"
+    repository = pr_context.repository or _env("GITHUB_REPOSITORY") or "unknown/repo"
 
     if not account_id:
         _LOG.warning("Security Hub: AWS_ACCOUNT_ID not set — skipping")
@@ -1395,566 +869,3 @@ def import_findings_to_security_hub(
         ) from not_found_error
 
     _LOG.debug("Security Hub: imported %d ASFF finding(s)", len(asff_findings))
-
-
-# ---------------------------------------------------------------------------
-# Public API — post PR/MR comment
-# ---------------------------------------------------------------------------
-
-
-def post_pr_comment(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Post a PR/MR comment with scan findings to the detected CI/CD platform.
-
-    Selects the platform-specific implementation based on ``pr_context.platform``.
-    Does nothing and logs a warning when the platform is ``UNKNOWN`` or when
-    required context (PR number, token) is missing.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  Platform context extracted from environment variables.
-
-    Raises:
-        CIIntegrationError: When the platform API call fails.
-    """
-    if not pr_context.pr_number:
-        _LOG.debug("No PR number in context — skipping comment posting")
-        return
-
-    poster = _PLATFORM_COMMENT_POSTERS.get(pr_context.platform)
-    if poster is None:
-        _LOG.warning(
-            "PR comment posting not implemented for platform %s",
-            pr_context.platform.value,
-        )
-        return
-
-    comment_body = build_comment_body(scan_result)
-    poster(comment_body, pr_context)
-
-
-# ---------------------------------------------------------------------------
-# Public API — set commit status
-# ---------------------------------------------------------------------------
-
-
-def set_commit_status(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Set the commit status (PASS/FAIL) on the CI/CD platform.
-
-    Selects the platform-specific implementation based on ``pr_context.platform``.
-    Does nothing and logs a warning when required context (SHA, token) is missing.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  Platform context extracted from environment variables.
-
-    Raises:
-        CIIntegrationError: When the platform API call fails.
-    """
-    if not pr_context.sha:
-        _LOG.debug("No commit SHA in context — skipping status posting")
-        return
-
-    setter = _PLATFORM_STATUS_SETTERS.get(pr_context.platform)
-    if setter is None:
-        _LOG.warning(
-            "Commit status not implemented for platform %s",
-            pr_context.platform.value,
-        )
-        return
-
-    setter(scan_result, pr_context)
-
-
-# ---------------------------------------------------------------------------
-# Platform-specific comment posters
-# ---------------------------------------------------------------------------
-
-
-def _post_github_pr_comment(comment_body: str, pr_context: PRContext) -> None:
-    """Post a GitHub PR comment using the ``gh`` CLI.
-
-    Uses ``gh pr comment`` so that authentication, pagination, and API version
-    negotiation are handled by the GitHub CLI. Requires ``gh`` to be installed
-    and authenticated (``GITHUB_TOKEN`` in the environment).
-
-    Args:
-        comment_body: Markdown comment text.
-        pr_context:   GitHub PR context.
-
-    Raises:
-        CIIntegrationError: When the ``gh`` CLI invocation fails.
-    """
-    pr_number = pr_context.pr_number
-    if not pr_number:
-        _LOG.debug("GitHub: no PR number — skipping comment")
-        return
-
-    token = _env(_ENV_GITHUB_TOKEN)
-    if not token:
-        _LOG.warning("GitHub: GITHUB_TOKEN not set — skipping comment")
-        return
-
-    env = {**os.environ, "GITHUB_TOKEN": token}
-    if pr_context.repository:
-        env["GH_REPO"] = pr_context.repository
-
-    try:
-        gh_result = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "comment",
-                str(pr_number),
-                "--body",
-                comment_body,
-                "--edit-last",
-            ],
-            capture_output=True,
-            text=True,
-            env=env,
-            check=False,
-        )
-        if gh_result.returncode != 0:
-            # --edit-last fails when there is no existing comment — fall back to create
-            gh_result = subprocess.run(
-                ["gh", "pr", "comment", str(pr_number), "--body", comment_body],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=False,
-            )
-        if gh_result.returncode != 0:
-            raise CIIntegrationError(
-                f"gh pr comment failed (exit {gh_result.returncode}): "
-                f"{gh_result.stderr.strip()[:_MAX_ERROR_RESPONSE_LOG_LENGTH]}"
-            )
-    except FileNotFoundError as not_found_error:
-        raise CIIntegrationError(
-            "gh CLI not found — install the GitHub CLI to enable PR comment posting"
-        ) from not_found_error
-
-    _LOG.debug("GitHub: PR comment posted to #%s", pr_number)
-
-
-def _post_gitlab_mr_comment(comment_body: str, pr_context: PRContext) -> None:
-    """Post a GitLab MR note using the GitLab REST API.
-
-    Uses ``GITLAB_TOKEN`` (personal access token or project access token) or
-    ``CI_JOB_TOKEN`` (automatically available in GitLab CI pipelines).
-
-    Args:
-        comment_body: Markdown comment text.
-        pr_context:   GitLab MR context.
-
-    Raises:
-        CIIntegrationError: When the API call fails or authentication is missing.
-    """
-    mr_iid = pr_context.pr_number
-    project_id = pr_context.repository
-    if not mr_iid or not project_id:
-        _LOG.debug("GitLab: missing MR IID or project ID — skipping comment")
-        return
-
-    token = _env(_ENV_GITLAB_TOKEN) or _env(_ENV_CI_JOB_TOKEN)
-    if not token:
-        _LOG.warning("GitLab: GITLAB_TOKEN and CI_JOB_TOKEN not set — skipping comment")
-        return
-
-    server_url = pr_context.extras.get("ci_server_url") or _GITLAB_DEFAULT_SERVER_URL
-    url = server_url.rstrip("/") + _GITLAB_API_MR_NOTES_PATH.format(
-        project_id=project_id,
-        mr_iid=mr_iid,
-    )
-    headers = {"PRIVATE-TOKEN": token, "Content-Type": _JSON_CONTENT_TYPE}
-    payload = {"body": comment_body}
-
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
-            url=url,
-            operation_label="GitLab MR comment",
-            headers=headers,
-            json_body=payload,
-        )
-    )
-
-    _LOG.debug("GitLab: MR note posted to !%s", mr_iid)
-
-
-def _post_azure_pr_comment(comment_body: str, pr_context: PRContext) -> None:
-    """Post an Azure DevOps PR thread comment using the Azure DevOps REST API.
-
-    Uses ``SYSTEM_ACCESSTOKEN`` (automatically available in Azure Pipelines when
-    'Allow scripts to access the OAuth token' is enabled in the pipeline settings).
-
-    Args:
-        comment_body: Markdown comment text.
-        pr_context:   Azure DevOps PR context.
-
-    Raises:
-        CIIntegrationError: When the API call fails or authentication is missing.
-    """
-    pr_id = pr_context.pr_number
-    repo_id = pr_context.repository
-    collection_uri = pr_context.extras.get("collection_uri", "")
-    team_project = pr_context.extras.get("team_project", "")
-
-    if not all([pr_id, repo_id, collection_uri, team_project]):
-        _LOG.debug("Azure DevOps: missing PR context — skipping comment")
-        return
-
-    token = _env(_ENV_SYSTEM_ACCESSTOKEN)
-    if not token:
-        _LOG.warning(
-            "Azure DevOps: SYSTEM_ACCESSTOKEN not set — "
-            "enable 'Allow scripts to access the OAuth token' in pipeline settings"
-        )
-        return
-
-    url = _AZURE_PR_THREADS_PATH.format(
-        collection_uri=collection_uri,
-        team_project=team_project,
-        repo_id=repo_id,
-        pr_id=pr_id,
-        api_version=_AZURE_API_VERSION,
-    )
-    payload = {
-        "comments": [{"parentCommentId": 0, "content": comment_body, "commentType": 1}],
-        "status": "active",
-    }
-
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
-            url=url,
-            operation_label="Azure DevOps PR comment",
-            json_body=payload,
-            auth=("", token),
-        )
-    )
-
-    _LOG.debug("Azure DevOps: PR thread comment posted to PR #%s", pr_id)
-
-
-def _post_bitbucket_pr_comment(comment_body: str, pr_context: PRContext) -> None:
-    """Post a Bitbucket Cloud PR comment using the Bitbucket REST API.
-
-    Uses ``BITBUCKET_TOKEN`` (repository or workspace access token).
-
-    Args:
-        comment_body: Markdown comment text.
-        pr_context:   Bitbucket PR context.
-
-    Raises:
-        CIIntegrationError: When the API call fails or authentication is missing.
-    """
-    pr_id = pr_context.pr_number
-    workspace = pr_context.extras.get("workspace", "")
-    repo_slug = pr_context.extras.get("repo_slug", "")
-
-    if not all([pr_id, workspace, repo_slug]):
-        _LOG.debug("Bitbucket: missing PR context — skipping comment")
-        return
-
-    token = _env(_ENV_BITBUCKET_TOKEN)
-    if not token:
-        _LOG.warning("Bitbucket: BITBUCKET_TOKEN not set — skipping comment")
-        return
-
-    url = _BITBUCKET_API_BASE_URL + _BITBUCKET_PR_COMMENTS_PATH.format(
-        workspace=workspace,
-        repo_slug=repo_slug,
-        pr_id=pr_id,
-    )
-
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
-            url=url,
-            operation_label="Bitbucket PR comment",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": _JSON_CONTENT_TYPE},
-            json_body={_BITBUCKET_COMMENT_CONTENT_KEY: {_BITBUCKET_COMMENT_RAW_KEY: comment_body}},
-        )
-    )
-
-    _LOG.debug("Bitbucket: PR comment posted to PR #%s", pr_id)
-
-
-def _post_circleci_pr_comment(comment_body: str, pr_context: PRContext) -> None:
-    """Post a CircleCI PR comment by auto-detecting the VCS provider.
-
-    Inspects ``CIRCLE_PULL_REQUEST`` to determine whether the VCS is GitHub
-    (github.com) or Bitbucket (bitbucket.org), then posts via the appropriate
-    platform API.
-
-    Args:
-        comment_body: Markdown comment text.
-        pr_context:   CircleCI PR context.
-    """
-    pr_url = pr_context.extras.get("circle_pull_request_url", "")
-    if not pr_url:
-        _LOG.debug("CircleCI: CIRCLE_PULL_REQUEST not set — skipping comment")
-        return
-
-    if "github.com" in pr_url:
-        # Re-use GitHub poster via a synthetic GitHub context
-        # Extract org/repo from the PR URL
-        parts = pr_url.rstrip("/").split("/")
-        # https://github.com/ORG/REPO/pull/N  ->  parts[-4] = ORG, parts[-3] = REPO
-        if len(parts) >= 5:
-            repository = f"{parts[-4]}/{parts[-3]}"
-        else:
-            repository = None
-        github_context = PRContext(
-            platform=CIPlatform.GITHUB_ACTIONS,
-            pr_number=pr_context.pr_number,
-            repository=repository,
-            sha=pr_context.sha,
-            branch=pr_context.branch,
-            base_branch=pr_context.base_branch,
-        )
-        _post_github_pr_comment(comment_body, github_context)
-    elif "bitbucket.org" in pr_url:
-        parts = pr_url.rstrip("/").split("/")
-        if len(parts) >= 5:
-            workspace = parts[-4]
-            repo_slug = parts[-3]
-        else:
-            workspace = repo_slug = ""
-        bb_context = PRContext(
-            platform=CIPlatform.BITBUCKET,
-            pr_number=pr_context.pr_number,
-            repository=pr_context.repository,
-            sha=pr_context.sha,
-            branch=pr_context.branch,
-            base_branch=pr_context.base_branch,
-            extras={"workspace": workspace, "repo_slug": repo_slug},
-        )
-        _post_bitbucket_pr_comment(comment_body, bb_context)
-    else:
-        _LOG.warning("CircleCI: unrecognized VCS in CIRCLE_PULL_REQUEST URL — skipping comment")
-
-
-def _post_codebuild_pr_comment(comment_body: str, pr_context: PRContext) -> None:
-    """Post a CodeBuild PR comment by auto-detecting the source provider.
-
-    Uses ``GITHUB_TOKEN`` for GitHub-sourced builds and ``BITBUCKET_TOKEN``
-    for Bitbucket-sourced builds.  Source is detected from the build environment
-    — CodeBuild sets ``CODEBUILD_SOURCE_REPO_URL`` for webhook-triggered builds.
-
-    Args:
-        comment_body: Markdown comment text.
-        pr_context:   CodeBuild PR context.
-    """
-    # CodeBuild doesn't expose an explicit VCS-type env var; infer from repo URL
-    repo_url = os.environ.get("CODEBUILD_SOURCE_REPO_URL", "")
-    if "github.com" in repo_url:
-        parts = repo_url.rstrip("/").rstrip(".git").split("/")
-        repository = f"{parts[-2]}/{parts[-1]}" if len(parts) >= 2 else None
-        github_context = PRContext(
-            platform=CIPlatform.GITHUB_ACTIONS,
-            pr_number=pr_context.pr_number,
-            repository=repository,
-            sha=pr_context.sha,
-            branch=pr_context.branch,
-            base_branch=pr_context.base_branch,
-        )
-        _post_github_pr_comment(comment_body, github_context)
-    elif "bitbucket.org" in repo_url:
-        parts = repo_url.rstrip("/").rstrip(".git").split("/")
-        workspace = parts[-2] if len(parts) >= 2 else ""
-        repo_slug = parts[-1] if parts else ""
-        bb_context = PRContext(
-            platform=CIPlatform.BITBUCKET,
-            pr_number=pr_context.pr_number,
-            repository=pr_context.repository,
-            sha=pr_context.sha,
-            branch=pr_context.branch,
-            base_branch=pr_context.base_branch,
-            extras={"workspace": workspace, "repo_slug": repo_slug},
-        )
-        _post_bitbucket_pr_comment(comment_body, bb_context)
-    else:
-        _LOG.warning("CodeBuild: unrecognised source repo URL — skipping PR comment")
-
-
-_PLATFORM_COMMENT_POSTERS: dict[CIPlatform, Any] = {
-    CIPlatform.GITHUB_ACTIONS: _post_github_pr_comment,
-    CIPlatform.GITLAB_CI: _post_gitlab_mr_comment,
-    CIPlatform.AZURE_DEVOPS: _post_azure_pr_comment,
-    CIPlatform.BITBUCKET: _post_bitbucket_pr_comment,
-    CIPlatform.CIRCLECI: _post_circleci_pr_comment,
-    CIPlatform.CODEBUILD: _post_codebuild_pr_comment,
-}
-
-
-# ---------------------------------------------------------------------------
-# Platform-specific commit status setters
-# ---------------------------------------------------------------------------
-
-
-def _set_github_commit_status(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Set a GitHub commit status via the GitHub REST API.
-
-    Uses ``GITHUB_TOKEN`` from the environment.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  GitHub PR context with SHA and repository.
-
-    Raises:
-        CIIntegrationError: When the API call fails.
-    """
-    sha = pr_context.sha
-    repository = pr_context.repository
-    if not sha or not repository:
-        _LOG.debug("GitHub: missing SHA or repository — skipping status")
-        return
-
-    token = _env(_ENV_GITHUB_TOKEN)
-    if not token:
-        _LOG.warning("GitHub: GITHUB_TOKEN not set — skipping commit status")
-        return
-
-    github_state = "success" if scan_result.is_clean else "failure"
-    findings_count = len(scan_result.findings)
-    description = (
-        _COMMIT_STATUS_DESCRIPTION_CLEAN
-        if scan_result.is_clean
-        else _COMMIT_STATUS_DESCRIPTION_VIOLATIONS.format(count=findings_count)
-    )
-
-    url = _GITHUB_API_BASE_URL + _GITHUB_API_COMMIT_STATUSES_PATH.format(
-        repository=repository,
-        sha=sha,
-    )
-    payload = {
-        "state": github_state,
-        "description": description,
-        "context": _COMMIT_STATUS_CONTEXT,
-    }
-
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
-            url=url,
-            operation_label="GitHub commit status",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            json_body=payload,
-        )
-    )
-
-    _LOG.debug("GitHub: commit status set to %s for %s", github_state, sha[:8])
-
-
-def _set_gitlab_commit_status(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Set a GitLab commit status using the GitLab REST API.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  GitLab context with SHA and project ID.
-
-    Raises:
-        CIIntegrationError: When the API call fails.
-    """
-    sha = pr_context.sha
-    project_id = pr_context.repository
-    if not sha or not project_id:
-        _LOG.debug("GitLab: missing SHA or project ID — skipping status")
-        return
-
-    token = _env(_ENV_GITLAB_TOKEN) or _env(_ENV_CI_JOB_TOKEN)
-    if not token:
-        _LOG.warning("GitLab: no token — skipping commit status")
-        return
-
-    server_url = pr_context.extras.get("ci_server_url") or _GITLAB_DEFAULT_SERVER_URL
-    state = "success" if scan_result.is_clean else "failed"
-    url = server_url.rstrip("/") + _GITLAB_API_COMMIT_STATUSES_PATH.format(
-        project_id=project_id,
-        sha=sha,
-    )
-    payload = {
-        "state": state,
-        "name": _COMMIT_STATUS_CONTEXT,
-        "description": (
-            _COMMIT_STATUS_DESCRIPTION_CLEAN
-            if scan_result.is_clean
-            else _COMMIT_STATUS_DESCRIPTION_VIOLATIONS.format(count=len(scan_result.findings))
-        ),
-    }
-
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
-            url=url,
-            operation_label="GitLab commit status",
-            headers={"PRIVATE-TOKEN": token},
-            json_body=payload,
-        )
-    )
-
-    _LOG.debug("GitLab: commit status set to %s for %s", state, sha[:8])
-
-
-def _set_bitbucket_commit_status(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Set a Bitbucket commit build status using the Bitbucket Commit Status API.
-
-    Args:
-        scan_result: The completed scan result.
-        pr_context:  Bitbucket context with commit SHA.
-
-    Raises:
-        CIIntegrationError: When the API call fails.
-    """
-    sha = pr_context.sha
-    workspace = pr_context.extras.get("workspace", "")
-    repo_slug = pr_context.extras.get("repo_slug", "")
-    if not sha or not workspace or not repo_slug:
-        _LOG.debug("Bitbucket: missing context — skipping commit status")
-        return
-
-    token = _env(_ENV_BITBUCKET_TOKEN)
-    if not token:
-        _LOG.warning("Bitbucket: BITBUCKET_TOKEN not set — skipping commit status")
-        return
-
-    state = "SUCCESSFUL" if scan_result.is_clean else "FAILED"
-    url = _BITBUCKET_API_BASE_URL + _BITBUCKET_COMMIT_STATUS_PATH.format(
-        workspace=workspace,
-        repo_slug=repo_slug,
-        commit=sha,
-    )
-    payload = {
-        "key": _COMMIT_STATUS_CONTEXT,
-        "state": state,
-        "name": "phi-scan",
-        "description": (
-            _COMMIT_STATUS_DESCRIPTION_CLEAN
-            if scan_result.is_clean
-            else _COMMIT_STATUS_DESCRIPTION_VIOLATIONS.format(count=len(scan_result.findings))
-        ),
-    }
-
-    _execute_http_request(
-        _HttpRequestConfig(
-            method=_HttpMethod.POST,
-            url=url,
-            operation_label="Bitbucket commit status",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": _JSON_CONTENT_TYPE},
-            json_body=payload,
-        )
-    )
-
-    _LOG.debug("Bitbucket: commit status set to %s for %s", state, sha[:8])
-
-
-_PLATFORM_STATUS_SETTERS: dict[CIPlatform, Any] = {
-    CIPlatform.GITHUB_ACTIONS: _set_github_commit_status,
-    CIPlatform.GITLAB_CI: _set_gitlab_commit_status,
-    CIPlatform.BITBUCKET: _set_bitbucket_commit_status,
-}

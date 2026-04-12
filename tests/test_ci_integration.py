@@ -23,11 +23,11 @@ from typer.testing import CliRunner
 from phi_scan.ci_integration import (
     CIIntegrationError,
     CIPlatform,
-    PRContext,
+    PullRequestContext,
     build_comment_body,
     detect_platform,
-    get_pr_context,
-    post_pr_comment,
+    get_pull_request_context,
+    post_pull_request_comment,
     set_commit_status,
 )
 from phi_scan.cli import app
@@ -258,7 +258,7 @@ def test_detect_platform_returns_unknown_when_no_ci_env_set(
 
 
 # ---------------------------------------------------------------------------
-# get_pr_context tests
+# get_pull_request_context tests
 # ---------------------------------------------------------------------------
 
 
@@ -272,10 +272,10 @@ def test_get_pr_context_github_extracts_pr_number(
     monkeypatch.setenv("GITHUB_SHA", _GITHUB_SHA)
     monkeypatch.setenv("GITHUB_REF", "refs/pull/42/merge")
 
-    context = get_pr_context()
+    context = get_pull_request_context()
 
     assert context.platform == CIPlatform.GITHUB_ACTIONS
-    assert context.pr_number == _GITHUB_PR_NUMBER
+    assert context.pull_request_number == _GITHUB_PR_NUMBER
     assert context.repository == _GITHUB_REPO
     assert context.sha == _GITHUB_SHA
 
@@ -288,9 +288,9 @@ def test_get_pr_context_github_falls_back_to_ref_for_pr_number(
     monkeypatch.delenv("PR_NUMBER", raising=False)
     monkeypatch.setenv("GITHUB_REF", "refs/pull/99/merge")
 
-    context = get_pr_context()
+    context = get_pull_request_context()
 
-    assert context.pr_number == "99"
+    assert context.pull_request_number == "99"
 
 
 def test_get_pr_context_gitlab_extracts_mr_iid(
@@ -303,10 +303,10 @@ def test_get_pr_context_gitlab_extracts_mr_iid(
     monkeypatch.setenv("CI_PROJECT_ID", _GITLAB_PROJECT_ID)
     monkeypatch.setenv("CI_COMMIT_SHA", _GITLAB_SHA)
 
-    context = get_pr_context()
+    context = get_pull_request_context()
 
     assert context.platform == CIPlatform.GITLAB_CI
-    assert context.pr_number == _GITLAB_MR_IID
+    assert context.pull_request_number == _GITLAB_MR_IID
     assert context.repository == _GITLAB_PROJECT_ID
     assert context.sha == _GITLAB_SHA
 
@@ -324,10 +324,10 @@ def test_get_pr_context_azure_extracts_pr_id(
     monkeypatch.setenv("SYSTEM_TEAMPROJECT", _AZURE_TEAM_PROJECT)
     monkeypatch.setenv("BUILD_SOURCEVERSION", _AZURE_SHA)
 
-    context = get_pr_context()
+    context = get_pull_request_context()
 
     assert context.platform == CIPlatform.AZURE_DEVOPS
-    assert context.pr_number == _AZURE_PR_ID
+    assert context.pull_request_number == _AZURE_PR_ID
     assert context.repository == _AZURE_REPO_ID
 
 
@@ -345,12 +345,12 @@ def test_get_pr_context_bitbucket_extracts_pr_id(
     monkeypatch.setenv("BITBUCKET_WORKSPACE", _BITBUCKET_WORKSPACE)
     monkeypatch.setenv("BITBUCKET_COMMIT", _BITBUCKET_COMMIT)
 
-    context = get_pr_context()
+    context = get_pull_request_context()
 
     assert context.platform == CIPlatform.BITBUCKET
-    assert context.pr_number == _BITBUCKET_PR_ID
+    assert context.pull_request_number == _BITBUCKET_PR_ID
+    assert context.repository == _BITBUCKET_REPO_SLUG
     assert context.extras["workspace"] == _BITBUCKET_WORKSPACE
-    assert context.extras["repo_slug"] == _BITBUCKET_REPO_SLUG
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +420,7 @@ def test_build_comment_body_violation_does_not_contain_raw_entity_value() -> Non
 
 
 # ---------------------------------------------------------------------------
-# post_pr_comment — platform-specific tests (GitHub via gh CLI)
+# post_pull_request_comment — platform-specific tests (GitHub via gh CLI)
 # ---------------------------------------------------------------------------
 
 
@@ -429,9 +429,9 @@ def test_post_pr_comment_github_calls_gh_cli(
 ) -> None:
     """GitHub PR comment posting invokes the gh CLI."""
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken123")
-    github_context = PRContext(
+    github_context = PullRequestContext(
         platform=CIPlatform.GITHUB_ACTIONS,
-        pr_number=_GITHUB_PR_NUMBER,
+        pull_request_number=_GITHUB_PR_NUMBER,
         repository=_GITHUB_REPO,
         sha=_GITHUB_SHA,
         branch=None,
@@ -444,7 +444,7 @@ def test_post_pr_comment_github_calls_gh_cli(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
     with patch("subprocess.run", side_effect=fake_run):
-        post_pr_comment(_make_clean_result(), github_context)
+        post_pull_request_comment(_make_clean_result(), github_context)
 
     assert any("gh" in call for call in captured_calls)
     assert any("pr" in call for call in captured_calls)
@@ -455,9 +455,9 @@ def test_post_pr_comment_github_skips_when_no_token(
 ) -> None:
     """GitHub comment posting is skipped when GITHUB_TOKEN is absent."""
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    github_context = PRContext(
+    github_context = PullRequestContext(
         platform=CIPlatform.GITHUB_ACTIONS,
-        pr_number=_GITHUB_PR_NUMBER,
+        pull_request_number=_GITHUB_PR_NUMBER,
         repository=_GITHUB_REPO,
         sha=_GITHUB_SHA,
         branch=None,
@@ -471,7 +471,7 @@ def test_post_pr_comment_github_skips_when_no_token(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
     with patch("subprocess.run", side_effect=fake_run):
-        post_pr_comment(_make_clean_result(), github_context)
+        post_pull_request_comment(_make_clean_result(), github_context)
 
     assert call_count == 0
 
@@ -479,11 +479,11 @@ def test_post_pr_comment_github_skips_when_no_token(
 def test_post_pr_comment_skips_when_no_pr_number(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PR comment posting is skipped when pr_number is None."""
+    """PR comment posting is skipped when pull_request_number is None."""
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken123")
-    no_pr_context = PRContext(
+    no_pr_context = PullRequestContext(
         platform=CIPlatform.GITHUB_ACTIONS,
-        pr_number=None,
+        pull_request_number=None,
         repository=_GITHUB_REPO,
         sha=_GITHUB_SHA,
         branch=None,
@@ -497,7 +497,7 @@ def test_post_pr_comment_skips_when_no_pr_number(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
     with patch("subprocess.run", side_effect=fake_run):
-        post_pr_comment(_make_clean_result(), no_pr_context)
+        post_pull_request_comment(_make_clean_result(), no_pr_context)
 
     assert call_count == 0
 
@@ -507,9 +507,9 @@ def test_post_pr_comment_github_raises_ci_integration_error_on_gh_not_found(
 ) -> None:
     """CIIntegrationError raised when gh CLI is not installed."""
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken123")
-    github_context = PRContext(
+    github_context = PullRequestContext(
         platform=CIPlatform.GITHUB_ACTIONS,
-        pr_number=_GITHUB_PR_NUMBER,
+        pull_request_number=_GITHUB_PR_NUMBER,
         repository=_GITHUB_REPO,
         sha=_GITHUB_SHA,
         branch=None,
@@ -521,11 +521,11 @@ def test_post_pr_comment_github_raises_ci_integration_error_on_gh_not_found(
 
     with patch("subprocess.run", side_effect=raise_not_found):
         with pytest.raises(CIIntegrationError, match="gh CLI not found"):
-            post_pr_comment(_make_clean_result(), github_context)
+            post_pull_request_comment(_make_clean_result(), github_context)
 
 
 # ---------------------------------------------------------------------------
-# post_pr_comment — GitLab (HTTP)
+# post_pull_request_comment — GitLab (HTTP)
 # ---------------------------------------------------------------------------
 
 
@@ -534,9 +534,9 @@ def test_post_pr_comment_gitlab_posts_to_notes_api(
 ) -> None:
     """GitLab MR comment posting calls the GitLab Notes API endpoint."""
     monkeypatch.setenv("GITLAB_TOKEN", "glpat-testtoken")
-    gitlab_context = PRContext(
+    gitlab_context = PullRequestContext(
         platform=CIPlatform.GITLAB_CI,
-        pr_number=_GITLAB_MR_IID,
+        pull_request_number=_GITLAB_MR_IID,
         repository=_GITLAB_PROJECT_ID,
         sha=_GITLAB_SHA,
         branch=None,
@@ -552,7 +552,7 @@ def test_post_pr_comment_gitlab_posts_to_notes_api(
         return mock_response
 
     with patch("httpx.request", side_effect=stub_http_request):
-        post_pr_comment(_make_violation_result(), gitlab_context)
+        post_pull_request_comment(_make_violation_result(), gitlab_context)
 
     assert any(
         f"projects/{_GITLAB_PROJECT_ID}/merge_requests/{_GITLAB_MR_IID}/notes" in url
@@ -565,9 +565,9 @@ def test_post_pr_comment_gitlab_raises_on_http_error(
 ) -> None:
     """CIIntegrationError raised when GitLab API returns an HTTP error."""
     monkeypatch.setenv("GITLAB_TOKEN", "glpat-testtoken")
-    gitlab_context = PRContext(
+    gitlab_context = PullRequestContext(
         platform=CIPlatform.GITLAB_CI,
-        pr_number=_GITLAB_MR_IID,
+        pull_request_number=_GITLAB_MR_IID,
         repository=_GITLAB_PROJECT_ID,
         sha=_GITLAB_SHA,
         branch=None,
@@ -587,11 +587,11 @@ def test_post_pr_comment_gitlab_raises_on_http_error(
 
     with patch("httpx.request", side_effect=stub_http_request):
         with pytest.raises(CIIntegrationError, match="GitLab MR comment failed"):
-            post_pr_comment(_make_violation_result(), gitlab_context)
+            post_pull_request_comment(_make_violation_result(), gitlab_context)
 
 
 # ---------------------------------------------------------------------------
-# post_pr_comment — Bitbucket (HTTP)
+# post_pull_request_comment — Bitbucket (HTTP)
 # ---------------------------------------------------------------------------
 
 
@@ -600,9 +600,9 @@ def test_post_pr_comment_bitbucket_posts_to_pr_comments_api(
 ) -> None:
     """Bitbucket PR comment posting calls the Bitbucket Cloud PR comments endpoint."""
     monkeypatch.setenv("BITBUCKET_TOKEN", "bb_testtoken")
-    bb_context = PRContext(
+    bb_context = PullRequestContext(
         platform=CIPlatform.BITBUCKET,
-        pr_number=_BITBUCKET_PR_ID,
+        pull_request_number=_BITBUCKET_PR_ID,
         repository=_BITBUCKET_REPO_SLUG,
         sha=_BITBUCKET_COMMIT,
         branch=None,
@@ -621,7 +621,7 @@ def test_post_pr_comment_bitbucket_posts_to_pr_comments_api(
         return mock_response
 
     with patch("httpx.request", side_effect=stub_http_request):
-        post_pr_comment(_make_clean_result(), bb_context)
+        post_pull_request_comment(_make_clean_result(), bb_context)
 
     assert any(f"pullrequests/{_BITBUCKET_PR_ID}/comments" in url for url in captured_urls)
 
@@ -636,9 +636,9 @@ def test_set_commit_status_github_calls_statuses_api(
 ) -> None:
     """GitHub commit status posts to the /repos/.../statuses/{sha} endpoint."""
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken123")
-    github_context = PRContext(
+    github_context = PullRequestContext(
         platform=CIPlatform.GITHUB_ACTIONS,
-        pr_number=_GITHUB_PR_NUMBER,
+        pull_request_number=_GITHUB_PR_NUMBER,
         repository=_GITHUB_REPO,
         sha=_GITHUB_SHA,
         branch=None,
@@ -663,9 +663,9 @@ def test_set_commit_status_github_posts_failure_for_violations(
 ) -> None:
     """GitHub commit status state is 'failure' when violations are found."""
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken123")
-    github_context = PRContext(
+    github_context = PullRequestContext(
         platform=CIPlatform.GITHUB_ACTIONS,
-        pr_number=_GITHUB_PR_NUMBER,
+        pull_request_number=_GITHUB_PR_NUMBER,
         repository=_GITHUB_REPO,
         sha=_GITHUB_SHA,
         branch=None,
@@ -688,11 +688,11 @@ def test_set_commit_status_github_posts_failure_for_violations(
 def test_set_commit_status_skips_when_no_sha(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Commit status is skipped when pr_context.sha is None."""
+    """Commit status is skipped when pull_request_context.sha is None."""
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken123")
-    no_sha_context = PRContext(
+    no_sha_context = PullRequestContext(
         platform=CIPlatform.GITHUB_ACTIONS,
-        pr_number=_GITHUB_PR_NUMBER,
+        pull_request_number=_GITHUB_PR_NUMBER,
         repository=_GITHUB_REPO,
         sha=None,
         branch=None,
@@ -715,9 +715,9 @@ def test_set_commit_status_unknown_platform_does_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Commit status for UNKNOWN platform logs a warning and returns without error."""
-    unknown_context = PRContext(
+    unknown_context = PullRequestContext(
         platform=CIPlatform.UNKNOWN,
-        pr_number="1",
+        pull_request_number="1",
         repository="org/repo",
         sha=_GITHUB_SHA,
         branch=None,

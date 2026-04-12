@@ -14,6 +14,7 @@ __all__ = [
     "AuditKeyMissingError",
     "AuditLogError",
     "BaselineError",
+    "CIIntegrationError",
     "ConfigurationError",
     "FileReadError",
     "MissingOptionalDependencyError",
@@ -182,6 +183,20 @@ class PluginValidationError(PhiScanError):
     Args:
         message: Description of the validation failure including the
             offending attribute or value and what was expected.
+    """
+
+
+class CIIntegrationError(PhiScanError):
+    """Raised when a CI/CD platform API call fails.
+
+    Covers HTTP errors, authentication failures, and CLI tool invocation
+    failures across all supported CI/CD platforms. Error messages include
+    only the HTTP status code and reason phrase — never the response body,
+    which could echo back request content containing finding metadata.
+
+    Args:
+        message: Description of the failure including the platform name,
+            the operation that failed, and the status code where applicable.
     """
 
 

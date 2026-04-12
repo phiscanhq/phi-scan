@@ -20,7 +20,7 @@ per-platform adapter package with a shared interface contract.
    Azure PR status, Azure Boards work items, Bitbucket Code Insights,
    AWS Security Hub ASFF import.
 
-All 7 platforms share the same outbound interface (`post_pr_comment`,
+All 7 platforms share the same outbound interface (`post_pull_request_comment`,
 `set_commit_status`) but diverge significantly in transport, auth, and
 API shape. The single-module design causes:
 
@@ -38,9 +38,9 @@ API shape. The single-module design causes:
 ```
 phi_scan/
   ci/
-    __init__.py           # re-exports detect_platform, get_pr_context,
-                          #   post_pr_comment, set_commit_status
-    _base.py              # BaseCIAdapter ABC, PRContext, CIIntegrationError
+    __init__.py           # re-exports detect_platform, get_pull_request_context,
+                          #   post_pull_request_comment, set_commit_status
+    _base.py              # BaseCIAdapter ABC, PullRequestContext, CIIntegrationError
     _transport.py         # shared _HttpRequestConfig, _execute_http_request
     _detect.py            # detect_platform(), CIPlatform enum
     github.py             # GitHubAdapter
@@ -66,7 +66,7 @@ tests/
 ```
 
 The top-level `phi_scan/ci/__init__.py` re-exports the public API so
-existing callers (`from phi_scan.ci_integration import post_pr_comment`)
+existing callers (`from phi_scan.ci_integration import post_pull_request_comment`)
 can migrate with a single import-path change. The old
 `ci_integration.py` module will be retained as a thin re-export shim
 during the deprecation window (see Phase 1 below).
@@ -88,8 +88,8 @@ class BaseCIAdapter(ABC):
     """
 
     @abstractmethod
-    def post_pr_comment(
-        self, comment_body: str, pr_context: PRContext,
+    def post_pull_request_comment(
+        self, comment_body: str, pull_request_context: PullRequestContext,
     ) -> None:
         """Post a comment on the PR/MR associated with this build.
 
@@ -99,7 +99,7 @@ class BaseCIAdapter(ABC):
 
     @abstractmethod
     def set_commit_status(
-        self, scan_result: ScanResult, pr_context: PRContext,
+        self, scan_result: ScanResult, pull_request_context: PullRequestContext,
     ) -> None:
         """Report pass/fail status on the commit that triggered the build.
 
@@ -108,17 +108,17 @@ class BaseCIAdapter(ABC):
         """
 
     @property
-    def supports_sarif_upload(self) -> bool:
+    def can_upload_sarif_report(self) -> bool:
         """Whether this platform supports native SARIF ingestion."""
         return False
 
     @property
-    def supports_code_insights(self) -> bool:
+    def can_annotate_code_findings(self) -> bool:
         """Whether this platform supports inline code annotations."""
         return False
 
     @property
-    def supports_work_item_creation(self) -> bool:
+    def can_create_work_item_from_findings(self) -> bool:
         """Whether this platform supports creating work items from findings."""
         return False
 ```
@@ -131,15 +131,15 @@ the adapter's capabilities inspectable:
 
 | Capability | GitHub | GitLab | Azure | CircleCI | Bitbucket | CodeBuild | Jenkins |
 |-----------|--------|--------|-------|----------|-----------|-----------|---------|
-| `post_pr_comment` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `post_pull_request_comment` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | `set_commit_status` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| `supports_sarif_upload` | Yes | No | No | No | No | No | No |
-| `supports_code_insights` | No | No | No | No | Yes | No | No |
-| `supports_work_item_creation` | No | No | Yes | No | No | No | No |
-| `supports_security_hub` | No | No | No | No | No | Yes | No |
+| `can_upload_sarif_report` | Yes | No | No | No | No | No | No |
+| `can_annotate_code_findings` | No | No | No | No | Yes | No | No |
+| `can_create_work_item_from_findings` | No | No | Yes | No | No | No | No |
+| `can_import_findings_to_security_hub` | No | No | No | No | No | Yes | No |
 
 Platforms that support an extra MUST implement the corresponding method
-(e.g. `upload_sarif()` on `GitHubAdapter`). The base class provides a
+(e.g. `upload_sarif_report()` on `GitHubAdapter`). The base class provides a
 default that raises `CIIntegrationError` (the domain exception) for
 each extra — not `NotImplementedError`, which is a built-in and does
 not conform to the project's custom-exception-for-domain-errors rule.
@@ -221,10 +221,10 @@ transport module MUST maintain 100% coverage (it is security-critical).
    from phi_scan.ci import (  # noqa: F401
        CIIntegrationError,
        CIPlatform,
-       PRContext,
+       PullRequestContext,
        detect_platform,
-       get_pr_context,
-       post_pr_comment,
+       get_pull_request_context,
+       post_pull_request_comment,
        set_commit_status,
    )
    ```
@@ -237,7 +237,7 @@ transport module MUST maintain 100% coverage (it is security-critical).
 1. Extract each platform's functions into its adapter class
    (`github.py`, `gitlab.py`, etc.).
 2. Implement `BaseCIAdapter` interface on each adapter.
-3. Update `phi_scan/ci/__init__.py` to dispatch `post_pr_comment` and
+3. Update `phi_scan/ci/__init__.py` to dispatch `post_pull_request_comment` and
    `set_commit_status` via the adapter registry.
 4. Split test files into per-platform modules.
 

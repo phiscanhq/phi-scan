@@ -25,7 +25,7 @@ from phi_scan.ci_integration import (
     BaselineComparison,
     CIIntegrationError,
     CIPlatform,
-    PRContext,
+    PullRequestContext,
     build_comment_body_with_baseline,
     convert_findings_to_asff,
     create_azure_boards_work_item,
@@ -134,23 +134,23 @@ def _make_violation_result(severity: SeverityLevel = SeverityLevel.HIGH) -> Scan
     )
 
 
-def _github_context(**overrides: object) -> PRContext:
+def _github_context(**overrides: object) -> PullRequestContext:
     defaults: dict = {
         "platform": CIPlatform.GITHUB_ACTIONS,
-        "pr_number": _GITHUB_PR_NUMBER,
+        "pull_request_number": _GITHUB_PR_NUMBER,
         "repository": _GITHUB_REPO,
         "sha": _GITHUB_SHA,
         "branch": "refs/pull/42/merge",
         "base_branch": None,
     }
     defaults.update(overrides)
-    return PRContext(**defaults)
+    return PullRequestContext(**defaults)
 
 
-def _azure_context(**overrides: object) -> PRContext:
+def _azure_context(**overrides: object) -> PullRequestContext:
     defaults: dict = {
         "platform": CIPlatform.AZURE_DEVOPS,
-        "pr_number": _AZURE_PR_ID,
+        "pull_request_number": _AZURE_PR_ID,
         "repository": _AZURE_REPO_ID,
         "sha": _AZURE_SHA,
         "branch": None,
@@ -162,13 +162,13 @@ def _azure_context(**overrides: object) -> PRContext:
         },
     }
     defaults.update(overrides)
-    return PRContext(**defaults)
+    return PullRequestContext(**defaults)
 
 
-def _bitbucket_context(**overrides: object) -> PRContext:
+def _bitbucket_context(**overrides: object) -> PullRequestContext:
     defaults: dict = {
         "platform": CIPlatform.BITBUCKET,
-        "pr_number": _BITBUCKET_PR_ID,
+        "pull_request_number": _BITBUCKET_PR_ID,
         "repository": _BITBUCKET_REPO_SLUG,
         "sha": _BITBUCKET_COMMIT,
         "branch": None,
@@ -179,7 +179,7 @@ def _bitbucket_context(**overrides: object) -> PRContext:
         },
     }
     defaults.update(overrides)
-    return PRContext(**defaults)
+    return PullRequestContext(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -871,9 +871,9 @@ def test_import_findings_to_security_hub_skips_when_not_enabled(
         call_count += 1
         return subprocess.CompletedProcess([], returncode=0)
 
-    context = PRContext(
+    context = PullRequestContext(
         platform=CIPlatform.CODEBUILD,
-        pr_number="1",
+        pull_request_number="1",
         repository=_AWS_REPO,
         sha=_GITHUB_SHA,
         branch=None,
@@ -898,9 +898,9 @@ def test_import_findings_to_security_hub_calls_aws_cli_when_enabled(
         captured_cmds.append(cmd)
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
-    context = PRContext(
+    context = PullRequestContext(
         platform=CIPlatform.CODEBUILD,
-        pr_number="1",
+        pull_request_number="1",
         repository=_AWS_REPO,
         sha=_GITHUB_SHA,
         branch=None,
@@ -925,9 +925,9 @@ def test_import_findings_to_security_hub_skips_when_clean(
         call_count += 1
         return subprocess.CompletedProcess([], returncode=0)
 
-    context = PRContext(
+    context = PullRequestContext(
         platform=CIPlatform.CODEBUILD,
-        pr_number=None,
+        pull_request_number=None,
         repository=_AWS_REPO,
         sha=None,
         branch=None,
@@ -950,9 +950,9 @@ def test_import_findings_to_security_hub_raises_when_aws_cli_missing(
     def raise_not_found(*args: object, **kwargs: object) -> None:
         raise FileNotFoundError("aws not found")
 
-    context = PRContext(
+    context = PullRequestContext(
         platform=CIPlatform.CODEBUILD,
-        pr_number="1",
+        pull_request_number="1",
         repository=_AWS_REPO,
         sha=_GITHUB_SHA,
         branch=None,
