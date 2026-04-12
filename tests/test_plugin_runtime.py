@@ -43,8 +43,8 @@ class _AcmeRecognizer(BaseRecognizer):
     name = _ACME_RECOGNIZER_NAME
     entity_types = (_ACME_ENTITY_TYPE,)
     plugin_api_version = PLUGIN_API_VERSION
-    version = "0.1.0"
-    description = "Test ACME employee ID recognizer."
+    version = _TEST_RECOGNIZER_VERSION
+    description = _TEST_RECOGNIZER_DESCRIPTION
 
     def detect(self, line: str, context: ScanContext) -> list[PluginScanFinding]:
         match = re.search(r"\bEMP-\d{6}\b", line)
