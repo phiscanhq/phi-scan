@@ -148,7 +148,7 @@ class _MismatchedVersionRecognizer(BaseRecognizer):
 # ---------------------------------------------------------------------------
 
 
-_runner = CliRunner()
+_cli_runner = CliRunner()
 
 
 def _patch_entry_point_discovery(
@@ -174,7 +174,7 @@ def _invoke_plugins_list(
     cli_arguments = ["plugins", "list"]
     if is_json:
         cli_arguments.append("--json")
-    invocation_result = _runner.invoke(app, cli_arguments)
+    invocation_result = _cli_runner.invoke(app, cli_arguments)
     assert invocation_result.exit_code == EXIT_CODE_CLEAN
     return invocation_result.output
 
@@ -391,10 +391,10 @@ class TestJsonOutput:
 class TestCommandIntegration:
     def test_plugins_list_exits_cleanly(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch_entry_point_discovery(monkeypatch, [])
-        invocation_result = _runner.invoke(app, ["plugins", "list"])
+        invocation_result = _cli_runner.invoke(app, ["plugins", "list"])
         assert invocation_result.exit_code == EXIT_CODE_CLEAN
 
     def test_plugins_help_shows_subcommand(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch_entry_point_discovery(monkeypatch, [])
-        invocation_result = _runner.invoke(app, ["plugins", "--help"])
+        invocation_result = _cli_runner.invoke(app, ["plugins", "--help"])
         assert "list" in invocation_result.output
