@@ -2,11 +2,12 @@
 
 PhiScan's plugin system allows third parties to add custom PHI recognisers
 without modifying the core codebase. Plugins register via Python entry points
-and are discovered automatically at startup.
+and are discovered automatically at scan startup.
 
-> **Note:** The plugin API is currently in preview. The interface is stable
-> for the patterns described below, but additional capabilities (custom
-> output formatters, custom compliance frameworks) are planned for Phase 8.
+This guide targets **Plugin API v1** (`PLUGIN_API_VERSION = "1.0"`). The
+authoritative contract, compatibility policy, and deprecation process live in
+[docs/plugin-api-v1.md](plugin-api-v1.md); this document is the practical
+tutorial companion.
 
 ---
 
@@ -14,21 +15,28 @@ and are discovered automatically at startup.
 
 A PhiScan plugin is a Python package that:
 
-1. Implements one or more `PhiRecognizer` subclasses
-2. Registers them via a `phi_scan.plugins` entry point in `pyproject.toml`
-3. Returns `ScanFinding` instances from its `recognize()` method
+1. Implements one or more `BaseRecognizer` subclasses.
+2. Declares class-level metadata (`name`, `entity_types`, `plugin_api_version`).
+3. Implements `detect(line, context)` — called by the host once per line of
+   every file in scope, returning zero or more `ScanFinding` objects.
+4. Registers its recognizers via a `phi_scan.plugins` entry point in
+   `pyproject.toml`.
 
-PhiScan discovers and loads all registered recognisers at scan startup.
+The host is responsible for file traversal, line iteration, value hashing,
+severity derivation, and output redaction. Plugins never handle raw PHI
+end-to-end — they return line-relative offsets and a confidence score, and
+the host takes it from there.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Create a minimal plugin package
-mkdir phi-scan-myplugin && cd phi-scan-myplugin
-touch src/phi_scan_myplugin/__init__.py
-touch src/phi_scan_myplugin/recognizer.py
+mkdir phi-scan-acme && cd phi-scan-acme
+mkdir -p src/phi_scan_acme tests
+touch src/phi_scan_acme/__init__.py
+touch src/phi_scan_acme/recognizer.py
+touch tests/test_recognizer.py
 touch pyproject.toml
 ```
 
@@ -37,126 +45,121 @@ touch pyproject.toml
 ## Implementing a Recognizer
 
 ```python
-# src/phi_scan_myplugin/recognizer.py
+# src/phi_scan_acme/recognizer.py
 from __future__ import annotations
 
-from pathlib import Path
+import re
 
-from phi_scan.plugin_api import PhiRecognizer
-from phi_scan.models import ScanFinding
-from phi_scan.constants import PhiCategory, DetectionLayer, SeverityLevel
-from phi_scan.hashing import compute_value_hash, severity_from_confidence
+from phi_scan.plugin_api import BaseRecognizer, ScanContext, ScanFinding
+
+_ACME_EMPLOYEE_ID_PATTERN = re.compile(r"\bEMP-\d{6}\b")
+_ACME_EMPLOYEE_ID_CONFIDENCE = 0.90
 
 
-class MyCustomRecognizer(PhiRecognizer):
-    """Detect ACME Corp employee IDs in source code."""
+class AcmeEmployeeIdRecognizer(BaseRecognizer):
+    """Detect ACME Corp employee IDs (``EMP-123456``) in source code."""
 
-    @property
-    def name(self) -> str:
-        """Unique name for this recognizer — used in logs and findings."""
-        return "ACME_EMPLOYEE_ID"
+    name = "acme_employee_id"
+    entity_types = ("ACME_EMPLOYEE_ID",)
+    plugin_api_version = "1.0"
+    version = "0.1.0"
+    description = "Detects ACME Corp employee identifiers."
 
-    @property
-    def supported_categories(self) -> frozenset[PhiCategory]:
-        """PHI categories this recognizer can produce."""
-        return frozenset({PhiCategory.UNIQUE_ID})
-
-    def recognize(
-        self,
-        file_content: str,
-        file_path: Path,
-    ) -> list[ScanFinding]:
-        """Scan file_content for ACME employee IDs.
-
-        IMPORTANT: Never store or return raw matched values.
-        Always hash with compute_value_hash() before including in ScanFinding.
-        """
-        import re
-
-        # Example: ACME IDs are EMP- followed by 6 digits
-        pattern = re.compile(r"\bEMP-\d{6}\b")
-        findings: list[ScanFinding] = []
-
-        for line_number, line in enumerate(file_content.splitlines(), start=1):
-            match = pattern.search(line)
-            if match is None:
-                continue
-
-            matched_value = match.group()
-            confidence = 0.90
-
-            findings.append(
-                ScanFinding(
-                    file_path=file_path,          # must be relative
-                    line_number=line_number,
-                    entity_type=self.name,
-                    hipaa_category=PhiCategory.UNIQUE_ID,
-                    confidence=confidence,
-                    detection_layer=DetectionLayer.REGEX,
-                    value_hash=compute_value_hash(matched_value),   # NEVER store raw
-                    severity=severity_from_confidence(confidence),
-                    code_context=line.replace(matched_value, "[REDACTED]"),
-                    remediation_hint=(
-                        "Replace ACME employee ID with a test-only placeholder "
-                        "(e.g., EMP-000000)."
-                    ),
-                )
+    def detect(self, line: str, context: ScanContext) -> list[ScanFinding]:
+        match = _ACME_EMPLOYEE_ID_PATTERN.search(line)
+        if match is None:
+            return []
+        return [
+            ScanFinding(
+                entity_type="ACME_EMPLOYEE_ID",
+                start_offset=match.start(),
+                end_offset=match.end(),
+                confidence=_ACME_EMPLOYEE_ID_CONFIDENCE,
             )
-
-        return findings
+        ]
 ```
+
+### Multiple findings per line
+
+A single line may contain several matches. `detect` is allowed to return
+more than one `ScanFinding` per call:
+
+```python
+def detect(self, line: str, context: ScanContext) -> list[ScanFinding]:
+    return [
+        ScanFinding(
+            entity_type="ACME_EMPLOYEE_ID",
+            start_offset=match.start(),
+            end_offset=match.end(),
+            confidence=_ACME_EMPLOYEE_ID_CONFIDENCE,
+        )
+        for match in _ACME_EMPLOYEE_ID_PATTERN.finditer(line)
+    ]
+```
+
+Offsets are **line-relative** (0-indexed, using `match.start()` and
+`match.end()` directly). Never translate them to file-absolute positions —
+the host re-resolves line/column using `context.line_number`.
 
 ---
 
-## PHI Safety Requirements
+## Class Attribute Contract
 
-These requirements are mandatory for all plugins. Violations will cause
-your plugin to be rejected from distribution.
+Recognizers declare metadata as **class attributes**, not `@property`
+methods. The loader validates this metadata at discovery time and skips
+any plugin whose metadata is malformed.
 
-### Never Store Raw PHI Values
+| Attribute | Required | Rule |
+|-----------|----------|------|
+| `name` | Yes | Lowercase snake_case, must match `^[a-z][a-z0-9_]*$`. Used as the collision key across installed distributions. |
+| `entity_types` | Yes | Non-empty sequence (`tuple` preferred) of uppercase strings matching `^[A-Z][A-Z0-9_]*$`. Must be unique within the sequence. Every returned `ScanFinding.entity_type` MUST appear here. |
+| `plugin_api_version` | Yes | Must equal the host's `PLUGIN_API_VERSION` exactly (currently `"1.0"`). Mismatches are rejected at load time with a warning. |
+| `version` | No | Plugin's own semver string. Informational. Defaults to `"0.0.0"`. |
+| `description` | No | One-line human description. Informational. Defaults to `""`. |
 
-The `ScanFinding.value_hash` field must contain the SHA-256 digest of the
-matched value — never the value itself.
+---
 
-```python
-# CORRECT
-value_hash = compute_value_hash(matched_value)
+## What the Host Guarantees
 
-# WRONG — never do this
-value_hash = matched_value
-```
+Plugin authors do **not** hash values, derive severity, or redact output.
+The host handles these concerns uniformly for all findings so that plugin
+bugs cannot leak PHI:
 
-### Redact PHI in code_context
+- **Value hashing.** The host takes `line[start_offset:end_offset]`, hashes
+  it with SHA-256, and stores only the digest in the audit log and output.
+- **Severity derivation.** The host maps `confidence` to a `SeverityLevel`
+  using the project-wide confidence bands. Plugins must not pre-inflate
+  confidence to force a higher severity.
+- **Output redaction.** The matched slice is replaced with `[REDACTED]` in
+  any `code_context` emitted to the terminal, JSON, SARIF, CSV, or report
+  artifacts.
+- **File traversal and line iteration.** The host resolves symlinks safely,
+  enforces size and extension policies, and decodes text. Plugins receive
+  a single decoded `line` per call.
 
-The `code_context` field holds the source line shown to the user. The
-matched PHI must be replaced with `[REDACTED]`.
+---
 
-```python
-# CORRECT
-code_context = line.replace(matched_value, "[REDACTED]")
+## Plugin Author Obligations
 
-# WRONG — exposes PHI in output
-code_context = line
-```
+These obligations are mandatory. A plugin that violates any of them will
+be rejected from distribution through official channels and may be blocked
+by the host at runtime in a future API revision.
 
-### Relative File Paths Only
-
-`ScanFinding.file_path` must be relative to the scan root. Never use an
-absolute path.
-
-```python
-# CORRECT (file_path passed in from PhiScan is already relative)
-file_path=file_path
-
-# WRONG
-file_path=Path("/absolute/path/to/file.py")
-```
-
-### No External Network Calls
-
-Recognisers must operate entirely locally. No API calls, no database
-lookups, no DNS resolution. PhiScan's security contract is "no data ever
-leaves your infrastructure."
+1. **Never log `line` content or matched slices.** Do not emit the line,
+   the `line[start:end]` slice, or any substring containing user data to
+   `print`, `logging`, structured logs, telemetry, or any other sink.
+2. **No network calls, DNS lookups, or database queries.** Recognizers
+   must operate entirely in-process. PhiScan's contract to its users is
+   that no data leaves the machine during scanning; plugins inherit that
+   contract.
+3. **No writing matched slices to disk.** Do not persist matched content
+   to temporary files, caches, or state directories.
+4. **Sanitize raised exceptions.** If `detect` raises, the host drops the
+   line's batch with a warning. Exception messages MUST NOT include the
+   `line`, the matched slice, or any substring of either.
+5. **Do not open or read `context.file_path`.** The host already provides
+   the line content. Opening the file directly bypasses the host's safe
+   traversal, size, and decoding policies and is prohibited.
 
 ---
 
@@ -165,17 +168,17 @@ leaves your infrastructure."
 ```toml
 # pyproject.toml
 [project]
-name = "phi-scan-myplugin"
+name = "phi-scan-acme"
 version = "0.1.0"
-dependencies = ["phi-scan>=0.4.0"]
+dependencies = ["phi-scan>=0.4.0,<1.0"]
 
 [project.entry-points."phi_scan.plugins"]
-acme_employee_id = "phi_scan_myplugin.recognizer:MyCustomRecognizer"
+acme_employee_id = "phi_scan_acme.recognizer:AcmeEmployeeIdRecognizer"
 ```
 
-The entry point name (`acme_employee_id`) must be unique across all installed
-plugins. Use a namespace prefix to avoid collisions:
-`yourcompany_<name>` or `phi_scan_<name>`.
+The entry point key (`acme_employee_id`) must be unique across every
+installed plugin. Prefix with your organisation or product name to avoid
+collisions: `acme_<name>`, `phi_scan_<name>`.
 
 ---
 
@@ -186,78 +189,102 @@ plugins. Use a namespace prefix to avoid collisions:
 ```python
 # tests/test_recognizer.py
 from pathlib import Path
-from phi_scan_myplugin.recognizer import MyCustomRecognizer
+
+from phi_scan.plugin_api import ScanContext
+from phi_scan_acme.recognizer import AcmeEmployeeIdRecognizer
+
+
+def _build_context() -> ScanContext:
+    return ScanContext(
+        file_path=Path("config.py"),
+        line_number=1,
+        file_extension=".py",
+    )
 
 
 def test_recognizer_detects_employee_id() -> None:
-    recognizer = MyCustomRecognizer()
-    content = 'employee_id = "EMP-123456"'
-    findings = recognizer.recognize(content, Path("config.py"))
+    recognizer = AcmeEmployeeIdRecognizer()
+    findings = recognizer.detect('employee_id = "EMP-123456"', _build_context())
 
     assert len(findings) == 1
-    assert findings[0].entity_type == "ACME_EMPLOYEE_ID"
-    assert findings[0].line_number == 1
-    assert "EMP-123456" not in findings[0].code_context   # must be redacted
-    assert "[REDACTED]" in findings[0].code_context
+    finding = findings[0]
+    assert finding.entity_type == "ACME_EMPLOYEE_ID"
+    assert finding.start_offset == 16
+    assert finding.end_offset == 26
+    assert 0.0 <= finding.confidence <= 1.0
 
 
-def test_recognizer_no_false_positive_on_clean_content() -> None:
-    recognizer = MyCustomRecognizer()
-    findings = recognizer.recognize("x = 123", Path("app.py"))
-    assert findings == []
+def test_recognizer_returns_empty_list_on_clean_line() -> None:
+    recognizer = AcmeEmployeeIdRecognizer()
+    assert recognizer.detect("x = 123", _build_context()) == []
 
 
-def test_recognizer_phi_not_in_value_hash() -> None:
-    """value_hash must be SHA-256, not the raw matched value."""
-    recognizer = MyCustomRecognizer()
-    findings = recognizer.recognize('emp = "EMP-123456"', Path("test.py"))
-    assert len(findings) == 1
-    assert findings[0].value_hash != "EMP-123456"
-    assert len(findings[0].value_hash) == 64   # SHA-256 hex digest
+def test_recognizer_finds_multiple_matches_per_line() -> None:
+    recognizer = AcmeEmployeeIdRecognizer()
+    findings = recognizer.detect("EMP-111111 EMP-222222", _build_context())
+    assert len(findings) == 2
 ```
 
-### Integration Test
+### Integration Test — Discovery
+
+Use the host's public loader API to confirm PhiScan sees your plugin.
+Both helpers return a `PluginRegistry`:
+
+- `discover_plugin_registry()` — exposes both loaded and skipped plugins,
+  useful for asserting why a plugin was rejected.
+- `load_plugin_registry()` — returns only successfully loaded plugins,
+  matching runtime behaviour.
 
 ```python
-def test_plugin_discovered_by_phi_scan() -> None:
-    """Verify the plugin is found by PhiScan's entry point discovery."""
-    from phi_scan.plugin_api import load_recognizer_plugins
-    recognizers = load_recognizer_plugins()
-    names = [r.name for r in recognizers]
-    assert "ACME_EMPLOYEE_ID" in names
+from phi_scan.plugin_loader import (
+    discover_plugin_registry,
+    load_plugin_registry,
+)
+
+
+def test_plugin_is_loaded_by_host() -> None:
+    registry = load_plugin_registry()
+    recognizer_names = [plugin.recognizer.name for plugin in registry.loaded]
+    assert "acme_employee_id" in recognizer_names
+
+
+def test_plugin_has_no_skip_reason() -> None:
+    registry = discover_plugin_registry()
+    skipped_names = [plugin.entry_point_name for plugin in registry.skipped]
+    assert "acme_employee_id" not in skipped_names
 ```
 
 ### Test Fixture Requirements
 
-Never use real PHI in test fixtures. For patterns that require structurally
-valid values (Luhn checksum, check digit), use the safe values from
-`phi_scan/constants.py` as a reference.
+Never use real PHI in test fixtures. When a pattern requires a structurally
+valid value (checksum, check digit), synthesize one — never copy from a
+real record, document, or dataset.
 
 ---
 
-## Confidence Score Guidelines
+## Confidence Guidance
 
-Use the following table as a reference when setting `base_confidence`:
+`confidence` is a float in `[0.0, 1.0]`. Use the following bands as a
+starting reference; tune based on false-positive and false-negative rates
+in your target corpora.
 
 | Signal Strength | Recommended Confidence |
-|---|---|
-| Checksum or algorithm validation | 0.92–0.97 |
-| Strong structural match + context keyword | 0.88–0.92 |
+|-----------------|------------------------|
+| Checksum or algorithm validation (e.g. Luhn, check digit) | 0.92–0.97 |
+| Strong structural match + supporting context keyword | 0.88–0.92 |
 | Strong structural match, no context | 0.80–0.88 |
-| Field-name detection (value not inspected) | 0.85–0.90 |
-| Weak pattern, NLP-style | 0.50–0.70 |
+| Field-name match only (value not inspected) | 0.85–0.90 |
+| Weak NLP-style signal | 0.50–0.70 |
 
-Confidence is used to derive `severity`:
-- `confidence ≥ 0.90` → `HIGH`
-- `confidence ≥ 0.70` → `MEDIUM`
-- `confidence ≥ 0.40` → `LOW`
-- `confidence < 0.40` → `INFO`
+The host derives `SeverityLevel` from `confidence` using the project-wide
+bands documented in [docs/confidence-scoring.md](confidence-scoring.md).
+Plugins should not encode severity decisions themselves.
 
 ---
 
 ## Distributing Your Plugin
 
-### PyPI Distribution
+### PyPI
 
 ```bash
 uv build
@@ -265,23 +292,35 @@ uv publish
 ```
 
 Users install with:
+
 ```bash
-pip install phi-scan-myplugin
-# PhiScan discovers the plugin automatically at startup
+pip install phi-scan-acme
+# PhiScan discovers the plugin automatically on the next scan.
 phi-scan scan .
 ```
 
 ### Naming Convention
 
-PyPI package name: `phi-scan-<name>` (e.g., `phi-scan-acme`, `phi-scan-dicom`)  
-Python import name: `phi_scan_<name>` (e.g., `phi_scan_acme`, `phi_scan_dicom`)
+- PyPI package: `phi-scan-<name>` (e.g. `phi-scan-acme`, `phi-scan-dicom`)
+- Python import name: `phi_scan_<name>`
+- Recognizer `name`: lowercase snake_case, organisation-prefixed
+  (`acme_employee_id`, `dicom_patient_id`)
 
-### Versioning
+### Version Compatibility
 
-Pin the minimum PhiScan version your plugin requires:
+Pin the minimum PhiScan version your plugin targets and cap the major
+version so that a future v2 API break does not silently install against
+an incompatible host:
+
 ```toml
 dependencies = ["phi-scan>=0.4.0,<1.0"]
 ```
+
+The host enforces exact-match on `plugin_api_version` at load time. If a
+future v1.1 minor bump introduces new optional surface, your plugin will
+continue to load unchanged under the existing `"1.0"` declaration —
+consult [docs/plugin-api-v1.md](plugin-api-v1.md) for the compatibility
+and deprecation policy before upgrading your declared API version.
 
 ---
 
@@ -289,71 +328,64 @@ dependencies = ["phi-scan>=0.4.0,<1.0"]
 
 ```bash
 phi-scan plugins list
+phi-scan plugins list --json   # machine-readable
 ```
 
-Shows all discovered plugins with their recognizer names and supported
-PHI categories.
+Shows every discovered plugin, whether it loaded or was skipped, and the
+reason for any skip.
 
 ---
 
 ## API Reference
 
-### `PhiRecognizer` (Abstract Base Class)
+### `BaseRecognizer` (Abstract Base Class)
 
 ```python
-from phi_scan.plugin_api import PhiRecognizer
+from collections.abc import Sequence
 
-class PhiRecognizer(ABC):
+from phi_scan.plugin_api import BaseRecognizer, ScanContext, ScanFinding
 
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Unique recognizer name. Used in entity_type and logs."""
-        ...
 
-    @property
-    @abstractmethod
-    def supported_categories(self) -> frozenset[PhiCategory]:
-        """PHI categories this recognizer may produce."""
-        ...
+class BaseRecognizer(ABC):
+    name: str
+    entity_types: Sequence[str]
+    plugin_api_version: str = "1.0"
+    version: str = "0.0.0"
+    description: str = ""
 
     @abstractmethod
-    def recognize(
-        self,
-        file_content: str,
-        file_path: Path,
-    ) -> list[ScanFinding]:
-        """Scan file_content for PHI. Return empty list if no findings."""
-        ...
+    def detect(self, line: str, context: ScanContext) -> list[ScanFinding]:
+        """Return ScanFinding objects for the given line. May be empty."""
 ```
 
-### Utility Functions
+### `ScanContext`
 
 ```python
-from phi_scan.hashing import compute_value_hash, severity_from_confidence
-
-# Hash a matched value (ALWAYS use this — never store raw PHI)
-value_hash: str = compute_value_hash("EMP-123456")
-# Returns: SHA-256 hex digest string, 64 characters
-
-# Derive severity from a confidence score
-severity: SeverityLevel = severity_from_confidence(0.92)
-# Returns: SeverityLevel.HIGH
+@dataclass(frozen=True)
+class ScanContext:
+    file_path: Path         # provided for language-gating/logging; never open
+    line_number: int        # 1-indexed
+    file_extension: str     # includes leading dot, "" if none
 ```
 
-### Available Enums
+### `ScanFinding`
 
 ```python
-from phi_scan.constants import PhiCategory, DetectionLayer, SeverityLevel
+@dataclass(frozen=True)
+class ScanFinding:
+    entity_type: str        # must appear in recognizer.entity_types
+    start_offset: int       # line-relative, 0-indexed, >= 0
+    end_offset: int         # line-relative, exclusive, > start_offset
+    confidence: float       # [0.0, 1.0]
+```
 
-# PhiCategory — use the most specific applicable category
-PhiCategory.NAME
-PhiCategory.SSN
-PhiCategory.UNIQUE_ID     # catch-all for proprietary identifiers
-PhiCategory.BIOMETRIC
-# ... (see docs/hipaa-identifiers.md for full list)
+The dataclass validates its arguments in `__post_init__`, so malformed
+findings raise at construction time rather than silently corrupting output.
 
-# DetectionLayer — use REGEX for pattern-based, NLP for ML-based
-DetectionLayer.REGEX
-DetectionLayer.NLP
+### Version Constant
+
+```python
+from phi_scan.plugin_api import PLUGIN_API_VERSION
+
+assert PLUGIN_API_VERSION == "1.0"
 ```
