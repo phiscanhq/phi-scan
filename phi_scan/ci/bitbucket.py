@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from phi_scan.ci._base import BaseCIAdapter, SanitisedCommentBody
-from phi_scan.ci._detect import PRContext
+from phi_scan.ci._detect import PullRequestContext
 from phi_scan.ci._env import fetch_environment_variable
 from phi_scan.ci._transport import (
     HttpMethod,
@@ -26,7 +26,7 @@ _ENV_BITBUCKET_TOKEN: str = "BITBUCKET_TOKEN"
 
 _BITBUCKET_API_BASE_URL: str = "https://api.bitbucket.org/2.0"
 _BITBUCKET_PR_COMMENTS_PATH: str = (
-    "/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments"
+    "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_identifier}/comments"
 )
 _BITBUCKET_COMMIT_STATUS_PATH: str = (
     "/repositories/{workspace}/{repo_slug}/commit/{commit}/statuses/build"
@@ -75,12 +75,14 @@ class BitbucketAdapter(BaseCIAdapter):
     def can_annotate_code_findings(self) -> bool:
         return True
 
-    def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:
-        pr_id = pr_context.pr_number
-        workspace = pr_context.extras.get("workspace", "")
-        repo_slug = pr_context.repository or ""
+    def post_pull_request_comment(
+        self, comment_body: SanitisedCommentBody, pull_request_context: PullRequestContext
+    ) -> None:
+        pull_request_identifier = pull_request_context.pull_request_number
+        workspace = pull_request_context.extras.get("workspace", "")
+        repo_slug = pull_request_context.repository or ""
 
-        if not all((pr_id, workspace, repo_slug)):
+        if not all((pull_request_identifier, workspace, repo_slug)):
             _LOG.warning("Bitbucket: missing PR context — skipping comment")
             return
 
@@ -92,7 +94,7 @@ class BitbucketAdapter(BaseCIAdapter):
         url = _BITBUCKET_API_BASE_URL + _BITBUCKET_PR_COMMENTS_PATH.format(
             workspace=workspace,
             repo_slug=repo_slug,
-            pr_id=pr_id,
+            pull_request_identifier=pull_request_identifier,
         )
         execute_http_request(
             HttpRequestConfig(
@@ -105,12 +107,14 @@ class BitbucketAdapter(BaseCIAdapter):
                 },
             )
         )
-        _LOG.debug("Bitbucket: PR comment posted to PR #%s", pr_id)
+        _LOG.debug("Bitbucket: PR comment posted to PR #%s", pull_request_identifier)
 
-    def set_commit_status(self, scan_result: ScanResult, pr_context: PRContext) -> None:
-        sha = pr_context.sha
-        workspace = pr_context.extras.get("workspace", "")
-        repo_slug = pr_context.repository or ""
+    def set_commit_status(
+        self, scan_result: ScanResult, pull_request_context: PullRequestContext
+    ) -> None:
+        sha = pull_request_context.sha
+        workspace = pull_request_context.extras.get("workspace", "")
+        repo_slug = pull_request_context.repository or ""
         if not sha or not workspace or not repo_slug:
             _LOG.warning("Bitbucket: missing context — skipping commit status")
             return

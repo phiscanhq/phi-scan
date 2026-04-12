@@ -1,7 +1,7 @@
 """CI/CD platform detection and PR context extraction.
 
 Auto-detects the running CI/CD platform from environment variables and
-extracts PR/MR context into a platform-neutral ``PRContext`` dataclass.
+extracts PR/MR context into a platform-neutral ``PullRequestContext`` dataclass.
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ from phi_scan.ci._env import fetch_environment_variable
 
 __all__ = [
     "CIPlatform",
-    "PRContext",
+    "PullRequestContext",
     "detect_platform",
-    "get_pr_context",
+    "get_pull_request_context",
 ]
 
 # ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ class CIPlatform(enum.Enum):
 
 
 @dataclass(frozen=True)
-class PRContext:
+class PullRequestContext:
     """Platform-neutral PR/MR context extracted from environment variables.
 
     Top-level fields that are unavailable on the current platform are ``None``.
@@ -116,7 +116,7 @@ class PRContext:
     """
 
     platform: CIPlatform
-    pr_number: str | None
+    pull_request_number: str | None
     repository: str | None
     sha: str | None
     branch: str | None
@@ -157,7 +157,7 @@ def detect_platform() -> CIPlatform:
 # ---------------------------------------------------------------------------
 
 
-def _extract_github_pr_number(github_ref: str) -> str | None:
+def _extract_github_pull_request_number(github_ref: str) -> str | None:
     if not github_ref.startswith(_GITHUB_PR_REF_PREFIX):
         return None
     ref_segments = github_ref.split("/")
@@ -166,18 +166,18 @@ def _extract_github_pr_number(github_ref: str) -> str | None:
     return ref_segments[_GITHUB_REF_PR_NUMBER_SEGMENT_INDEX]
 
 
-def _resolve_github_pr_number() -> str | None:
-    explicit_pr_number = fetch_environment_variable(_ENV_PR_NUMBER)
-    if explicit_pr_number:
-        return explicit_pr_number
+def _resolve_github_pull_request_number() -> str | None:
+    explicit_pull_request_number = fetch_environment_variable(_ENV_PR_NUMBER)
+    if explicit_pull_request_number:
+        return explicit_pull_request_number
     github_ref = fetch_environment_variable(_ENV_GITHUB_REF) or ""
-    return _extract_github_pr_number(github_ref)
+    return _extract_github_pull_request_number(github_ref)
 
 
-def _build_github_context() -> PRContext:
-    return PRContext(
+def _build_github_context() -> PullRequestContext:
+    return PullRequestContext(
         platform=CIPlatform.GITHUB_ACTIONS,
-        pr_number=_resolve_github_pr_number(),
+        pull_request_number=_resolve_github_pull_request_number(),
         repository=fetch_environment_variable(_ENV_GITHUB_REPOSITORY),
         sha=fetch_environment_variable(_ENV_GITHUB_SHA),
         branch=fetch_environment_variable(_ENV_GITHUB_REF),
@@ -185,10 +185,10 @@ def _build_github_context() -> PRContext:
     )
 
 
-def _build_gitlab_context() -> PRContext:
-    return PRContext(
+def _build_gitlab_context() -> PullRequestContext:
+    return PullRequestContext(
         platform=CIPlatform.GITLAB_CI,
-        pr_number=fetch_environment_variable(_ENV_CI_MERGE_REQUEST_IID),
+        pull_request_number=fetch_environment_variable(_ENV_CI_MERGE_REQUEST_IID),
         repository=fetch_environment_variable(_ENV_CI_PROJECT_ID),
         sha=fetch_environment_variable(_ENV_CI_COMMIT_SHA),
         branch=fetch_environment_variable(_ENV_CI_COMMIT_REF_NAME),
@@ -207,12 +207,12 @@ def _normalise_collection_url(collection_url: str) -> str:
     return collection_url
 
 
-def _build_azure_context() -> PRContext:
+def _build_azure_context() -> PullRequestContext:
     raw_collection_url = fetch_environment_variable(_ENV_SYSTEM_TEAMFOUNDATIONCOLLECTIONURI) or ""
     collection_uri = _normalise_collection_url(raw_collection_url)
-    return PRContext(
+    return PullRequestContext(
         platform=CIPlatform.AZURE_DEVOPS,
-        pr_number=fetch_environment_variable(_ENV_SYSTEM_PULLREQUEST_PULLREQUESTID),
+        pull_request_number=fetch_environment_variable(_ENV_SYSTEM_PULLREQUEST_PULLREQUESTID),
         repository=fetch_environment_variable(_ENV_BUILD_REPOSITORY_ID),
         sha=fetch_environment_variable(_ENV_BUILD_SOURCEVERSION),
         branch=None,
@@ -225,34 +225,34 @@ def _build_azure_context() -> PRContext:
     )
 
 
-def _extract_pr_number_from_url(pr_url: str) -> str | None:
-    if not pr_url:
+def _extract_pull_request_number_from_url(pull_request_url: str) -> str | None:
+    if not pull_request_url:
         return None
-    url_segments = pr_url.rstrip("/").split("/")
+    url_segments = pull_request_url.rstrip("/").split("/")
     if not url_segments:
         return None
     last_url_segment = url_segments[-1]
     return last_url_segment if last_url_segment.isdigit() else None
 
 
-def _build_circleci_context() -> PRContext:
-    circle_pr_url = fetch_environment_variable(_ENV_CIRCLE_PULL_REQUEST) or ""
-    pr_number = _extract_pr_number_from_url(circle_pr_url)
-    return PRContext(
+def _build_circleci_context() -> PullRequestContext:
+    circle_pull_request_url = fetch_environment_variable(_ENV_CIRCLE_PULL_REQUEST) or ""
+    pull_request_number = _extract_pull_request_number_from_url(circle_pull_request_url)
+    return PullRequestContext(
         platform=CIPlatform.CIRCLECI,
-        pr_number=pr_number,
+        pull_request_number=pull_request_number,
         repository=None,
         sha=fetch_environment_variable(_ENV_CIRCLE_SHA1),
         branch=fetch_environment_variable(_ENV_CIRCLE_BRANCH),
         base_branch=None,
-        extras={"circle_pull_request_url": circle_pr_url},
+        extras={"circle_pull_request_url": circle_pull_request_url},
     )
 
 
-def _build_bitbucket_context() -> PRContext:
-    return PRContext(
+def _build_bitbucket_context() -> PullRequestContext:
+    return PullRequestContext(
         platform=CIPlatform.BITBUCKET,
-        pr_number=fetch_environment_variable(_ENV_BITBUCKET_PR_ID),
+        pull_request_number=fetch_environment_variable(_ENV_BITBUCKET_PR_ID),
         repository=fetch_environment_variable(_ENV_BITBUCKET_REPO_SLUG),
         sha=fetch_environment_variable(_ENV_BITBUCKET_COMMIT),
         branch=None,
@@ -263,18 +263,18 @@ def _build_bitbucket_context() -> PRContext:
     )
 
 
-def _extract_codebuild_pr_number(webhook_trigger: str) -> str | None:
+def _extract_codebuild_pull_request_number(webhook_trigger: str) -> str | None:
     if not webhook_trigger.startswith(_CODEBUILD_PR_TRIGGER_PREFIX):
         return None
     return webhook_trigger.removeprefix(_CODEBUILD_PR_TRIGGER_PREFIX) or None
 
 
-def _build_codebuild_context() -> PRContext:
+def _build_codebuild_context() -> PullRequestContext:
     webhook_trigger = fetch_environment_variable(_ENV_CODEBUILD_WEBHOOK_TRIGGER) or ""
-    pr_number = _extract_codebuild_pr_number(webhook_trigger)
-    return PRContext(
+    pull_request_number = _extract_codebuild_pull_request_number(webhook_trigger)
+    return PullRequestContext(
         platform=CIPlatform.CODEBUILD,
-        pr_number=pr_number,
+        pull_request_number=pull_request_number,
         repository=None,
         sha=fetch_environment_variable(_ENV_CODEBUILD_SOURCE_VERSION),
         branch=None,
@@ -282,10 +282,10 @@ def _build_codebuild_context() -> PRContext:
     )
 
 
-def _build_jenkins_context() -> PRContext:
-    return PRContext(
+def _build_jenkins_context() -> PullRequestContext:
+    return PullRequestContext(
         platform=CIPlatform.JENKINS,
-        pr_number=fetch_environment_variable(_ENV_CHANGE_ID),
+        pull_request_number=fetch_environment_variable(_ENV_CHANGE_ID),
         repository=None,
         sha=None,
         branch=None,
@@ -294,10 +294,10 @@ def _build_jenkins_context() -> PRContext:
     )
 
 
-def _build_unknown_context() -> PRContext:
-    return PRContext(
+def _build_unknown_context() -> PullRequestContext:
+    return PullRequestContext(
         platform=CIPlatform.UNKNOWN,
-        pr_number=None,
+        pull_request_number=None,
         repository=None,
         sha=None,
         branch=None,
@@ -305,7 +305,7 @@ def _build_unknown_context() -> PRContext:
     )
 
 
-_PLATFORM_CONTEXT_BUILDERS: dict[CIPlatform, Callable[[], PRContext]] = {
+_PLATFORM_CONTEXT_BUILDERS: dict[CIPlatform, Callable[[], PullRequestContext]] = {
     CIPlatform.GITHUB_ACTIONS: _build_github_context,
     CIPlatform.GITLAB_CI: _build_gitlab_context,
     CIPlatform.AZURE_DEVOPS: _build_azure_context,
@@ -317,8 +317,8 @@ _PLATFORM_CONTEXT_BUILDERS: dict[CIPlatform, Callable[[], PRContext]] = {
 }
 
 
-def get_pr_context() -> PRContext:
-    """Build a ``PRContext`` from the current environment.
+def get_pull_request_context() -> PullRequestContext:
+    """Build a ``PullRequestContext`` from the current environment.
 
     Reads platform-specific environment variables to extract the PR number,
     repository, commit SHA, and branch.

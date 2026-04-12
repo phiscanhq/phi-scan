@@ -34,6 +34,8 @@ __all__ = [
 ]
 
 _HTTP_TIMEOUT_SECONDS: float = 15.0
+_HTTP_STATUS_ERROR_TEMPLATE: str = "{operation} failed (HTTP {status_code})"
+_NETWORK_ERROR_TEMPLATE: str = "{operation} request failed (network error)"
 
 
 class HttpMethod(enum.StrEnum):
@@ -117,10 +119,13 @@ def execute_http_request(request_config: HttpRequestConfig) -> httpx.Response:
         response.raise_for_status()
     except httpx.HTTPStatusError as status_error:
         raise CIIntegrationError(
-            f"{request_config.operation_label} failed (HTTP {status_error.response.status_code})"
+            _HTTP_STATUS_ERROR_TEMPLATE.format(
+                operation=request_config.operation_label,
+                status_code=status_error.response.status_code,
+            )
         ) from status_error
     except httpx.RequestError as request_error:
         raise CIIntegrationError(
-            f"{request_config.operation_label} request failed (network error)"
+            _NETWORK_ERROR_TEMPLATE.format(operation=request_config.operation_label)
         ) from request_error
     return response

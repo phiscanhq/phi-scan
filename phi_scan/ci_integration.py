@@ -45,8 +45,10 @@ from phi_scan.ci import (  # noqa: F401 — backward-compatible re-exports
     GitLabAdapter,
     JenkinsAdapter,
     PRContext,
+    PullRequestContext,
     detect_platform,
     get_pr_context,
+    get_pull_request_context,
     resolve_adapter,
 )
 from phi_scan.ci._base import SanitisedCommentBody
@@ -77,6 +79,7 @@ __all__ = [
     "JenkinsAdapter",
     "OperationLabel",
     "PRContext",
+    "PullRequestContext",
     "SanitisedCommentBody",
     "build_comment_body",
     "build_comment_body_with_baseline",
@@ -85,9 +88,11 @@ __all__ = [
     "detect_platform",
     "execute_http_request",
     "get_pr_context",
+    "get_pull_request_context",
     "import_findings_to_security_hub",
     "post_bitbucket_code_insights",
     "post_pr_comment",
+    "post_pull_request_comment",
     "resolve_adapter",
     "set_azure_build_tag",
     "set_azure_pr_status",
@@ -344,7 +349,7 @@ def post_pr_comment(scan_result: ScanResult, pr_context: PRContext) -> None:
     Does nothing and logs a warning when the platform is ``UNKNOWN`` or when
     required context (PR number, token) is missing.
     """
-    if not pr_context.pr_number:
+    if not pr_context.pull_request_number:
         _LOG.debug("No PR number in context — skipping comment posting")
         return
 
@@ -358,7 +363,10 @@ def post_pr_comment(scan_result: ScanResult, pr_context: PRContext) -> None:
         return
 
     comment_body = build_comment_body(scan_result)
-    adapter.post_pr_comment(comment_body, pr_context)
+    adapter.post_pull_request_comment(comment_body, pr_context)
+
+
+post_pull_request_comment = post_pr_comment
 
 
 # ---------------------------------------------------------------------------
@@ -619,7 +627,7 @@ def set_azure_build_tag(scan_result: ScanResult, pr_context: PRContext) -> None:
 
 def set_azure_pr_status(scan_result: ScanResult, pr_context: PRContext) -> None:
     """Set an Azure DevOps PR status to block or allow completion via branch policy."""
-    pr_id = pr_context.pr_number
+    pr_id = pr_context.pull_request_number
     repo_id = pr_context.repository
     collection_uri = pr_context.extras.get("collection_uri", "")
     team_project = pr_context.extras.get("team_project", "")
@@ -687,7 +695,7 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
 
     collection_uri = pr_context.extras.get("collection_uri", "")
     team_project = pr_context.extras.get("team_project", "")
-    pr_id = pr_context.pr_number or "unknown"
+    pr_id = pr_context.pull_request_number or "unknown"
 
     if not all((collection_uri, team_project)):
         _LOG.debug("Azure Boards: missing context — skipping work item")

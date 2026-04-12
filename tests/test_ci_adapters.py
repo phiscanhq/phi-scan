@@ -9,7 +9,7 @@ Covers:
   - Meta-platform delegation (Jenkins, CircleCI, CodeBuild)
   - Transport error wrapping
   - Platform detection from env vars
-  - PRContext builders
+  - PullRequestContext builders
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ from phi_scan.ci import (
     GitHubAdapter,
     GitLabAdapter,
     JenkinsAdapter,
-    PRContext,
+    PullRequestContext,
     detect_platform,
-    get_pr_context,
+    get_pull_request_context,
     resolve_adapter,
 )
 from phi_scan.ci._transport import (
@@ -125,16 +125,16 @@ def test_gitlab_default_capabilities_are_false() -> None:
 def test_upload_sarif_report_raises_ci_integration_error() -> None:
     adapter = GitLabAdapter()
     scan_result_mock = MagicMock()
-    pr_context = PRContext(
+    pull_request_context = PullRequestContext(
         platform=CIPlatform.GITLAB_CI,
-        pr_number="1",
+        pull_request_number="1",
         repository="123",
         sha="abc",
         branch="main",
         base_branch=None,
     )
     with pytest.raises(CIIntegrationError, match="GitLabAdapter.*SARIF upload"):
-        adapter.upload_sarif_report(scan_result_mock, pr_context)
+        adapter.upload_sarif_report(scan_result_mock, pull_request_context)
 
 
 # ---------------------------------------------------------------------------
@@ -144,9 +144,11 @@ def test_upload_sarif_report_raises_ci_integration_error() -> None:
 _BACKWARD_COMPAT_NAMES: list[str] = [
     "CIPlatform",
     "PRContext",
+    "PullRequestContext",
     "CIIntegrationError",
     "detect_platform",
     "get_pr_context",
+    "get_pull_request_context",
     "BaseCIAdapter",
     "GitHubAdapter",
     "GitLabAdapter",
@@ -276,7 +278,7 @@ def test_detect_platform(env_vars: dict[str, str], expected_platform: CIPlatform
 
 
 # ---------------------------------------------------------------------------
-# PRContext builders
+# PullRequestContext builders
 # ---------------------------------------------------------------------------
 
 
@@ -289,9 +291,9 @@ def test_get_pr_context_github() -> None:
         "PR_NUMBER": "42",
     }
     with patch.dict("os.environ", env, clear=True):
-        context = get_pr_context()
+        context = get_pull_request_context()
     assert context.platform == CIPlatform.GITHUB_ACTIONS
-    assert context.pr_number == "42"
+    assert context.pull_request_number == "42"
     assert context.repository == "owner/repo"
     assert context.sha == "abc123"
 
@@ -304,8 +306,8 @@ def test_get_pr_context_github_extracts_pr_from_ref() -> None:
         "GITHUB_REF": "refs/pull/99/merge",
     }
     with patch.dict("os.environ", env, clear=True):
-        context = get_pr_context()
-    assert context.pr_number == "99"
+        context = get_pull_request_context()
+    assert context.pull_request_number == "99"
 
 
 def test_get_pr_context_gitlab() -> None:
@@ -318,17 +320,17 @@ def test_get_pr_context_gitlab() -> None:
         "CI_SERVER_URL": "https://gitlab.example.com",
     }
     with patch.dict("os.environ", env, clear=True):
-        context = get_pr_context()
+        context = get_pull_request_context()
     assert context.platform == CIPlatform.GITLAB_CI
-    assert context.pr_number == "7"
+    assert context.pull_request_number == "7"
     assert context.extras["ci_server_url"] == "https://gitlab.example.com"
 
 
 def test_get_pr_context_unknown() -> None:
     with patch.dict("os.environ", {}, clear=True):
-        context = get_pr_context()
+        context = get_pull_request_context()
     assert context.platform == CIPlatform.UNKNOWN
-    assert context.pr_number is None
+    assert context.pull_request_number is None
 
 
 # ---------------------------------------------------------------------------
@@ -337,17 +339,17 @@ def test_get_pr_context_unknown() -> None:
 
 
 def test_jenkins_delegates_to_github(monkeypatch: pytest.MonkeyPatch) -> None:
-    pr_context = PRContext(
+    pull_request_context = PullRequestContext(
         platform=CIPlatform.JENKINS,
-        pr_number="10",
+        pull_request_number="10",
         repository=None,
         sha=None,
         branch=None,
         base_branch=None,
         extras={"change_url": "https://github.com/owner/repo/pull/10"},
     )
-    with patch.object(GitHubAdapter, "post_pr_comment") as mock_gh:
-        JenkinsAdapter().post_pr_comment("test body", pr_context)
+    with patch.object(GitHubAdapter, "post_pull_request_comment") as mock_gh:
+        JenkinsAdapter().post_pull_request_comment("test body", pull_request_context)
         mock_gh.assert_called_once()
         delegated_context = mock_gh.call_args[0][1]
         assert delegated_context.platform == CIPlatform.GITHUB_ACTIONS
@@ -355,24 +357,24 @@ def test_jenkins_delegates_to_github(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_jenkins_delegates_to_gitlab() -> None:
-    pr_context = PRContext(
+    pull_request_context = PullRequestContext(
         platform=CIPlatform.JENKINS,
-        pr_number="5",
+        pull_request_number="5",
         repository=None,
         sha=None,
         branch=None,
         base_branch=None,
         extras={"change_url": "https://gitlab.example.com/group/project/-/merge_requests/5"},
     )
-    with patch.object(GitLabAdapter, "post_pr_comment") as mock_gl:
-        JenkinsAdapter().post_pr_comment("test body", pr_context)
+    with patch.object(GitLabAdapter, "post_pull_request_comment") as mock_gl:
+        JenkinsAdapter().post_pull_request_comment("test body", pull_request_context)
         mock_gl.assert_called_once()
 
 
 def test_jenkins_skips_when_no_change_url() -> None:
-    pr_context = PRContext(
+    pull_request_context = PullRequestContext(
         platform=CIPlatform.JENKINS,
-        pr_number="5",
+        pull_request_number="5",
         repository=None,
         sha=None,
         branch=None,
@@ -380,67 +382,67 @@ def test_jenkins_skips_when_no_change_url() -> None:
         extras={},
     )
     with (
-        patch.object(GitHubAdapter, "post_pr_comment") as mock_gh,
-        patch.object(GitLabAdapter, "post_pr_comment") as mock_gl,
+        patch.object(GitHubAdapter, "post_pull_request_comment") as mock_gh,
+        patch.object(GitLabAdapter, "post_pull_request_comment") as mock_gl,
     ):
-        JenkinsAdapter().post_pr_comment("test body", pr_context)
+        JenkinsAdapter().post_pull_request_comment("test body", pull_request_context)
         mock_gh.assert_not_called()
         mock_gl.assert_not_called()
 
 
 def test_circleci_delegates_to_github() -> None:
-    pr_context = PRContext(
+    pull_request_context = PullRequestContext(
         platform=CIPlatform.CIRCLECI,
-        pr_number="20",
+        pull_request_number="20",
         repository=None,
         sha="abc",
         branch="feature",
         base_branch=None,
         extras={"circle_pull_request_url": "https://github.com/owner/repo/pull/20"},
     )
-    with patch.object(GitHubAdapter, "post_pr_comment") as mock_gh:
-        CircleCIAdapter().post_pr_comment("test body", pr_context)
+    with patch.object(GitHubAdapter, "post_pull_request_comment") as mock_gh:
+        CircleCIAdapter().post_pull_request_comment("test body", pull_request_context)
         mock_gh.assert_called_once()
         delegated_context = mock_gh.call_args[0][1]
         assert delegated_context.repository == "owner/repo"
 
 
 def test_circleci_delegates_to_bitbucket() -> None:
-    pr_context = PRContext(
+    pull_request_context = PullRequestContext(
         platform=CIPlatform.CIRCLECI,
-        pr_number="15",
+        pull_request_number="15",
         repository=None,
         sha="abc",
         branch="feature",
         base_branch=None,
         extras={"circle_pull_request_url": "https://bitbucket.org/workspace/repo/pull-requests/15"},
     )
-    with patch.object(BitbucketAdapter, "post_pr_comment") as mock_bb:
-        CircleCIAdapter().post_pr_comment("test body", pr_context)
+    with patch.object(BitbucketAdapter, "post_pull_request_comment") as mock_bb:
+        CircleCIAdapter().post_pull_request_comment("test body", pull_request_context)
         mock_bb.assert_called_once()
 
 
 def test_codebuild_delegates_to_github() -> None:
-    pr_context = PRContext(
+    pull_request_context = PullRequestContext(
         platform=CIPlatform.CODEBUILD,
-        pr_number="30",
+        pull_request_number="30",
         repository=None,
         sha="abc",
         branch=None,
         base_branch=None,
     )
     with patch.dict("os.environ", {"CODEBUILD_SOURCE_REPO_URL": "https://github.com/owner/repo"}):
-        with patch.object(GitHubAdapter, "post_pr_comment") as mock_gh:
-            CodeBuildAdapter().post_pr_comment("test body", pr_context)
+        with patch.object(GitHubAdapter, "post_pull_request_comment") as mock_gh:
+            CodeBuildAdapter().post_pull_request_comment("test body", pull_request_context)
             mock_gh.assert_called_once()
             delegated_context = mock_gh.call_args[0][1]
             assert delegated_context.repository == "owner/repo"
 
 
 def test_codebuild_delegates_to_bitbucket() -> None:
-    pr_context = PRContext(
+    pull_request_context = PullRequestContext(
         platform=CIPlatform.CODEBUILD,
-        pr_number="30",
+        pull_request_number="30",
         repository=None,
         sha="abc",
         branch=None,
@@ -449,27 +451,27 @@ def test_codebuild_delegates_to_bitbucket() -> None:
     with patch.dict(
         "os.environ", {"CODEBUILD_SOURCE_REPO_URL": "https://bitbucket.org/workspace/repo"}
     ):
-        with patch.object(BitbucketAdapter, "post_pr_comment") as mock_bb:
-            CodeBuildAdapter().post_pr_comment("test body", pr_context)
+        with patch.object(BitbucketAdapter, "post_pull_request_comment") as mock_bb:
+            CodeBuildAdapter().post_pull_request_comment("test body", pull_request_context)
             mock_bb.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
-# PRContext is frozen
+# PullRequestContext is frozen
 # ---------------------------------------------------------------------------
 
 
 def test_pr_context_is_frozen() -> None:
-    context = PRContext(
+    context = PullRequestContext(
         platform=CIPlatform.UNKNOWN,
-        pr_number=None,
+        pull_request_number=None,
         repository=None,
         sha=None,
         branch=None,
         base_branch=None,
     )
     with pytest.raises(AttributeError):
-        context.pr_number = "999"  # type: ignore[misc]
+        context.pull_request_number = "999"  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------

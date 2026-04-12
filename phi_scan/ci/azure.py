@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from phi_scan.ci._base import BaseCIAdapter, SanitisedCommentBody, UnsupportedOperation
-from phi_scan.ci._detect import PRContext
+from phi_scan.ci._detect import PullRequestContext
 from phi_scan.ci._env import fetch_environment_variable
 from phi_scan.ci._transport import (
     HttpMethod,
@@ -29,7 +29,7 @@ _ENV_SYSTEM_ACCESSTOKEN: str = "SYSTEM_ACCESSTOKEN"
 _AZURE_API_VERSION: str = "7.1"
 _AZURE_PR_THREADS_PATH: str = (
     "{collection_uri}{team_project}/_apis/git/repositories/{repo_id}"
-    "/pullRequests/{pr_id}/threads?api-version={api_version}"
+    "/pullRequests/{pull_request_identifier}/threads?api-version={api_version}"
 )
 
 _AZURE_COMMENT_PARENT_ID_ROOT: int = 0
@@ -47,12 +47,12 @@ class _AzureThreadStatus(enum.StrEnum):
     ACTIVE = "active"
 
 
-def _build_pr_threads_url(pr_context: PRContext) -> str:
+def _build_pr_threads_url(pull_request_context: PullRequestContext) -> str:
     return _AZURE_PR_THREADS_PATH.format(
-        collection_uri=pr_context.extras.get("collection_uri", ""),
-        team_project=pr_context.extras.get("team_project", ""),
-        repo_id=pr_context.repository,
-        pr_id=pr_context.pr_number,
+        collection_uri=pull_request_context.extras.get("collection_uri", ""),
+        team_project=pull_request_context.extras.get("team_project", ""),
+        repo_id=pull_request_context.repository,
+        pull_request_identifier=pull_request_context.pull_request_number,
         api_version=_AZURE_API_VERSION,
     )
 
@@ -81,13 +81,15 @@ class AzureAdapter(BaseCIAdapter):
     def can_create_work_item_from_findings(self) -> bool:
         return True
 
-    def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:
-        pr_id = pr_context.pr_number
-        repo_id = pr_context.repository
-        collection_uri = pr_context.extras.get("collection_uri", "")
-        team_project = pr_context.extras.get("team_project", "")
+    def post_pull_request_comment(
+        self, comment_body: SanitisedCommentBody, pull_request_context: PullRequestContext
+    ) -> None:
+        pull_request_identifier = pull_request_context.pull_request_number
+        repo_id = pull_request_context.repository
+        collection_uri = pull_request_context.extras.get("collection_uri", "")
+        team_project = pull_request_context.extras.get("team_project", "")
 
-        if not pr_id or not repo_id:
+        if not pull_request_identifier or not repo_id:
             raise CIIntegrationError("Azure DevOps: missing PR ID or repository ID")
         if not collection_uri or not team_project:
             raise CIIntegrationError("Azure DevOps: missing collection URI or team project")
@@ -96,7 +98,7 @@ class AzureAdapter(BaseCIAdapter):
         if not system_access_token:
             raise CIIntegrationError("Azure DevOps: SYSTEM_ACCESSTOKEN not set")
 
-        url = _build_pr_threads_url(pr_context)
+        url = _build_pr_threads_url(pull_request_context)
         execute_http_request(
             HttpRequestConfig(
                 method=HttpMethod.POST,
@@ -106,7 +108,9 @@ class AzureAdapter(BaseCIAdapter):
                 basic_auth_credentials=("", system_access_token),
             )
         )
-        _LOG.debug("Azure DevOps: PR thread comment posted to PR #%s", pr_id)
+        _LOG.debug("Azure DevOps: PR thread comment posted to PR #%s", pull_request_identifier)
 
-    def set_commit_status(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+    def set_commit_status(
+        self, scan_result: ScanResult, pull_request_context: PullRequestContext
+    ) -> None:
         self._abort_unsupported_operation(UnsupportedOperation.COMMIT_STATUS)

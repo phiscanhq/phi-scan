@@ -11,7 +11,7 @@ import os
 import subprocess
 
 from phi_scan.ci._base import BaseCIAdapter, SanitisedCommentBody
-from phi_scan.ci._detect import PRContext
+from phi_scan.ci._detect import PullRequestContext
 from phi_scan.ci._env import fetch_environment_variable
 from phi_scan.ci._transport import (
     HttpMethod,
@@ -52,9 +52,11 @@ class GitHubAdapter(BaseCIAdapter):
     def can_upload_sarif_report(self) -> bool:
         return True
 
-    def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:
-        pr_number = pr_context.pr_number
-        if not pr_number:
+    def post_pull_request_comment(
+        self, comment_body: SanitisedCommentBody, pull_request_context: PullRequestContext
+    ) -> None:
+        pull_request_number = pull_request_context.pull_request_number
+        if not pull_request_number:
             _LOG.warning("GitHub: no PR number — skipping comment")
             return
 
@@ -64,12 +66,20 @@ class GitHubAdapter(BaseCIAdapter):
             return
 
         env = {**os.environ, "GITHUB_TOKEN": github_token}
-        if pr_context.repository:
-            env["GH_REPO"] = pr_context.repository
+        if pull_request_context.repository:
+            env["GH_REPO"] = pull_request_context.repository
 
         try:
             gh_result = subprocess.run(
-                ["gh", "pr", "comment", str(pr_number), "--body", comment_body, "--edit-last"],
+                [
+                    "gh",
+                    "pr",
+                    "comment",
+                    str(pull_request_number),
+                    "--body",
+                    comment_body,
+                    "--edit-last",
+                ],
                 capture_output=True,
                 text=True,
                 env=env,
@@ -77,7 +87,7 @@ class GitHubAdapter(BaseCIAdapter):
             )
             if gh_result.returncode != 0:
                 gh_result = subprocess.run(
-                    ["gh", "pr", "comment", str(pr_number), "--body", comment_body],
+                    ["gh", "pr", "comment", str(pull_request_number), "--body", comment_body],
                     capture_output=True,
                     text=True,
                     env=env,
@@ -93,11 +103,13 @@ class GitHubAdapter(BaseCIAdapter):
                 "gh CLI not found — install the GitHub CLI to enable PR comment posting"
             ) from not_found_error
 
-        _LOG.debug("GitHub: PR comment posted to #%s", pr_number)
+        _LOG.debug("GitHub: PR comment posted to #%s", pull_request_number)
 
-    def set_commit_status(self, scan_result: ScanResult, pr_context: PRContext) -> None:
-        sha = pr_context.sha
-        repository = pr_context.repository
+    def set_commit_status(
+        self, scan_result: ScanResult, pull_request_context: PullRequestContext
+    ) -> None:
+        sha = pull_request_context.sha
+        repository = pull_request_context.repository
         if not sha or not repository:
             _LOG.warning("GitHub: missing SHA or repository — skipping status")
             return

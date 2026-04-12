@@ -8,9 +8,9 @@ Public API — all names below are importable from ``phi_scan.ci``:
     from phi_scan.ci import (
         BaseCIAdapter,
         CIPlatform,
-        PRContext,
+        PullRequestContext,
         detect_platform,
-        get_pr_context,
+        get_pull_request_context,
         resolve_adapter,
     )
 """
@@ -18,7 +18,12 @@ Public API — all names below are importable from ``phi_scan.ci``:
 from __future__ import annotations
 
 from phi_scan.ci._base import BaseCIAdapter, SanitisedCommentBody
-from phi_scan.ci._detect import CIPlatform, PRContext, detect_platform, get_pr_context
+from phi_scan.ci._detect import (
+    CIPlatform,
+    PullRequestContext,
+    detect_platform,
+    get_pull_request_context,
+)
 from phi_scan.ci.azure import AzureAdapter
 from phi_scan.ci.bitbucket import BitbucketAdapter
 from phi_scan.ci.circleci import CircleCIAdapter
@@ -27,6 +32,9 @@ from phi_scan.ci.github import GitHubAdapter
 from phi_scan.ci.gitlab import GitLabAdapter
 from phi_scan.ci.jenkins import JenkinsAdapter
 from phi_scan.exceptions import CIIntegrationError
+
+PRContext = PullRequestContext
+get_pr_context = get_pull_request_context
 
 _PLATFORM_ADAPTERS: dict[CIPlatform, type[BaseCIAdapter]] = {
     CIPlatform.GITHUB_ACTIONS: GitHubAdapter,
@@ -65,8 +73,10 @@ __all__ = [
     "GitLabAdapter",
     "JenkinsAdapter",
     "PRContext",
+    "PullRequestContext",
     "SanitisedCommentBody",
     "detect_platform",
     "get_pr_context",
+    "get_pull_request_context",
     "resolve_adapter",
 ]

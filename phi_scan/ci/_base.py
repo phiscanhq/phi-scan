@@ -1,7 +1,7 @@
 """Base adapter class for CI/CD platform integrations.
 
 All per-platform adapters inherit from ``BaseCIAdapter`` and implement
-the two core methods: ``post_pr_comment`` and ``set_commit_status``.
+the two core methods: ``post_pull_request_comment`` and ``set_commit_status``.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import enum
 from abc import ABC, abstractmethod
 from typing import NewType, NoReturn
 
-from phi_scan.ci._detect import PRContext
+from phi_scan.ci._detect import PullRequestContext
 from phi_scan.exceptions import CIIntegrationError
 from phi_scan.models import ScanResult
 
@@ -52,7 +52,9 @@ class BaseCIAdapter(ABC):
     """
 
     @abstractmethod
-    def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:
+    def post_pull_request_comment(
+        self, comment_body: SanitisedCommentBody, pull_request_context: PullRequestContext
+    ) -> None:
         """Post a comment on the PR/MR associated with this build.
 
         ``comment_body`` is typed as ``SanitisedCommentBody`` to enforce
@@ -62,19 +64,21 @@ class BaseCIAdapter(ABC):
 
         Args:
             comment_body: Pre-sanitised Markdown comment text.
-            pr_context: Platform context extracted from environment variables.
+            pull_request_context: Platform context extracted from environment variables.
 
         Raises:
             CIIntegrationError: On any HTTP or auth failure.
         """
 
     @abstractmethod
-    def set_commit_status(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+    def set_commit_status(
+        self, scan_result: ScanResult, pull_request_context: PullRequestContext
+    ) -> None:
         """Report pass/fail status on the commit that triggered the build.
 
         Args:
             scan_result: The completed scan result.
-            pr_context: Platform context extracted from environment variables.
+            pull_request_context: Platform context extracted from environment variables.
 
         Raises:
             CIIntegrationError: On any HTTP or auth failure.
@@ -113,22 +117,26 @@ class BaseCIAdapter(ABC):
             )
         )
 
-    def upload_sarif_report(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+    def upload_sarif_report(
+        self, scan_result: ScanResult, pull_request_context: PullRequestContext
+    ) -> None:
         """Upload SARIF to the platform's code scanning API."""
         self._abort_unsupported_operation(UnsupportedOperation.SARIF_UPLOAD)
 
-    def annotate_code_findings(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+    def annotate_code_findings(
+        self, scan_result: ScanResult, pull_request_context: PullRequestContext
+    ) -> None:
         """Post inline code annotations to the platform."""
         self._abort_unsupported_operation(UnsupportedOperation.CODE_ANNOTATIONS)
 
     def create_work_item_from_findings(
-        self, scan_result: ScanResult, pr_context: PRContext
+        self, scan_result: ScanResult, pull_request_context: PullRequestContext
     ) -> None:
         """Create a work item or ticket from scan findings."""
         self._abort_unsupported_operation(UnsupportedOperation.WORK_ITEM_CREATION)
 
     def import_findings_to_security_hub(
-        self, scan_result: ScanResult, pr_context: PRContext
+        self, scan_result: ScanResult, pull_request_context: PullRequestContext
     ) -> None:
         """Import findings into AWS Security Hub."""
         self._abort_unsupported_operation(UnsupportedOperation.SECURITY_HUB_IMPORT)
