@@ -4,7 +4,7 @@ Tracks progress toward 10/10 public-repo quality across four categories.
 Each check has a binary pass/fail state. All checks must pass before the repo
 is declared production-ready for v1.0.
 
-**Last updated:** 2026-04-11
+**Last updated:** 2026-04-15
 
 ---
 
@@ -110,7 +110,7 @@ is declared production-ready for v1.0.
 | 2026-04-12 | 9/9 | 5/11 | 1/8 | 3/7 | T8/T9 shipped: synthetic small/medium/large corpora and per-size runtime + throughput thresholds enforced in the Linux pytest job. Technical Maturity category now at 100%. |
 | 2026-04-13 | 9/9 | 8/11 | 1/8 | 3/7 | S5/S7/S8 shipped: 50 adversarial SSRF tests (IPv4-mapped IPv6, unspecified, multicast, mixed-resolution, DNS rebind TOCTOU), full-surface threat model at `docs/threat-model.md`, notifier SSRF fix (unmap IPv4-mapped IPv6 + built-in-property checks). Security category now at 73%. |
 | 2026-04-14 | 9/9 | 11/11 | 1/8 | 3/7 | S9/S10/S11 shipped: pip-audit CI gate with policy-enforced `.pip-audit-ignore.toml`, release-time CycloneDX SBOM via `.github/scripts/sbom_generator.py`, keyless Sigstore signing of wheel+sdist. Baseline CVEs cleared via direct pin bumps (cryptography 46.0.7, pygments 2.20.0). Full supply-chain policy at `docs/supply-chain.md`. Security category at 100%; overall 69%. |
-| 2026-04-11 | 9/9 | 11/11 | 6/8 | 3/7 | A1–A5 shipped: Plugin API v1 core (`BaseRecognizer` ABC, `ScanContext`/`ScanFinding` dataclasses, `PLUGIN_API_VERSION`) in PR #124. `phi-scan plugins list` command with Rich table and `--json` output in PR #125. Plugin compatibility and deprecation policy at `docs/plugin-api-v1.md`. Architecture category at 75%; overall 83%. |
+| 2026-04-15 | 9/9 | 11/11 | 6/8 | 3/7 | A1–A5 shipped: Plugin API v1 core (`BaseRecognizer` ABC, `ScanContext`/`ScanFinding` dataclasses, `PLUGIN_API_VERSION`) in PR #124. `phi-scan plugins list` command with Rich table and `--json` output in PR #125. Plugin compatibility and deprecation policy at `docs/plugin-api-v1.md`. Architecture category at 75%; overall 83%. |
 
 ---
 

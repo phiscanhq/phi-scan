@@ -224,31 +224,39 @@ Plugin authors MUST NOT:
 ```python
 from phi_scan import BaseRecognizer, ScanContext, ScanFinding
 
+# A real plugin should define all literals as module-level constants.
+# This example inlines values for brevity.
+
+ENTITY_TYPE_INTERNAL_ID: str = "INTERNAL_ID"
+MARKER_PREFIX: str = "PATIENT-"
+SUFFIX_LENGTH: int = 6  # digits after the PATIENT- prefix
+MATCH_CONFIDENCE: float = 0.9
+PYTHON_EXTENSION: str = ".py"
+
+
 class InternalIdRecognizer(BaseRecognizer):
     name = "internal_id"
-    entity_types = ["INTERNAL_ID"]
+    entity_types = [ENTITY_TYPE_INTERNAL_ID]
     plugin_api_version = "1.0"
     version = "0.1.0"
     description = "Detects internal patient identifiers."
 
     def detect(self, line: str, context: ScanContext) -> list[ScanFinding]:
-        # Skip non-Python files
-        if context.file_extension != ".py":
+        if context.file_extension != PYTHON_EXTENSION:
             return []
 
-        marker = "PATIENT-"
         findings: list[ScanFinding] = []
         search_start = 0
         while True:
-            position = line.find(marker, search_start)
+            position = line.find(MARKER_PREFIX, search_start)
             if position < 0:
                 break
             findings.append(
                 ScanFinding(
-                    entity_type="INTERNAL_ID",
+                    entity_type=ENTITY_TYPE_INTERNAL_ID,
                     start_offset=position,
-                    end_offset=position + len(marker) + 6,
-                    confidence=0.9,
+                    end_offset=position + len(MARKER_PREFIX) + SUFFIX_LENGTH,
+                    confidence=MATCH_CONFIDENCE,
                 )
             )
             search_start = position + 1
