@@ -50,9 +50,11 @@ class JenkinsAdapter(BaseCIAdapter):
 
 
 def _build_github_context_from_jenkins(change_url: str, pr_context: PRContext) -> PRContext:
-    parts = change_url.rstrip("/").split("/")
+    url_segments = change_url.rstrip("/").split("/")
     repository = (
-        f"{parts[-4]}/{parts[-3]}" if len(parts) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION else None
+        f"{url_segments[-4]}/{url_segments[-3]}"
+        if len(url_segments) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION
+        else None
     )
     return PRContext(
         platform=CIPlatform.GITHUB_ACTIONS,

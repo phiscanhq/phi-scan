@@ -197,15 +197,15 @@ def _build_gitlab_context() -> PRContext:
     )
 
 
-def _normalize_trailing_slash(uri: str) -> str:
+def _append_trailing_slash(uri: str) -> str:
     if uri and not uri.endswith("/"):
         return uri + "/"
     return uri
 
 
 def _build_azure_context() -> PRContext:
-    raw_uri = read_env_variable(_ENV_SYSTEM_TEAMFOUNDATIONCOLLECTIONURI) or ""
-    collection_uri = _normalize_trailing_slash(raw_uri)
+    unformatted_uri = read_env_variable(_ENV_SYSTEM_TEAMFOUNDATIONCOLLECTIONURI) or ""
+    collection_uri = _append_trailing_slash(unformatted_uri)
     return PRContext(
         platform=CIPlatform.AZURE_DEVOPS,
         pr_number=read_env_variable(_ENV_SYSTEM_PULLREQUEST_PULLREQUESTID),
@@ -225,9 +225,9 @@ def _build_circleci_context() -> PRContext:
     pr_url = read_env_variable(_ENV_CIRCLE_PULL_REQUEST) or ""
     pr_number: str | None = None
     if pr_url:
-        parts = pr_url.rstrip("/").split("/")
-        if parts:
-            candidate = parts[-1]
+        url_segments = pr_url.rstrip("/").split("/")
+        if url_segments:
+            candidate = url_segments[-1]
             if candidate.isdigit():
                 pr_number = candidate
     return PRContext(

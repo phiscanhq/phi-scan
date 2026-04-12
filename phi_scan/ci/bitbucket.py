@@ -31,6 +31,8 @@ _BITBUCKET_COMMENT_RAW_KEY: str = "raw"
 _COMMIT_STATUS_CONTEXT: str = "phi-scan"
 _COMMIT_STATUS_DESCRIPTION_CLEAN: str = "No PHI/PII violations found"
 _COMMIT_STATUS_DESCRIPTION_VIOLATIONS: str = "{count} PHI/PII violation(s) found"
+_BITBUCKET_STATUS_SUCCESSFUL: str = "SUCCESSFUL"
+_BITBUCKET_STATUS_FAILED: str = "FAILED"
 _SHA_LOG_PREFIX_LENGTH: int = 8
 
 
@@ -88,7 +90,7 @@ class BitbucketAdapter(BaseCIAdapter):
             _LOG.warning("Bitbucket: BITBUCKET_TOKEN not set — skipping commit status")
             return
 
-        state = "SUCCESSFUL" if scan_result.is_clean else "FAILED"
+        state = _BITBUCKET_STATUS_SUCCESSFUL if scan_result.is_clean else _BITBUCKET_STATUS_FAILED
         url = _BITBUCKET_API_BASE_URL + _BITBUCKET_COMMIT_STATUS_PATH.format(
             workspace=workspace,
             repo_slug=repo_slug,

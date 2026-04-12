@@ -24,6 +24,9 @@ _AZURE_PR_THREADS_PATH: str = (
 )
 
 _COMMIT_STATUS_CONTEXT: str = "phi-scan"
+_AZURE_COMMENT_PARENT_ID_ROOT: int = 0
+_AZURE_COMMENT_TYPE_TEXT: int = 1
+_AZURE_THREAD_STATUS_ACTIVE: str = "active"
 
 
 class AzureAdapter(BaseCIAdapter):
@@ -63,8 +66,14 @@ class AzureAdapter(BaseCIAdapter):
             api_version=_AZURE_API_VERSION,
         )
         payload = {
-            "comments": [{"parentCommentId": 0, "content": comment_body, "commentType": 1}],
-            "status": "active",
+            "comments": [
+                {
+                    "parentCommentId": _AZURE_COMMENT_PARENT_ID_ROOT,
+                    "content": comment_body,
+                    "commentType": _AZURE_COMMENT_TYPE_TEXT,
+                }
+            ],
+            "status": _AZURE_THREAD_STATUS_ACTIVE,
         }
 
         execute_http_request(

@@ -50,9 +50,11 @@ class CircleCIAdapter(BaseCIAdapter):
 
 
 def _build_github_context_from_circle(pr_url: str, pr_context: PRContext) -> PRContext:
-    parts = pr_url.rstrip("/").split("/")
+    url_segments = pr_url.rstrip("/").split("/")
     repository = (
-        f"{parts[-4]}/{parts[-3]}" if len(parts) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION else None
+        f"{url_segments[-4]}/{url_segments[-3]}"
+        if len(url_segments) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION
+        else None
     )
     return PRContext(
         platform=CIPlatform.GITHUB_ACTIONS,
@@ -65,10 +67,10 @@ def _build_github_context_from_circle(pr_url: str, pr_context: PRContext) -> PRC
 
 
 def _build_bitbucket_context_from_circle(pr_url: str, pr_context: PRContext) -> PRContext:
-    parts = pr_url.rstrip("/").split("/")
-    if len(parts) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION:
-        workspace = parts[-4]
-        repo_slug = parts[-3]
+    url_segments = pr_url.rstrip("/").split("/")
+    if len(url_segments) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION:
+        workspace = url_segments[-4]
+        repo_slug = url_segments[-3]
     else:
         workspace = repo_slug = ""
     return PRContext(

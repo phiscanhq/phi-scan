@@ -9,6 +9,9 @@ Security contract:
   - Response bodies are never included in error messages — API error
     responses for comment endpoints could echo back request content
     containing finding metadata.
+  - ``operation_label`` propagates into exception messages and logs.
+    Callers must use static string literals only — never interpolate
+    PR content, file paths, or finding metadata into the label.
 """
 
 from __future__ import annotations
@@ -43,6 +46,10 @@ class HttpRequestConfig:
 
     Bundles all variable parts of the request so that
     ``execute_http_request`` can centralise the try/except scaffolding.
+
+    ``operation_label`` appears in error messages and logs — use only
+    static string literals (e.g. ``"GitHub commit status"``), never
+    interpolated PR content, file paths, or finding metadata.
     """
 
     method: HttpMethod

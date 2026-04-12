@@ -50,9 +50,11 @@ class CodeBuildAdapter(BaseCIAdapter):
 
 
 def _build_github_context_from_codebuild(repo_url: str, pr_context: PRContext) -> PRContext:
-    parts = repo_url.rstrip("/").rstrip(".git").split("/")
+    url_segments = repo_url.rstrip("/").rstrip(".git").split("/")
     repository = (
-        f"{parts[-2]}/{parts[-1]}" if len(parts) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION else None
+        f"{url_segments[-2]}/{url_segments[-1]}"
+        if len(url_segments) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION
+        else None
     )
     return PRContext(
         platform=CIPlatform.GITHUB_ACTIONS,
@@ -65,9 +67,9 @@ def _build_github_context_from_codebuild(repo_url: str, pr_context: PRContext) -
 
 
 def _build_bitbucket_context_from_codebuild(repo_url: str, pr_context: PRContext) -> PRContext:
-    parts = repo_url.rstrip("/").rstrip(".git").split("/")
-    workspace = parts[-2] if len(parts) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION else ""
-    repo_slug = parts[-1] if parts else ""
+    url_segments = repo_url.rstrip("/").rstrip(".git").split("/")
+    workspace = url_segments[-2] if len(url_segments) >= _MIN_URL_PARTS_FOR_REPO_EXTRACTION else ""
+    repo_slug = url_segments[-1] if url_segments else ""
     return PRContext(
         platform=CIPlatform.BITBUCKET,
         pr_number=pr_context.pr_number,
