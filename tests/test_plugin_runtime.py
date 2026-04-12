@@ -32,6 +32,9 @@ _PLUGIN_SAMPLE_LINE: str = "employee_id = EMP-123456"
 _RATE_LIMIT_TEST_LINE_COUNT: int = 20
 _OFFSET_OVERRUN_EXTRA: int = 50
 _CONFIDENCE_THRESHOLD_ABOVE_ACME: float = 0.99
+_UNDECLARED_ENTITY_END_OFFSET: int = 5
+_TEST_RECOGNIZER_VERSION: str = "0.0.1"
+_TEST_RECOGNIZER_DESCRIPTION: str = "Test fixture recognizer."
 
 
 class _AcmeRecognizer(BaseRecognizer):
@@ -61,6 +64,8 @@ class _RaisingRecognizer(BaseRecognizer):
     name = "raising_recognizer"
     entity_types = ("RAISING_TEST",)
     plugin_api_version = "1.0"
+    version = _TEST_RECOGNIZER_VERSION
+    description = _TEST_RECOGNIZER_DESCRIPTION
 
     def detect(self, line: str, context: ScanContext) -> list[PluginScanFinding]:
         raise RuntimeError("simulated plugin failure")
@@ -70,6 +75,8 @@ class _OffsetOverrunRecognizer(BaseRecognizer):
     name = "offset_overrun"
     entity_types = ("OVERRUN_TEST",)
     plugin_api_version = "1.0"
+    version = _TEST_RECOGNIZER_VERSION
+    description = _TEST_RECOGNIZER_DESCRIPTION
 
     def detect(self, line: str, context: ScanContext) -> list[PluginScanFinding]:
         return [
@@ -86,13 +93,15 @@ class _UndeclaredEntityTypeRecognizer(BaseRecognizer):
     name = "undeclared_entity"
     entity_types = ("DECLARED_ONLY",)
     plugin_api_version = "1.0"
+    version = _TEST_RECOGNIZER_VERSION
+    description = _TEST_RECOGNIZER_DESCRIPTION
 
     def detect(self, line: str, context: ScanContext) -> list[PluginScanFinding]:
         return [
             PluginScanFinding(
                 entity_type="NOT_DECLARED",
                 start_offset=0,
-                end_offset=5,
+                end_offset=_UNDECLARED_ENTITY_END_OFFSET,
                 confidence=_ACME_CONFIDENCE,
             )
         ]

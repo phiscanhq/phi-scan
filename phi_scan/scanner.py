@@ -160,7 +160,7 @@ _PARALLEL_THREAD_NAME_PREFIX: str = "phi-scan-worker"
 # ---------------------------------------------------------------------------
 
 
-def _refresh_plugin_registry_cache() -> None:
+def _reload_plugin_registry_cache() -> None:
     """Discard any cached plugin registry and warm-load a fresh one.
 
     Called synchronously at the top of every ``execute_scan`` invocation,
@@ -427,7 +427,7 @@ def execute_scan(
                 maximum=MAX_WORKER_COUNT,
             ),
         )
-    _refresh_plugin_registry_cache()
+    _reload_plugin_registry_cache()
     scan_start = time.monotonic()
     all_findings = _collect_all_findings(scan_targets, config, worker_count)
     reviewed_findings, ai_usage = apply_ai_review_to_findings(all_findings, config.ai_review_config)

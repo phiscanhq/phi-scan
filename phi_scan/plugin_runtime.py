@@ -326,14 +326,16 @@ def _build_host_scan_finding(validation: _PluginFindingValidation) -> ScanFindin
     )
 
 
+def _plugin_finding_sort_key(finding: ScanFinding) -> tuple[str, int, str, str]:
+    """Deterministic sort key for plugin findings (file, line, entity, hash)."""
+    return (
+        str(finding.file_path),
+        finding.line_number,
+        finding.entity_type,
+        finding.value_hash,
+    )
+
+
 def _sort_plugin_findings(findings: list[ScanFinding]) -> list[ScanFinding]:
     """Return plugin findings sorted for deterministic output."""
-    return sorted(
-        findings,
-        key=lambda finding: (
-            str(finding.file_path),
-            finding.line_number,
-            finding.entity_type,
-            finding.value_hash,
-        ),
-    )
+    return sorted(findings, key=_plugin_finding_sort_key)
