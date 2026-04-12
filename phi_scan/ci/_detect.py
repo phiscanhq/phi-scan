@@ -79,6 +79,7 @@ _GITHUB_PR_REF_NUMBER_INDEX: int = 2
 
 # CodeBuild webhook trigger prefix for PR detection (e.g. "pr/42")
 _CODEBUILD_PR_TRIGGER_PREFIX: str = "pr/"
+_URL_LAST_SEGMENT_INDEX: int = -1
 
 # Sentinel values for CI platform detection env vars
 _CI_ENV_SENTINEL_TRUE: str = "true"
@@ -155,14 +156,14 @@ def detect_platform() -> CIPlatform:
 
 def fetch_environment_variable(name: str) -> str | None:
     """Return the environment variable value, or None if unset or empty."""
-    env_value = os.environ.get(name, "").strip()
-    return env_value if env_value else None
+    raw_env_string = os.environ.get(name, "").strip()
+    return raw_env_string if raw_env_string else None
 
 
-def _extract_github_pr_number(ref: str) -> str | None:
-    if not ref.startswith(_GITHUB_PR_REF_PREFIX):
+def _extract_github_pr_number(github_ref: str) -> str | None:
+    if not github_ref.startswith(_GITHUB_PR_REF_PREFIX):
         return None
-    ref_segments = ref.split("/")
+    ref_segments = github_ref.split("/")
     if len(ref_segments) <= _GITHUB_PR_REF_NUMBER_INDEX:
         return None
     return ref_segments[_GITHUB_PR_REF_NUMBER_INDEX]
@@ -172,8 +173,8 @@ def _resolve_github_pr_number() -> str | None:
     explicit_pr_number = fetch_environment_variable(_ENV_PR_NUMBER)
     if explicit_pr_number:
         return explicit_pr_number
-    ref = fetch_environment_variable(_ENV_GITHUB_REF) or ""
-    return _extract_github_pr_number(ref)
+    github_ref = fetch_environment_variable(_ENV_GITHUB_REF) or ""
+    return _extract_github_pr_number(github_ref)
 
 
 def _build_github_context() -> PRContext:
@@ -203,10 +204,10 @@ def _build_gitlab_context() -> PRContext:
     )
 
 
-def _append_trailing_slash(uri: str) -> str:
-    if uri and not uri.endswith("/"):
-        return uri + "/"
-    return uri
+def _append_trailing_slash(server_url: str) -> str:
+    if server_url and not server_url.endswith("/"):
+        return server_url + "/"
+    return server_url
 
 
 def _build_azure_context() -> PRContext:
@@ -233,7 +234,7 @@ def _extract_pr_number_from_url(pr_url: str) -> str | None:
     url_segments = pr_url.rstrip("/").split("/")
     if not url_segments:
         return None
-    pr_number_candidate = url_segments[-1]
+    pr_number_candidate = url_segments[_URL_LAST_SEGMENT_INDEX]
     return pr_number_candidate if pr_number_candidate.isdigit() else None
 
 
