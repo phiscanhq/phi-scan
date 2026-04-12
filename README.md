@@ -279,6 +279,8 @@ Copy-paste templates for all CI platforms: [docs/ci-cd-integration.md](docs/ci-c
 | [docs/de-identification.md](docs/de-identification.md) | Safe Harbor vs Expert Determination; regulatory scope |
 | [docs/plugin-api-v1.md](docs/plugin-api-v1.md) | Plugin API v1 compatibility, deprecation policy, and authoring constraints |
 | [docs/plugin-developer-guide.md](docs/plugin-developer-guide.md) | Custom recognizer development guide |
+| [docs/plugin-hooks-v1_1-design.md](docs/plugin-hooks-v1_1-design.md) | Suppressor and output sink plugin hooks (v1.1 design) |
+| [docs/ci-adapter-contract.md](docs/ci-adapter-contract.md) | CI adapter split interface contract and rollout plan |
 | [docs/ignore-patterns.md](docs/ignore-patterns.md) | `.phi-scanignore` syntax, suppression comments |
 | [docs/ci-cd-integration.md](docs/ci-cd-integration.md) | CI/CD platform copy-paste templates |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common issues, FAQ, debug tips |

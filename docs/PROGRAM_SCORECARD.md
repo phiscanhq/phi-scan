@@ -64,11 +64,11 @@ is declared production-ready for v1.0.
 | A3 | Plugin discovery via Python entry points implemented and tested | PASS | Entry-point discovery via `phi_scan.plugins` group, fail-safe validation, 30 tests at 100% coverage. Shipped in PR #124. |
 | A4 | `phi-scan plugins list` command implemented with metadata validation tests | PASS | Rich table + `--json` output, 19 tests at 100% coverage. Shipped in PR #125. |
 | A5 | Plugin API compatibility and deprecation policy documented | PASS | `docs/plugin-api-v1.md` covers version contract, compatibility surface, deprecation process (2-minor-release window), failure semantics, authoring constraints. |
-| A6 | Suppressor and output-sink plugin hooks designed (v1.1 shape documented, not implemented) | FAIL | Deferred to v1.1; design not yet written |
+| A6 | Suppressor and output-sink plugin hooks designed (v1.1 shape documented, not implemented) | PASS | `docs/plugin-hooks-v1_1-design.md` covers `BaseSuppressor`, `BaseOutputSink` draft interfaces, execution pipeline, PHI safety model, performance budget, config shape, and open questions. |
 | A7 | Parallel scan determinism validated across `workers=1` and `workers>1` | PASS | Parity tests in `tests/test_scanner.py` validate identical findings and ordering |
-| A8 | `ci_integration.py` adapter split planned with per-platform interface contract documented | FAIL | Planned in roadmap (8F-ext.2); not yet designed |
+| A8 | `ci_integration.py` adapter split planned with per-platform interface contract documented | PASS | `docs/ci-adapter-contract.md` covers target module layout, `BaseCIAdapter` interface, capability flags, shared transport/error model, test strategy, 3-phase rollout plan, and risk/rollback. |
 
-**Passing: 6 / 8**
+**Passing: 8 / 8**
 
 ---
 
@@ -94,9 +94,9 @@ is declared production-ready for v1.0.
 |----------|---------|-------|---|
 | Technical Maturity | 9 | 9 | 100% |
 | Security Posture | 11 | 11 | 100% |
-| Architecture Scalability | 6 | 8 | 75% |
+| Architecture Scalability | 8 | 8 | 100% |
 | Commercial Readiness | 3 | 7 | 43% |
-| **Total** | **29** | **35** | **83%** |
+| **Total** | **31** | **35** | **89%** |
 
 **Target:** 35 / 35 checks passing.
 
@@ -111,6 +111,7 @@ is declared production-ready for v1.0.
 | 2026-04-13 | 9/9 | 8/11 | 1/8 | 3/7 | S5/S7/S8 shipped: 50 adversarial SSRF tests (IPv4-mapped IPv6, unspecified, multicast, mixed-resolution, DNS rebind TOCTOU), full-surface threat model at `docs/threat-model.md`, notifier SSRF fix (unmap IPv4-mapped IPv6 + built-in-property checks). Security category now at 73%. |
 | 2026-04-14 | 9/9 | 11/11 | 1/8 | 3/7 | S9/S10/S11 shipped: pip-audit CI gate with policy-enforced `.pip-audit-ignore.toml`, release-time CycloneDX SBOM via `.github/scripts/sbom_generator.py`, keyless Sigstore signing of wheel+sdist. Baseline CVEs cleared via direct pin bumps (cryptography 46.0.7, pygments 2.20.0). Full supply-chain policy at `docs/supply-chain.md`. Security category at 100%; overall 69%. |
 | 2026-04-15 | 9/9 | 11/11 | 6/8 | 3/7 | A1–A5 shipped: Plugin API v1 core (`BaseRecognizer` ABC, `ScanContext`/`ScanFinding` dataclasses, `PLUGIN_API_VERSION`) in PR #124. `phi-scan plugins list` command with Rich table and `--json` output in PR #125. Plugin compatibility and deprecation policy at `docs/plugin-api-v1.md`. Architecture category at 75%; overall 83%. |
+| 2026-04-16 | 9/9 | 11/11 | 8/8 | 3/7 | A6/A8 shipped: `docs/plugin-hooks-v1_1-design.md` (suppressor + output sink v1.1 design) and `docs/ci-adapter-contract.md` (CI adapter split with `BaseCIAdapter` interface, 3-phase rollout). Architecture category at 100%; overall 89%. |
 
 ---
 
@@ -125,6 +126,6 @@ Checks are addressed in this sequence:
 3. **S5, S7, S8** ✓ Done — SSRF adversarial tests + threat model doc
 4. **S9, S10, S11** ✓ Done — Supply-chain security gates (pip-audit CI gate, CycloneDX SBOM, Sigstore signing)
 5. **A1–A5** ✓ Done — Plugin API v1 core (PR #124), `plugins list` command (PR #125), compatibility/deprecation policy doc
-6. **A6** — Suppressor + output-sink design doc (v1.1 shape)
-7. **A8** — CI adapter split design doc
+6. **A6** ✓ Done — Suppressor + output-sink v1.1 design doc (`docs/plugin-hooks-v1_1-design.md`)
+7. **A8** ✓ Done — CI adapter split design doc (`docs/ci-adapter-contract.md`)
 8. **C3–C6** — Boundary docs, release policy, governance
