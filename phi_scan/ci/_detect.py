@@ -81,7 +81,6 @@ _GITHUB_PR_REF_NUMBER_INDEX: int = 2
 
 # CodeBuild webhook trigger prefix for PR detection (e.g. "pr/42")
 _CODEBUILD_PR_TRIGGER_PREFIX: str = "pr/"
-_URL_LAST_SEGMENT_INDEX: int = -1
 _URL_PATH_SEPARATOR: str = "/"
 
 # Sentinel values for CI platform detection env vars
@@ -231,7 +230,7 @@ def _extract_pr_number_from_url(pr_url: str) -> str | None:
     url_segments = pr_url.rstrip("/").split("/")
     if not url_segments:
         return None
-    pr_number_candidate = url_segments[_URL_LAST_SEGMENT_INDEX]
+    pr_number_candidate = url_segments[-1]
     return pr_number_candidate if pr_number_candidate.isdigit() else None
 
 
