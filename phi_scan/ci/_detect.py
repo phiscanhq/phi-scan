@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import enum
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 
 from phi_scan.ci._env import fetch_environment_variable
 
@@ -113,6 +114,8 @@ class PullRequestContext:
 
     Top-level fields that are unavailable on the current platform are ``None``.
     Values inside ``extras`` are always strings (empty string when absent).
+    The ``extras`` mapping is frozen via ``MappingProxyType`` to prevent
+    mutation of shared context objects between adapter calls.
     """
 
     platform: CIPlatform
@@ -121,7 +124,11 @@ class PullRequestContext:
     sha: str | None
     branch: str | None
     base_branch: str | None
-    extras: dict[str, str] = field(default_factory=dict)
+    extras: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.extras, MappingProxyType):
+            object.__setattr__(self, "extras", MappingProxyType(dict(self.extras)))
 
 
 # ---------------------------------------------------------------------------

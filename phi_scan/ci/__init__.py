@@ -72,11 +72,9 @@ __all__ = [
     "GitHubAdapter",
     "GitLabAdapter",
     "JenkinsAdapter",
-    "PRContext",
     "PullRequestContext",
     "SanitisedCommentBody",
     "detect_platform",
-    "get_pr_context",
     "get_pull_request_context",
     "resolve_adapter",
 ]
