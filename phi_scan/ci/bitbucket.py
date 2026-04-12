@@ -84,8 +84,8 @@ class BitbucketAdapter(BaseCIAdapter):
             _LOG.warning("Bitbucket: missing PR context — skipping comment")
             return
 
-        token = fetch_environment_variable(_ENV_BITBUCKET_TOKEN)
-        if not token:
+        bitbucket_token = fetch_environment_variable(_ENV_BITBUCKET_TOKEN)
+        if not bitbucket_token:
             _LOG.warning("Bitbucket: BITBUCKET_TOKEN not set — skipping comment")
             return
 
@@ -99,7 +99,7 @@ class BitbucketAdapter(BaseCIAdapter):
                 method=HttpMethod.POST,
                 url=url,
                 operation_label=OperationLabel.BITBUCKET_PR_COMMENT,
-                headers=_build_auth_headers(token),
+                headers=_build_auth_headers(bitbucket_token),
                 json_body={
                     _BITBUCKET_COMMENT_CONTENT_KEY: {_BITBUCKET_COMMENT_RAW_KEY: comment_body},
                 },
@@ -115,8 +115,8 @@ class BitbucketAdapter(BaseCIAdapter):
             _LOG.warning("Bitbucket: missing context — skipping commit status")
             return
 
-        token = fetch_environment_variable(_ENV_BITBUCKET_TOKEN)
-        if not token:
+        bitbucket_token = fetch_environment_variable(_ENV_BITBUCKET_TOKEN)
+        if not bitbucket_token:
             _LOG.warning("Bitbucket: BITBUCKET_TOKEN not set — skipping commit status")
             return
 
@@ -130,7 +130,7 @@ class BitbucketAdapter(BaseCIAdapter):
                 method=HttpMethod.POST,
                 url=url,
                 operation_label=OperationLabel.BITBUCKET_COMMIT_STATUS,
-                headers=_build_auth_headers(token),
+                headers=_build_auth_headers(bitbucket_token),
                 json_body=_build_commit_status_payload(scan_result),
             )
         )
