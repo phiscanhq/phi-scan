@@ -63,6 +63,16 @@ _PLUGIN_SUMMARY_LOG: str = "Plugin %r produced %d warnings during this scan (fir
 
 
 @dataclass(frozen=True)
+class _PluginPassState:
+    """Per-scan plugin-pass state threaded through the collection helpers."""
+
+    file_content: str
+    file_path: Path
+    registry: PluginRegistry
+    warning_budget: _RecognizerWarningBudget
+
+
+@dataclass(frozen=True)
 class _PluginLineInvocation:
     """One plugin's invocation against one line of one file."""
 
@@ -152,25 +162,35 @@ def execute_plugin_pass(
     """
     if not registry.loaded:
         return []
-    warning_budget = _RecognizerWarningBudget()
+    state = _PluginPassState(
+        file_content=file_content,
+        file_path=file_path,
+        registry=registry,
+        warning_budget=_RecognizerWarningBudget(),
+    )
+    findings = _collect_findings_for_all_lines(state)
+    state.warning_budget.emit_recognizer_warning_summary()
+    return _sort_plugin_findings(findings)
+
+
+def _collect_findings_for_all_lines(state: _PluginPassState) -> list[ScanFinding]:
+    """Iterate every line and every loaded plugin, collecting host findings."""
     findings: list[ScanFinding] = []
-    file_extension = file_path.suffix.lower()
-    lines = file_content.splitlines()
-    for line_index, line_text in enumerate(lines, start=1):
+    file_extension = state.file_path.suffix.lower()
+    for line_index, line_text in enumerate(state.file_content.splitlines(), start=1):
         context = ScanContext(
-            file_path=file_path,
+            file_path=state.file_path,
             line_number=line_index,
             file_extension=file_extension,
         )
-        for loaded_plugin in registry.loaded:
+        for loaded_plugin in state.registry.loaded:
             invocation = _PluginLineInvocation(
                 loaded_plugin=loaded_plugin,
                 line_text=line_text,
                 context=context,
             )
-            findings.extend(_execute_single_plugin_on_line(invocation, warning_budget))
-    warning_budget.emit_recognizer_warning_summary()
-    return _sort_plugin_findings(findings)
+            findings.extend(_execute_single_plugin_on_line(invocation, state.warning_budget))
+    return findings
 
 
 def _execute_single_plugin_on_line(
@@ -238,40 +258,57 @@ def _translate_plugin_finding_to_host(
     warning_budget: _RecognizerWarningBudget,
 ) -> ScanFinding | None:
     """Validate a plugin finding and translate it into a host ScanFinding."""
+    if not _is_plugin_finding_valid(validation, warning_budget):
+        return None
+    return _build_host_scan_finding(validation)
+
+
+def _is_plugin_finding_valid(
+    validation: _PluginFindingValidation,
+    warning_budget: _RecognizerWarningBudget,
+) -> bool:
+    """Return ``True`` when ``validation.plugin_finding`` passes every host check."""
     plugin_finding = validation.plugin_finding
     invocation = validation.invocation
-    recognizer = invocation.loaded_plugin.recognizer
-    line_text = invocation.line_text
+    recognizer_name = invocation.loaded_plugin.recognizer.name
     context = invocation.context
     if not isinstance(plugin_finding, PluginScanFinding):
         warning_budget.log_recognizer_warning(
-            recognizer.name,
+            recognizer_name,
             context,
             _MALFORMED_FINDING_ERROR.format(
                 error=f"expected ScanFinding, got {type(plugin_finding).__name__}"
             ),
         )
-        return None
+        return False
     if plugin_finding.entity_type not in validation.declared_entity_types:
         warning_budget.log_recognizer_warning(
-            recognizer.name,
+            recognizer_name,
             context,
             _UNDECLARED_ENTITY_TYPE_ERROR.format(
                 entity_type=plugin_finding.entity_type,
                 declared=sorted(validation.declared_entity_types),
             ),
         )
-        return None
-    if plugin_finding.end_offset > len(line_text):
+        return False
+    if plugin_finding.end_offset > len(invocation.line_text):
         warning_budget.log_recognizer_warning(
-            recognizer.name,
+            recognizer_name,
             context,
             _OFFSET_OVERRUN_ERROR.format(
                 end_offset=plugin_finding.end_offset,
-                line_length=len(line_text),
+                line_length=len(invocation.line_text),
             ),
         )
-        return None
+        return False
+    return True
+
+
+def _build_host_scan_finding(validation: _PluginFindingValidation) -> ScanFinding:
+    """Construct the host ``ScanFinding`` for a validated plugin finding."""
+    plugin_finding = validation.plugin_finding
+    invocation = validation.invocation
+    line_text = invocation.line_text
     redacted_context = (
         line_text[: plugin_finding.start_offset]
         + CODE_CONTEXT_REDACTED_VALUE
@@ -279,7 +316,7 @@ def _translate_plugin_finding_to_host(
     ).rstrip()
     return ScanFinding(
         file_path=invocation.file_path,
-        line_number=context.line_number,
+        line_number=invocation.context.line_number,
         entity_type=plugin_finding.entity_type,
         hipaa_category=_DEFAULT_PLUGIN_HIPAA_CATEGORY,
         confidence=plugin_finding.confidence,

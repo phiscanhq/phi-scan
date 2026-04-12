@@ -10,6 +10,7 @@ is invoked exactly once per ``execute_scan`` invocation.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
@@ -43,8 +44,6 @@ class _AcmeRecognizer(BaseRecognizer):
     description = "Test ACME employee ID recognizer."
 
     def detect(self, line: str, context: ScanContext) -> list[PluginScanFinding]:
-        import re
-
         match = re.search(r"\bEMP-\d{6}\b", line)
         if match is None:
             return []

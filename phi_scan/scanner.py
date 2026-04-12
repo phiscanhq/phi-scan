@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import threading
 import time
 import zipfile
 import zlib
@@ -159,9 +158,6 @@ _PARALLEL_THREAD_NAME_PREFIX: str = "phi-scan-worker"
 # ---------------------------------------------------------------------------
 # Plugin registry (scan-scoped cache)
 # ---------------------------------------------------------------------------
-
-
-_PLUGIN_REGISTRY_CACHE_LOCK: threading.Lock = threading.Lock()
 
 
 @cache
@@ -420,9 +416,8 @@ def execute_scan(
                 maximum=MAX_WORKER_COUNT,
             ),
         )
-    with _PLUGIN_REGISTRY_CACHE_LOCK:
-        _load_cached_plugin_registry.cache_clear()
-        _load_cached_plugin_registry()
+    _load_cached_plugin_registry.cache_clear()
+    _load_cached_plugin_registry()
     scan_start = time.monotonic()
     all_findings = _collect_all_findings(scan_targets, config, worker_count)
     reviewed_findings, ai_usage = apply_ai_review_to_findings(all_findings, config.ai_review_config)
@@ -606,12 +601,11 @@ def _execute_scan_with_cache(
 def _execute_plugin_pass_for_file(file_content: str, file_path: Path) -> list[ScanFinding]:
     """Run the scan-scoped plugin pass against one file and return findings.
 
-    Reads the registry lock-free: ``execute_scan`` has already performed
-    ``cache_clear`` + warm-load under ``_PLUGIN_REGISTRY_CACHE_LOCK``
-    before any worker threads were spawned, so every call here is a
+    ``execute_scan`` performs ``cache_clear`` + warm-load synchronously
+    before any worker threads are spawned, so every call here is a
     GIL-atomic dict lookup against a fully-populated, no-longer-mutated
-    cache. Acquiring the lock on the hot per-file path would serialise
-    the entire parallel scan and defeat the purpose of ThreadPoolExecutor.
+    cache. ``execute_scan`` is documented as single-invocation per
+    process, which is the contract that makes this lock-free read safe.
     """
     registry = _load_cached_plugin_registry()
     return execute_plugin_pass(file_content, file_path, registry)
