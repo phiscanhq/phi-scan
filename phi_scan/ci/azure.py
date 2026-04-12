@@ -36,6 +36,18 @@ _AZURE_COMMENT_TYPE_TEXT: int = 1
 _AZURE_THREAD_STATUS_ACTIVE: str = "active"
 
 
+def _build_pr_threads_url(
+    collection_uri: str, team_project: str, repo_id: str | None, pr_id: str | None
+) -> str:
+    return _AZURE_PR_THREADS_PATH.format(
+        collection_uri=collection_uri,
+        team_project=team_project,
+        repo_id=repo_id,
+        pr_id=pr_id,
+        api_version=_AZURE_API_VERSION,
+    )
+
+
 def _build_azure_thread_payload(comment_body: str) -> dict[str, Any]:
     return {
         "comments": [
@@ -67,7 +79,7 @@ class AzureAdapter(BaseCIAdapter):
         team_project = pr_context.extras.get("team_project", "")
 
         if not all((pr_id, repo_id, collection_uri, team_project)):
-            _LOG.debug("Azure DevOps: missing PR context — skipping comment")
+            _LOG.warning("Azure DevOps: missing PR context — skipping comment")
             return
 
         token = fetch_environment_variable(_ENV_SYSTEM_ACCESSTOKEN)
@@ -78,13 +90,7 @@ class AzureAdapter(BaseCIAdapter):
             )
             return
 
-        url = _AZURE_PR_THREADS_PATH.format(
-            collection_uri=collection_uri,
-            team_project=team_project,
-            repo_id=repo_id,
-            pr_id=pr_id,
-            api_version=_AZURE_API_VERSION,
-        )
+        url = _build_pr_threads_url(collection_uri, team_project, repo_id, pr_id)
         execute_http_request(
             HttpRequestConfig(
                 method=HttpMethod.POST,

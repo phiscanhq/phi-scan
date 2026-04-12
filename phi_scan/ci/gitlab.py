@@ -46,7 +46,7 @@ class GitLabAdapter(BaseCIAdapter):
         mr_iid = pr_context.pr_number
         project_id = pr_context.repository
         if not mr_iid or not project_id:
-            _LOG.debug("GitLab: missing MR IID or project ID — skipping comment")
+            _LOG.warning("GitLab: missing MR IID or project ID — skipping comment")
             return
 
         token = fetch_environment_variable(_ENV_GITLAB_TOKEN) or fetch_environment_variable(
@@ -80,7 +80,7 @@ class GitLabAdapter(BaseCIAdapter):
         sha = pr_context.sha
         project_id = pr_context.repository
         if not sha or not project_id:
-            _LOG.debug("GitLab: missing SHA or project ID — skipping status")
+            _LOG.warning("GitLab: missing SHA or project ID — skipping status")
             return
 
         token = fetch_environment_variable(_ENV_GITLAB_TOKEN) or fetch_environment_variable(

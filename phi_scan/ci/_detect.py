@@ -200,15 +200,15 @@ def _build_gitlab_context() -> PRContext:
     )
 
 
-def _append_trailing_slash(server_url: str) -> str:
-    if server_url and not server_url.endswith("/"):
-        return server_url + "/"
-    return server_url
+def _normalise_collection_url(collection_url: str) -> str:
+    if collection_url and not collection_url.endswith("/"):
+        return collection_url + "/"
+    return collection_url
 
 
 def _build_azure_context() -> PRContext:
-    unformatted_uri = fetch_environment_variable(_ENV_SYSTEM_TEAMFOUNDATIONCOLLECTIONURI) or ""
-    collection_uri = _append_trailing_slash(unformatted_uri)
+    raw_collection_url = fetch_environment_variable(_ENV_SYSTEM_TEAMFOUNDATIONCOLLECTIONURI) or ""
+    collection_uri = _normalise_collection_url(raw_collection_url)
     return PRContext(
         platform=CIPlatform.AZURE_DEVOPS,
         pr_number=fetch_environment_variable(_ENV_SYSTEM_PULLREQUEST_PULLREQUESTID),

@@ -33,7 +33,7 @@ class CircleCIAdapter(BaseCIAdapter):
     def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:
         pr_url = pr_context.extras.get("circle_pull_request_url", "")
         if not pr_url:
-            _LOG.debug("CircleCI: CIRCLE_PULL_REQUEST not set — skipping comment")
+            _LOG.warning("CircleCI: CIRCLE_PULL_REQUEST not set — skipping comment")
             return
 
         if _GITHUB_URL_HOSTNAME in pr_url:

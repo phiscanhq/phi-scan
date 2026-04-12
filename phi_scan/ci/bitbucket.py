@@ -81,7 +81,7 @@ class BitbucketAdapter(BaseCIAdapter):
         repo_slug = pr_context.extras.get("repo_slug", "")
 
         if not all((pr_id, workspace, repo_slug)):
-            _LOG.debug("Bitbucket: missing PR context — skipping comment")
+            _LOG.warning("Bitbucket: missing PR context — skipping comment")
             return
 
         token = fetch_environment_variable(_ENV_BITBUCKET_TOKEN)
@@ -112,7 +112,7 @@ class BitbucketAdapter(BaseCIAdapter):
         workspace = pr_context.extras.get("workspace", "")
         repo_slug = pr_context.extras.get("repo_slug", "")
         if not sha or not workspace or not repo_slug:
-            _LOG.debug("Bitbucket: missing context — skipping commit status")
+            _LOG.warning("Bitbucket: missing context — skipping commit status")
             return
 
         token = fetch_environment_variable(_ENV_BITBUCKET_TOKEN)

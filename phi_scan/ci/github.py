@@ -55,7 +55,7 @@ class GitHubAdapter(BaseCIAdapter):
     def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:
         pr_number = pr_context.pr_number
         if not pr_number:
-            _LOG.debug("GitHub: no PR number — skipping comment")
+            _LOG.warning("GitHub: no PR number — skipping comment")
             return
 
         token = fetch_environment_variable(_ENV_GITHUB_TOKEN)
@@ -99,7 +99,7 @@ class GitHubAdapter(BaseCIAdapter):
         sha = pr_context.sha
         repository = pr_context.repository
         if not sha or not repository:
-            _LOG.debug("GitHub: missing SHA or repository — skipping status")
+            _LOG.warning("GitHub: missing SHA or repository — skipping status")
             return
 
         token = fetch_environment_variable(_ENV_GITHUB_TOKEN)

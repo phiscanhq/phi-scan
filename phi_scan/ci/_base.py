@@ -107,3 +107,7 @@ class BaseCIAdapter(ABC):
     def create_work_item(self, scan_result: ScanResult, pr_context: PRContext) -> None:
         """Create a work item or ticket from scan findings."""
         self._raise_unsupported_operation_error("work item creation")
+
+    def import_to_security_hub(self, scan_result: ScanResult, pr_context: PRContext) -> None:
+        """Import findings into AWS Security Hub."""
+        self._raise_unsupported_operation_error("Security Hub import")

@@ -33,7 +33,7 @@ class JenkinsAdapter(BaseCIAdapter):
     def post_pr_comment(self, comment_body: SanitisedCommentBody, pr_context: PRContext) -> None:
         change_url = pr_context.extras.get("change_url", "")
         if not change_url:
-            _LOG.debug("Jenkins: CHANGE_URL not set — skipping comment")
+            _LOG.warning("Jenkins: CHANGE_URL not set — skipping comment")
             return
 
         if _GITHUB_URL_HOSTNAME in change_url:
