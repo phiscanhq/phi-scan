@@ -37,6 +37,7 @@ PHI found → exit code 1 → commit blocked.
 - **9 output formats.** Table, JSON, SARIF, CSV, JUnit, GitLab Code Quality, GitLab SAST, PDF, and HTML enterprise reports.
 - **Inline suppression.** `# phi-scan:ignore` comments let developers acknowledge false positives without disabling the scanner.
 - **HIPAA audit trail.** Every scan is recorded in an immutable SQLite log. SHA-256 hashes only — raw PHI values are never stored.
+- **Free forever.** All detection layers, output formats, CI integrations, compliance annotations, baseline mode, audit trail, and the plugin API ship in the MIT-licensed Community tier and will never be paywalled or intentionally degraded. See [docs/community-pro-cloud-matrix.md](docs/community-pro-cloud-matrix.md) for the full feature boundary.
 
 ---
 
@@ -281,6 +282,7 @@ Copy-paste templates for all CI platforms: [docs/ci-cd-integration.md](docs/ci-c
 | [docs/plugin-developer-guide.md](docs/plugin-developer-guide.md) | Custom recognizer development guide |
 | [docs/plugin-hooks-v1_1-design.md](docs/plugin-hooks-v1_1-design.md) | Suppressor and output sink plugin hooks (v1.1 design) |
 | [docs/ci-adapter-contract.md](docs/ci-adapter-contract.md) | CI adapter split interface contract and rollout plan |
+| [docs/community-pro-cloud-matrix.md](docs/community-pro-cloud-matrix.md) | Community / Pro / Cloud feature boundary matrix |
 | [docs/ignore-patterns.md](docs/ignore-patterns.md) | `.phi-scanignore` syntax, suppression comments |
 | [docs/ci-cd-integration.md](docs/ci-cd-integration.md) | CI/CD platform copy-paste templates |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common issues, FAQ, debug tips |
