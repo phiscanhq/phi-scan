@@ -67,8 +67,9 @@ is declared production-ready for v1.0.
 | A6 | Suppressor and output-sink plugin hooks designed (v1.1 shape documented, not implemented) | PASS | `docs/plugin-hooks-v1_1-design.md` covers `BaseSuppressor`, `BaseOutputSink` draft interfaces, execution pipeline, PHI safety model, performance budget, config shape, and open questions. |
 | A7 | Parallel scan determinism validated across `workers=1` and `workers>1` | PASS | Parity tests in `tests/test_scanner.py` validate identical findings and ordering |
 | A8 | `ci_integration.py` adapter split implemented with per-platform interface contract | PASS | Shipped in PR #130. `phi_scan/ci/` package with 7 per-platform adapters, shared `BaseCIAdapter` interface, capability flags, shared transport/error model. Design doc at `docs/ci-adapter-contract.md`. |
+| A9 | Plugin runtime execution integrated into scan path with deterministic ordering and error isolation | PASS | Plugin findings flow through existing filter/output/audit path; per-line plugin errors isolated; plugin registry loaded once per scan. |
 
-**Passing: 8 / 8**
+**Passing: 9 / 9**
 
 ---
 
@@ -94,11 +95,11 @@ is declared production-ready for v1.0.
 |----------|---------|-------|---|
 | Technical Maturity | 9 | 9 | 100% |
 | Security Posture | 11 | 11 | 100% |
-| Architecture Scalability | 8 | 8 | 100% |
+| Architecture Scalability | 9 | 9 | 100% |
 | Commercial Readiness | 7 | 7 | 100% |
-| **Total** | **35** | **35** | **100%** |
+| **Total** | **36** | **36** | **100%** |
 
-**Target:** 35 / 35 checks passing.
+**Target:** 36 / 36 checks passing.
 
 ---
 
@@ -111,6 +112,7 @@ is declared production-ready for v1.0.
 | 2026-04-13 | 9/9 | 8/11 | 1/8 | 3/7 | S5/S7/S8 shipped: 50 adversarial SSRF tests (IPv4-mapped IPv6, unspecified, multicast, mixed-resolution, DNS rebind TOCTOU), full-surface threat model at `docs/threat-model.md`, notifier SSRF fix (unmap IPv4-mapped IPv6 + built-in-property checks). Security category now at 73%. |
 | 2026-04-14 | 9/9 | 11/11 | 1/8 | 3/7 | S9/S10/S11 shipped: pip-audit CI gate with policy-enforced `.pip-audit-ignore.toml`, release-time CycloneDX SBOM via `.github/scripts/sbom_generator.py`, keyless Sigstore signing of wheel+sdist. Baseline CVEs cleared via direct pin bumps (cryptography 46.0.7, pygments 2.20.0). Full supply-chain policy at `docs/supply-chain.md`. Security category at 100%; overall 69%. |
 | 2026-04-15 | 9/9 | 11/11 | 6/8 | 3/7 | A1–A5 shipped: Plugin API v1 core (`BaseRecognizer` ABC, `ScanContext`/`ScanFinding` dataclasses, `PLUGIN_API_VERSION`) in PR #124. `phi-scan plugins list` command with Rich table and `--json` output in PR #125. Plugin compatibility and deprecation policy at `docs/plugin-api-v1.md`. Architecture category at 75%; overall 83%. |
+| 2026-04-12 | 9/9 | 11/11 | 9/9 | 7/7 | A9 shipped: plugin runtime execution integrated into scan path (`phi_scan/plugin_runtime.py`). Per-line plugin pass runs after built-in detection; findings flow through existing filter/suppression/baseline/output pipeline. Per-line exception isolation, rate-limited warnings (5 per recognizer + summary), deterministic ordering, worker-parity validated. Registry cached once per `execute_scan` invocation. Architecture 9/9; overall 36/36. |
 | 2026-04-16 | 9/9 | 11/11 | 8/8 | 7/7 | A6/A8 shipped: `docs/plugin-hooks-v1_1-design.md` (suppressor + output sink v1.1 design) and A8 CI adapter split implemented in PR #130 (`phi_scan/ci/` package with `BaseCIAdapter` interface and per-platform adapters); contract documented in `docs/ci-adapter-contract.md`. C3/C4 shipped: `docs/community-pro-cloud-matrix.md` (feature boundary matrix across 8 categories) and "Free forever" messaging in README. C5/C6 shipped: `docs/release-versioning-policy.md` (semver, cadence, breaking-change rules) and `docs/lts-eol-policy.md` (12-month LTS, 90-day EOL notice). **All 35/35 checks passing — scorecard complete.** |
 
 ---

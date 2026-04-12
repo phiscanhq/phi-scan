@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 
     from phi_scan.ai_review import AIUsageSummary
 
+from functools import cache
+
 from phi_scan.cache import FileCacheKey, get_cached_result, store_cached_result
 from phi_scan.constants import (
     ARCHIVE_EXTENSIONS,
@@ -41,6 +43,8 @@ from phi_scan.detection_coordinator import detect_phi_in_text_content
 from phi_scan.exceptions import FileReadError, PhiDetectionError, TraversalError
 from phi_scan.logging_config import get_logger
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
+from phi_scan.plugin_loader import PluginRegistry, load_plugin_registry
+from phi_scan.plugin_runtime import run_plugin_pass
 from phi_scan.suppression import is_finding_suppressed, load_suppressions
 
 __all__ = [
@@ -150,6 +154,23 @@ MAX_WORKER_COUNT: int = 32
 MIN_WORKER_COUNT: int = 1
 # Thread name prefix used by ThreadPoolExecutor for log and debugger visibility.
 _PARALLEL_THREAD_NAME_PREFIX: str = "phi-scan-worker"
+
+
+# ---------------------------------------------------------------------------
+# Plugin registry (scan-scoped cache)
+# ---------------------------------------------------------------------------
+
+
+@cache
+def _load_cached_plugin_registry() -> PluginRegistry:
+    """Return the plugin registry for the current scan, discovering once.
+
+    The result is cached for the duration of the process. ``execute_scan``
+    clears the cache at the start of every invocation so a fresh registry
+    is discovered per scan while per-file calls inside one scan share the
+    same registry instance.
+    """
+    return load_plugin_registry()
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +404,7 @@ def execute_scan(
                 maximum=MAX_WORKER_COUNT,
             ),
         )
+    _load_cached_plugin_registry.cache_clear()
     scan_start = time.monotonic()
     all_findings = _collect_all_findings(scan_targets, config, worker_count)
     reviewed_findings, ai_usage = apply_ai_review_to_findings(all_findings, config.ai_review_config)
@@ -554,11 +576,19 @@ def _execute_scan_with_cache(
     cached_raw = get_cached_result(cache_key)
     if cached_raw is not None:
         _logger.debug(_CACHE_HIT_DEBUG.format(path=file_path, count=len(cached_raw)))
-        return _apply_post_scan_filters(cached_raw, file_content, config)
+        plugin_findings = _run_plugin_pass_for_file(file_content, file_path)
+        return _apply_post_scan_filters(cached_raw + plugin_findings, file_content, config)
     scannable_content = _preprocess_content_for_scan(file_content, file_path)
     raw_findings = detect_phi_in_text_content(scannable_content, file_path)
     store_cached_result(cache_key, raw_findings)
-    return _apply_post_scan_filters(raw_findings, file_content, config)
+    plugin_findings = _run_plugin_pass_for_file(file_content, file_path)
+    return _apply_post_scan_filters(raw_findings + plugin_findings, file_content, config)
+
+
+def _run_plugin_pass_for_file(file_content: str, file_path: Path) -> list[ScanFinding]:
+    """Run the scan-scoped plugin pass against one file and return findings."""
+    registry = _load_cached_plugin_registry()
+    return run_plugin_pass(file_content, file_path, registry)
 
 
 def _apply_post_scan_filters(
@@ -849,7 +879,10 @@ def _scan_archive_members(
             continue
         virtual_path = _compute_display_path(archive_path) / member_name
         raw_findings = detect_phi_in_text_content(member_content, virtual_path)
-        member_findings = _apply_post_scan_filters(raw_findings, member_content, config)
+        plugin_findings = _run_plugin_pass_for_file(member_content, virtual_path)
+        member_findings = _apply_post_scan_filters(
+            raw_findings + plugin_findings, member_content, config
+        )
         findings.extend(member_findings)
     return findings
 

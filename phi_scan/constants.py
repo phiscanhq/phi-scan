@@ -770,6 +770,7 @@ class DetectionLayer(StrEnum):
     HL7 = "hl7"
     AI = "ai"
     COMBINATION = "combination"
+    PLUGIN = "plugin"
 
 
 class WebhookType(StrEnum):

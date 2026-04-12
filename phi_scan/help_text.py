@@ -171,10 +171,11 @@ are removed or transformed:
 # ---------------------------------------------------------------------------
 
 EXPLAIN_DETECTION_TEXT: str = """\
-[bold cyan]Detection Architecture — 4 Layers[/bold cyan]
+[bold cyan]Detection Architecture — 4 Layers + Plugins[/bold cyan]
 
-PhiScan applies four detection layers in order. Each layer adds coverage
-without replacing previous layers.
+PhiScan applies four built-in detection layers in order, then runs any
+installed third-party recognizer plugins. Each layer adds coverage without
+replacing previous layers.
 
 [bold]Layer 1 — Regex / Pattern Matching[/bold]
   Fast, zero false-negatives on structured PHI. Covers SSN, MBI, DEA, phone,
@@ -195,6 +196,13 @@ without replacing previous layers.
   with [REDACTED] placeholders is sent. Confidence adjustment: ±0.15.
   Supports Anthropic (claude-*), OpenAI (gpt-*, o1/o3/o4), and Google (gemini-*).
   Disabled by default. Enable with [cyan]ai.enable_ai_review: true[/cyan].
+
+[bold]Plugin Recognizers (optional)[/bold]
+  Third-party recognizers installed via the [cyan]phi_scan.plugins[/cyan] entry-point
+  group run per-line after the built-in layers. Findings flow through the same
+  confidence, suppression, baseline, and output pipeline as built-in findings.
+  List installed plugins with [cyan]phi-scan plugins list[/cyan]. See
+  [cyan]docs/plugin-developer-guide.md[/cyan] for the plugin API contract.
 """
 
 # ---------------------------------------------------------------------------
