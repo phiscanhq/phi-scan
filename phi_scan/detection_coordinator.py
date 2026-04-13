@@ -1,8 +1,13 @@
-"""Detection coordinator — orchestrates all PHI detection layers.
+"""Detection coordinator — orchestrates the built-in PHI detection layers.
 
 Defines ``detect_phi_in_text_content``, the single entry point that wires
-together the four detection layers in order (regex → NLP → FHIR/HL7 →
-quasi-identifier combination) and returns a deduplicated finding list.
+together the four built-in detection layers in order (regex → NLP →
+FHIR/HL7 → quasi-identifier combination) and returns a deduplicated
+finding list. Third-party recognizer plugins loaded via the Plugin API
+v1 are run separately from this module by
+``phi_scan.plugin_runtime.execute_plugin_pass``, which ``phi_scan.scanner``
+invokes per file after this coordinator returns; plugin findings are
+merged into the same downstream pipeline as built-in findings.
 
 Design constraints enforced here:
 - The coordinator body consists exclusively of delegated function calls.
