@@ -253,7 +253,7 @@ def test_scan_valid_severity_threshold_exits_cleanly(tmp_path: Path) -> None:
 def test_report_prints_no_scan_message_when_no_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("phi_scan.cli.DEFAULT_DATABASE_PATH", str(tmp_path / "audit.db"))
+    monkeypatch.setattr("phi_scan.cli.history.DEFAULT_DATABASE_PATH", str(tmp_path / "audit.db"))
 
     result = _runner.invoke(app, ["report"])
 
@@ -269,7 +269,7 @@ def test_report_prints_no_scan_message_when_no_history(
 def test_history_with_valid_period_exits_cleanly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("phi_scan.cli.DEFAULT_DATABASE_PATH", str(tmp_path / "audit.db"))
+    monkeypatch.setattr("phi_scan.cli.history.DEFAULT_DATABASE_PATH", str(tmp_path / "audit.db"))
 
     result = _runner.invoke(app, ["history", "--last", _VALID_PERIOD_30_DAYS])
 

@@ -208,7 +208,7 @@ def test_scan_report_command_returns_no_record_when_no_scan_performed(
     # Patch the name bound in cli.py's namespace — that is the binding used at
     # call time by the report command (imported via `from phi_scan.constants import`).
     # DEFAULT_DATABASE_PATH is a str constant, so convert Path to str at call site.
-    monkeypatch.setattr("phi_scan.cli.DEFAULT_DATABASE_PATH", str(fresh_database_path))
+    monkeypatch.setattr("phi_scan.cli.history.DEFAULT_DATABASE_PATH", str(fresh_database_path))
 
     cli_invocation = runner.invoke(app, ["report"])
 
@@ -221,7 +221,7 @@ def test_full_pipeline_scan_then_report(
     shared_database_path = tmp_path / "audit.db"
     # Both scan (via configuration) and report (via monkeypatched constant) must
     # point at the same database so that report can read the record scan wrote.
-    monkeypatch.setattr("phi_scan.cli.DEFAULT_DATABASE_PATH", str(shared_database_path))
+    monkeypatch.setattr("phi_scan.cli.history.DEFAULT_DATABASE_PATH", str(shared_database_path))
     configuration_path = _write_test_configuration(tmp_path, shared_database_path)
     scan_root = _create_scan_root_directory(tmp_path)
 
