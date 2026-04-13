@@ -699,3 +699,90 @@ def test_query_recent_scans_combined_filters_narrow_results(tmp_path: Path) -> N
         should_show_violations_only=True,
     )
     assert len(empty_rows) == 0
+
+
+# ---------------------------------------------------------------------------
+# PHI sentinel regression tests — guarantee _serialize_and_encrypt refuses to
+# emit findings_json that still carries raw-PHI field names. These guard the
+# defence-in-depth barrier documented in phi_scan.audit.crypto.
+# ---------------------------------------------------------------------------
+
+
+def test_assert_no_raw_phi_fields_rejects_file_path(tmp_path: Path) -> None:
+    import pytest
+
+    from phi_scan.audit import _assert_no_raw_phi_fields
+    from phi_scan.exceptions import PhiDetectionError
+
+    bad_json = '[{"file_path": "secret.py", "value_hash": "abc"}]'
+    with pytest.raises(PhiDetectionError, match="file_path"):
+        _assert_no_raw_phi_fields(bad_json)
+
+
+def test_assert_no_raw_phi_fields_rejects_code_context() -> None:
+    import pytest
+
+    from phi_scan.audit import _assert_no_raw_phi_fields
+    from phi_scan.exceptions import PhiDetectionError
+
+    bad_json = '[{"code_context": "line 1", "value_hash": "abc"}]'
+    with pytest.raises(PhiDetectionError, match="code_context"):
+        _assert_no_raw_phi_fields(bad_json)
+
+
+def test_assert_no_raw_phi_fields_rejects_remediation_hint() -> None:
+    import pytest
+
+    from phi_scan.audit import _assert_no_raw_phi_fields
+    from phi_scan.exceptions import PhiDetectionError
+
+    bad_json = '[{"remediation_hint": "rotate", "value_hash": "abc"}]'
+    with pytest.raises(PhiDetectionError, match="remediation_hint"):
+        _assert_no_raw_phi_fields(bad_json)
+
+
+def test_assert_no_raw_phi_fields_accepts_clean_serialization() -> None:
+    from phi_scan.audit import _assert_no_raw_phi_fields
+
+    clean_json = '[{"file_path_hash": "abc", "value_hash": "def"}]'
+    _assert_no_raw_phi_fields(clean_json)  # must not raise
+
+
+def test_audit_submodule_surface_preserves_patchable_symbols() -> None:
+    """Regression: package surface must keep symbols tests/callers patch or import.
+
+    The audit package was decomposed into _shared/crypto/hash_chain submodules.
+    This test locks in the compatibility contract: everything previously
+    importable from ``phi_scan.audit`` must still be importable there.
+    """
+    from phi_scan import audit
+
+    required = (
+        # public API
+        "ChainVerifyResult",
+        "create_audit_schema",
+        "ensure_current_schema",
+        "generate_audit_key",
+        "get_last_scan",
+        "get_schema_version",
+        "insert_scan_event",
+        "migrate_schema",
+        "purge_expired_audit_rows",
+        "query_recent_scans",
+        "verify_audit_chain",
+        # private symbols patched or imported by tests
+        "_MIGRATIONS",
+        "_encrypt_findings_json",
+        "_decrypt_findings_json",
+        "_assert_no_raw_phi_fields",
+        "_get_current_branch",
+        "_get_current_repository_path",
+        "_hmac_sha256",
+        "_row_content_for_hashing",
+        "_reject_symlink_database_path",
+        "subprocess",
+    )
+    for attribute_name in required:
+        assert hasattr(audit, attribute_name), (
+            f"phi_scan.audit.{attribute_name} missing — breaks compat contract"
+        )
