@@ -227,7 +227,7 @@ Full syntax: [docs/ignore-patterns.md](docs/ignore-patterns.md)
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/joeyessak/phi-scan
-    rev: v0.4.0
+    rev: v0.5.0
     hooks:
       - id: phi-scan
 ```

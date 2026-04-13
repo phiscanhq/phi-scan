@@ -87,7 +87,7 @@ phi-scan scan --file path/to/patient_handler.py
 A clean scan:
 
 ```
-PhiScan v0.3.0
+PhiScan v0.5.0
 Scanning: ./src (42 files)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100%
 
@@ -97,7 +97,7 @@ Scanning: ./src (42 files)
 A scan with findings:
 
 ```
-PhiScan v0.3.0
+PhiScan v0.5.0
 Scanning: ./src (42 files)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100%
 
