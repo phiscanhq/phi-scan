@@ -58,6 +58,19 @@ _BITBUCKET_ANNOTATION_SEVERITY_MAP: dict[SeverityLevel, str] = {
 _BITBUCKET_ANNOTATIONS_BATCH_LIMIT: int = 1000
 _SHA_LOG_PREFIX_LENGTH: int = 8
 
+# PR context extras keys — set by phi_scan.ci.bitbucket when the adapter
+# extracts workspace/repo identity from CI environment variables.
+_EXTRAS_KEY_WORKSPACE: str = "workspace"
+_EXTRAS_KEY_REPO_SLUG: str = "repo_slug"
+
+# PHI safety contract for the Bitbucket Code Insights payload:
+# - `path` and `line` expose source-file location metadata (non-PHI).
+# - `message` embeds ScanFinding classification labels only — hipaa_category
+#   (enum value like "SSN"), severity (enum value like "HIGH"), and a rounded
+#   confidence percentage. No finding.value, value_hash, code_context, or
+#   remediation_hint ever enters the payload. This is verified by
+#   tests/test_ci_integration_remaining.py exercising the JSON body.
+
 
 def _build_report_payload(scan_result: ScanResult) -> dict[str, Any]:
     findings_count = len(scan_result.findings)
@@ -103,11 +116,53 @@ def _build_annotations(scan_result: ScanResult) -> list[dict[str, Any]]:
     ]
 
 
+def _post_report(
+    headers: dict[str, str], workspace: str, repo_slug: str, sha: str, scan_result: ScanResult
+) -> None:
+    report_url = _BITBUCKET_API_BASE_URL + _BITBUCKET_REPORTS_PATH.format(
+        workspace=workspace,
+        repo_slug=repo_slug,
+        commit=sha,
+        report_id=_BITBUCKET_REPORT_ID,
+    )
+    execute_http_request(
+        HttpRequestConfig(
+            method=HttpMethod.PUT,
+            url=report_url,
+            operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_REPORT,
+            headers=headers,
+            json_body=_build_report_payload(scan_result),
+        )
+    )
+
+
+def _post_annotations(
+    headers: dict[str, str], workspace: str, repo_slug: str, sha: str, scan_result: ScanResult
+) -> int:
+    annotations_url = _BITBUCKET_API_BASE_URL + _BITBUCKET_ANNOTATIONS_PATH.format(
+        workspace=workspace,
+        repo_slug=repo_slug,
+        commit=sha,
+        report_id=_BITBUCKET_REPORT_ID,
+    )
+    annotations = _build_annotations(scan_result)
+    execute_http_request(
+        HttpRequestConfig(
+            method=HttpMethod.POST,
+            url=annotations_url,
+            operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_ANNOTATIONS,
+            headers=headers,
+            json_body=annotations,
+        )
+    )
+    return len(annotations)
+
+
 def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PullRequestContext) -> None:
     """Post Bitbucket Code Insights report and inline annotations."""
     sha = pr_context.sha
-    workspace = pr_context.extras.get("workspace", "")
-    repo_slug = pr_context.extras.get("repo_slug", "")
+    workspace = pr_context.extras.get(_EXTRAS_KEY_WORKSPACE, "")
+    repo_slug = pr_context.extras.get(_EXTRAS_KEY_REPO_SLUG, "")
 
     if not sha or not workspace or not repo_slug:
         _LOG.debug("Bitbucket Code Insights: missing context — skipping")
@@ -122,46 +177,16 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PullReques
         "Authorization": _AUTHORIZATION_BEARER_PREFIX + token,
         "Content-Type": _JSON_CONTENT_TYPE,
     }
-    report_url = _BITBUCKET_API_BASE_URL + _BITBUCKET_REPORTS_PATH.format(
-        workspace=workspace,
-        repo_slug=repo_slug,
-        commit=sha,
-        report_id=_BITBUCKET_REPORT_ID,
-    )
 
-    execute_http_request(
-        HttpRequestConfig(
-            method=HttpMethod.PUT,
-            url=report_url,
-            operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_REPORT,
-            headers=headers,
-            json_body=_build_report_payload(scan_result),
-        )
-    )
+    _post_report(headers, workspace, repo_slug, sha, scan_result)
 
     if not scan_result.findings:
         return
 
-    annotations_url = _BITBUCKET_API_BASE_URL + _BITBUCKET_ANNOTATIONS_PATH.format(
-        workspace=workspace,
-        repo_slug=repo_slug,
-        commit=sha,
-        report_id=_BITBUCKET_REPORT_ID,
-    )
-    annotations = _build_annotations(scan_result)
-
-    execute_http_request(
-        HttpRequestConfig(
-            method=HttpMethod.POST,
-            url=annotations_url,
-            operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_ANNOTATIONS,
-            headers=headers,
-            json_body=annotations,
-        )
-    )
+    annotations_count = _post_annotations(headers, workspace, repo_slug, sha, scan_result)
 
     _LOG.debug(
         "Bitbucket: Code Insights report + %d annotation(s) posted for %s",
-        len(annotations),
+        annotations_count,
         sha[:_SHA_LOG_PREFIX_LENGTH],
     )
