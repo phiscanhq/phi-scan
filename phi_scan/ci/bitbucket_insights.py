@@ -7,6 +7,7 @@ phi_scan.ci_integration via re-export; this module owns the implementation.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from phi_scan.ci import PullRequestContext
@@ -57,6 +58,9 @@ _BITBUCKET_ANNOTATION_SEVERITY_MAP: dict[SeverityLevel, str] = {
 
 _BITBUCKET_ANNOTATIONS_BATCH_LIMIT: int = 1000
 _SHA_LOG_PREFIX_LENGTH: int = 8
+_BITBUCKET_ANNOTATION_EXTERNAL_ID_PREFIX: str = "phi-scan-"
+_BITBUCKET_DATA_TITLE_TOTAL_FINDINGS: str = "Total findings"
+_BITBUCKET_DATA_TITLE_RISK_LEVEL: str = "Risk level"
 
 # PR context extras keys — set by phi_scan.ci.bitbucket when the adapter
 # extracts workspace/repo identity from CI environment variables.
@@ -82,12 +86,12 @@ def _build_report_payload(scan_result: ScanResult) -> dict[str, Any]:
         "result": report_result,
         "data": [
             {
-                "title": "Total findings",
+                "title": _BITBUCKET_DATA_TITLE_TOTAL_FINDINGS,
                 "type": _BITBUCKET_DATA_TYPE_NUMBER,
                 "value": findings_count,
             },
             {
-                "title": "Risk level",
+                "title": _BITBUCKET_DATA_TITLE_RISK_LEVEL,
                 "type": _BITBUCKET_DATA_TYPE_TEXT,
                 "value": scan_result.risk_level.value,
             },
@@ -98,7 +102,10 @@ def _build_report_payload(scan_result: ScanResult) -> dict[str, Any]:
 def _build_annotations(scan_result: ScanResult) -> list[dict[str, Any]]:
     return [
         {
-            "external_id": f"phi-scan-{finding.file_path}-{finding.line_number}-{annotation_index}",
+            "external_id": (
+                f"{_BITBUCKET_ANNOTATION_EXTERNAL_ID_PREFIX}"
+                f"{finding.file_path}-{finding.line_number}-{annotation_index}"
+            ),
             "annotation_type": _BITBUCKET_ANNOTATION_TYPE_VULNERABILITY,
             "path": str(finding.file_path),
             "line": finding.line_number,
@@ -116,13 +123,21 @@ def _build_annotations(scan_result: ScanResult) -> list[dict[str, Any]]:
     ]
 
 
-def _post_report(
-    headers: dict[str, str], workspace: str, repo_slug: str, sha: str, scan_result: ScanResult
-) -> None:
+@dataclass(frozen=True)
+class _BitbucketReportContext:
+    """Bundle of request values shared by the report + annotations POSTs."""
+
+    headers: dict[str, str]
+    workspace: str
+    repo_slug: str
+    sha: str
+
+
+def _post_report(report_context: _BitbucketReportContext, scan_result: ScanResult) -> None:
     report_url = _BITBUCKET_API_BASE_URL + _BITBUCKET_REPORTS_PATH.format(
-        workspace=workspace,
-        repo_slug=repo_slug,
-        commit=sha,
+        workspace=report_context.workspace,
+        repo_slug=report_context.repo_slug,
+        commit=report_context.sha,
         report_id=_BITBUCKET_REPORT_ID,
     )
     execute_http_request(
@@ -130,19 +145,17 @@ def _post_report(
             method=HttpMethod.PUT,
             url=report_url,
             operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_REPORT,
-            headers=headers,
+            headers=report_context.headers,
             json_body=_build_report_payload(scan_result),
         )
     )
 
 
-def _post_annotations(
-    headers: dict[str, str], workspace: str, repo_slug: str, sha: str, scan_result: ScanResult
-) -> int:
+def _post_annotations(report_context: _BitbucketReportContext, scan_result: ScanResult) -> int:
     annotations_url = _BITBUCKET_API_BASE_URL + _BITBUCKET_ANNOTATIONS_PATH.format(
-        workspace=workspace,
-        repo_slug=repo_slug,
-        commit=sha,
+        workspace=report_context.workspace,
+        repo_slug=report_context.repo_slug,
+        commit=report_context.sha,
         report_id=_BITBUCKET_REPORT_ID,
     )
     annotations = _build_annotations(scan_result)
@@ -151,7 +164,7 @@ def _post_annotations(
             method=HttpMethod.POST,
             url=annotations_url,
             operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_ANNOTATIONS,
-            headers=headers,
+            headers=report_context.headers,
             json_body=annotations,
         )
     )
@@ -173,17 +186,22 @@ def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PullReques
         _LOG.warning("Bitbucket: BITBUCKET_TOKEN not set — skipping Code Insights")
         return
 
-    headers = {
-        "Authorization": _AUTHORIZATION_BEARER_PREFIX + token,
-        "Content-Type": _JSON_CONTENT_TYPE,
-    }
+    report_context = _BitbucketReportContext(
+        headers={
+            "Authorization": _AUTHORIZATION_BEARER_PREFIX + token,
+            "Content-Type": _JSON_CONTENT_TYPE,
+        },
+        workspace=workspace,
+        repo_slug=repo_slug,
+        sha=sha,
+    )
 
-    _post_report(headers, workspace, repo_slug, sha, scan_result)
+    _post_report(report_context, scan_result)
 
     if not scan_result.findings:
         return
 
-    annotations_count = _post_annotations(headers, workspace, repo_slug, sha, scan_result)
+    annotations_count = _post_annotations(report_context, scan_result)
 
     _LOG.debug(
         "Bitbucket: Code Insights report + %d annotation(s) posted for %s",
