@@ -49,9 +49,10 @@ _AES_GCM_KEY_BYTES: int = 32  # 256-bit key
 _AES_GCM_NONCE_BYTES: int = 12  # 96-bit nonce (GCM standard)
 _AES_GCM_TAG_BYTES: int = 16  # 128-bit authentication tag
 # Ciphertext layout: nonce(12) || ciphertext || tag(16), base64-encoded,
-# prefixed with AUDIT_ENCRYPTION_PREFIX.
+# prefixed with AUDIT_ENCRYPTION_PREFIX. AESGCM.decrypt consumes the tag
+# from the end of ciphertext_with_tag internally — we only need to split
+# the nonce from the rest.
 _AES_GCM_NONCE_END: int = _AES_GCM_NONCE_BYTES
-_AES_GCM_TAG_START: int = -_AES_GCM_TAG_BYTES  # slice from end
 
 # ScanFinding field names that carry raw or PHI-adjacent values and must NEVER
 # appear as JSON keys in a serialised findings record stored to the audit DB.
