@@ -53,6 +53,9 @@ from phi_scan.ci._transport import (
     OperationLabel,
     execute_http_request,
 )
+from phi_scan.ci.bitbucket_insights import (
+    post_bitbucket_code_insights as post_bitbucket_code_insights,
+)
 from phi_scan.ci.sarif import upload_sarif_to_github as upload_sarif_to_github
 from phi_scan.constants import SeverityLevel
 from phi_scan.exceptions import CIIntegrationError  # noqa: F401 — backward-compatible re-export
@@ -177,26 +180,6 @@ _AWS_SECURITY_HUB_SEVERITY_MAP: dict[SeverityLevel, str] = {
     SeverityLevel.LOW: _AWS_SECURITY_HUB_LOW_SEVERITY_LABEL,
     SeverityLevel.INFO: _AWS_SECURITY_HUB_INFO_SEVERITY_LABEL,
 }
-
-_BITBUCKET_API_BASE_URL: str = "https://api.bitbucket.org/2.0"
-_BITBUCKET_REPORTS_PATH: str = (
-    "/repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_id}"
-)
-_BITBUCKET_ANNOTATIONS_PATH: str = (
-    "/repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_id}/annotations"
-)
-_BITBUCKET_REPORT_ID: str = "phi-scan"
-_BITBUCKET_HIGH_SEVERITY_LABEL: str = "HIGH"
-_BITBUCKET_MEDIUM_SEVERITY_LABEL: str = "MEDIUM"
-_BITBUCKET_LOW_SEVERITY_LABEL: str = "LOW"
-_BITBUCKET_INFO_SEVERITY_LABEL: str = _BITBUCKET_LOW_SEVERITY_LABEL
-_BITBUCKET_ANNOTATION_SEVERITY_MAP: dict[SeverityLevel, str] = {
-    SeverityLevel.HIGH: _BITBUCKET_HIGH_SEVERITY_LABEL,
-    SeverityLevel.MEDIUM: _BITBUCKET_MEDIUM_SEVERITY_LABEL,
-    SeverityLevel.LOW: _BITBUCKET_LOW_SEVERITY_LABEL,
-    SeverityLevel.INFO: _BITBUCKET_INFO_SEVERITY_LABEL,
-}
-
 
 # ---------------------------------------------------------------------------
 # Backward-compatible type re-exports
@@ -409,100 +392,9 @@ def set_commit_status(scan_result: ScanResult, pr_context: PRContext) -> None:
 
 # ---------------------------------------------------------------------------
 # Public API — Bitbucket Code Insights annotations
+# Implementation now lives in phi_scan.ci.bitbucket_insights; re-exported at
+# module top.
 # ---------------------------------------------------------------------------
-
-
-def post_bitbucket_code_insights(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Post Bitbucket Code Insights report and inline annotations."""
-    sha = pr_context.sha
-    workspace = pr_context.extras.get("workspace", "")
-    repo_slug = pr_context.extras.get("repo_slug", "")
-
-    if not sha or not workspace or not repo_slug:
-        _LOG.debug("Bitbucket Code Insights: missing context — skipping")
-        return
-
-    token = _env(_ENV_BITBUCKET_TOKEN)
-    if not token:
-        _LOG.warning("Bitbucket: BITBUCKET_TOKEN not set — skipping Code Insights")
-        return
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": _JSON_CONTENT_TYPE,
-    }
-    report_url = _BITBUCKET_API_BASE_URL + _BITBUCKET_REPORTS_PATH.format(
-        workspace=workspace,
-        repo_slug=repo_slug,
-        commit=sha,
-        report_id=_BITBUCKET_REPORT_ID,
-    )
-
-    findings_count = len(scan_result.findings)
-    report_payload: dict[str, Any] = {
-        "title": "phi-scan PHI/PII Scan",
-        "report_type": "SECURITY",
-        "reporter": "phi-scan",
-        "result": "PASSED" if scan_result.is_clean else "FAILED",
-        "data": [
-            {"title": "Total findings", "type": "NUMBER", "value": findings_count},
-            {
-                "title": "Risk level",
-                "type": "TEXT",
-                "value": scan_result.risk_level.value,
-            },
-        ],
-    }
-
-    execute_http_request(
-        HttpRequestConfig(
-            method=HttpMethod.PUT,
-            url=report_url,
-            operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_REPORT,
-            headers=headers,
-            json_body=report_payload,
-        )
-    )
-
-    if not scan_result.findings:
-        return
-
-    annotations_url = _BITBUCKET_API_BASE_URL + _BITBUCKET_ANNOTATIONS_PATH.format(
-        workspace=workspace,
-        repo_slug=repo_slug,
-        commit=sha,
-        report_id=_BITBUCKET_REPORT_ID,
-    )
-    annotations = [
-        {
-            "external_id": f"phi-scan-{finding.file_path}-{finding.line_number}-{idx}",
-            "annotation_type": "VULNERABILITY",
-            "path": str(finding.file_path),
-            "line": finding.line_number,
-            "message": (
-                f"{finding.hipaa_category.value} detected "
-                f"({finding.severity.value}, {finding.confidence:.0%} confidence)"
-            ),
-            "severity": _BITBUCKET_ANNOTATION_SEVERITY_MAP.get(finding.severity, "MEDIUM"),
-        }
-        for idx, finding in enumerate(scan_result.findings[:1000])
-    ]
-
-    execute_http_request(
-        HttpRequestConfig(
-            method=HttpMethod.POST,
-            url=annotations_url,
-            operation_label=OperationLabel.BITBUCKET_CODE_INSIGHTS_ANNOTATIONS,
-            headers=headers,
-            json_body=annotations,
-        )
-    )
-
-    _LOG.debug(
-        "Bitbucket: Code Insights report + %d annotation(s) posted for %s",
-        len(annotations),
-        sha[:8],
-    )
 
 
 # ---------------------------------------------------------------------------
