@@ -1,4 +1,14 @@
-"""Recursive file traversal and detection engine entry point."""
+"""Recursive file traversal and detection engine entry point.
+
+Per scanned file, ``execute_scan`` runs the built-in detection layers via
+``phi_scan.detection_coordinator.detect_phi_in_text_content`` (regex, NLP,
+FHIR/HL7, quasi-identifier combination) and then runs the plugin runtime
+pass via ``phi_scan.plugin_runtime.execute_plugin_pass`` against every
+loaded recognizer plugin. Built-in findings and plugin findings flow
+through the same downstream filter, suppression, baseline, and output
+pipeline. The plugin registry is discovered once per ``execute_scan``
+invocation and shared across per-file workers.
+"""
 
 from __future__ import annotations
 

@@ -2,8 +2,13 @@
 
 Status: **IMPLEMENTED** — shipped in PR #130. The `phi_scan/ci/` package
 contains per-platform adapters matching this contract. `ci_integration.py`
-remains as a thin re-export shim for backward compatibility and will be
-removed in a future release (see Phase 3 below).
+is retained as the backward-compatible entry point: it dispatches to the
+per-platform adapters in `phi_scan.ci` and still hosts the orchestration
+helpers (comment-body formatting) and the platform-specific extras
+(SARIF upload, Bitbucket Code Insights, Azure build tags / PR statuses /
+Boards work items, AWS Security Hub ASFF import) that have not yet been
+migrated into their adapters. No runtime deprecation warning is emitted
+today; migration and shim removal are deferred (see Phase 3 below).
 
 ---
 
@@ -66,8 +71,12 @@ tests/
 `phi_scan/ci/__init__.py` re-exports the public API so that callers can
 migrate with a single import-path change
 (`from phi_scan.ci import post_pull_request_comment`). The legacy
-`phi_scan/ci_integration.py` module is retained as a thin re-export shim
-during the deprecation window; it emits a `DeprecationWarning` on import.
+`phi_scan/ci_integration.py` module continues to expose the original
+public names (re-dispatching orchestration calls through the
+`phi_scan.ci` adapter registry) and still hosts the platform-specific
+extras listed in Phase 3. It does not currently raise a
+`DeprecationWarning` on import; adding one is an explicit prerequisite
+for shim removal and is tracked under Phase 3.
 
 `CIIntegrationError` lives in `phi_scan/exceptions.py` (imported by
 `_base.py` and every adapter), not in `_base.py` itself — this matches the
@@ -221,7 +230,10 @@ module. `_transport.py` is security-critical and retains 100% coverage.
 Shipped in PR #130. `phi_scan/ci/` package created with `_base.py`,
 `_transport.py`, `_detect.py`, and `_env.py`. Platform detection and
 shared HTTP logic moved out of the monolith. `ci_integration.py` retained
-as a thin re-export shim emitting `DeprecationWarning` on import.
+as the backward-compatible entry point — orchestration calls dispatch
+through `phi_scan.ci`, and the module still hosts the platform-specific
+extras scheduled for migration in Phase 3. No runtime deprecation warning
+is emitted today.
 
 ### Phase 2 — Per-Platform Adapters ✅ Done
 
@@ -232,15 +244,21 @@ adapter class (`github.py`, `gitlab.py`, `azure.py`, `circleci.py`,
 `post_pull_request_comment` and `set_commit_status` via the adapter
 registry.
 
-### Phase 3 — Remove Shim ⏳ Deferred follow-up
+### Phase 3 — Migrate Extras and Remove Shim ⏳ Deferred follow-up
 
-Not scheduled to a specific release. Before removal:
+Not scheduled to a specific release. The platform-specific extras
+(SARIF upload, Bitbucket Code Insights, Azure build tags / PR statuses /
+Boards work items, AWS Security Hub ASFF import) still live in
+`ci_integration.py` and will be moved onto their respective adapters
+before the shim is retired. Before removal:
 
-1. Internal callers migrate from `phi_scan.ci_integration` to
-   `phi_scan.ci` (the deprecation warning flags any remaining imports).
-2. External callers observe the warning for the duration of one
-   minor-release cycle per `docs/plugin-api-v1.md` deprecation policy.
-3. `ci_integration.py` is removed in a future minor release; release
+1. Migrate the remaining platform-specific extras from
+   `ci_integration.py` onto their adapters in `phi_scan.ci`.
+2. Add a `DeprecationWarning` to `phi_scan.ci_integration` import so
+   external callers observe it for at least one minor-release cycle,
+   per the deprecation policy in `docs/plugin-api-v1.md`.
+3. Migrate any remaining internal callers to `phi_scan.ci`.
+4. Remove `ci_integration.py` in a subsequent minor release; release
    notes call out the removal.
 
 Verification at removal time: `ruff check` confirms no remaining imports
@@ -269,7 +287,7 @@ signoff.
 
 | Risk | Mitigation |
 |------|-----------|
-| Import path breakage for downstream consumers | The shim preserves the old import path with a deprecation warning through the 2-minor-release deprecation window. |
+| Import path breakage for downstream consumers | The shim preserves the old import path; a deprecation warning will be added before removal and maintained through the 2-minor-release deprecation window. |
 | Behavior regression in platform-specific logic | Each adapter was extracted as a mechanical refactor with no logic changes; existing tests were moved rather than rewritten. |
 | Test coverage regression | Per-platform >= 90% coverage gate; `_transport.py` at 100%. |
 
@@ -287,3 +305,4 @@ are unaffected either way.
 |-----------------|------|--------|
 | Draft 1 | 2026-04-16 | Initial design for A8 scorecard check |
 | Draft 2 | 2026-04-17 | Rewrite to current-state wording: Phase 1/2 marked done, Phase 3 marked deferred, module layout and test strategy updated to reflect shipped reality, `_env.py` and `exceptions.py` corrections applied |
+| Draft 3 | 2026-04-18 | Truth-sync: remove claims that `ci_integration.py` is a thin re-export shim emitting `DeprecationWarning` on import. Shim still hosts orchestration helpers and platform-specific extras; no deprecation warning is currently raised. Phase 3 expanded to cover extras migration as a prerequisite to shim removal. |
