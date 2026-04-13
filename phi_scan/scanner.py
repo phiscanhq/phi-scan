@@ -599,11 +599,26 @@ def _execute_scan_with_cache(
     cached_raw = get_cached_result(cache_key)
     if cached_raw is not None:
         _logger.debug(_CACHE_HIT_DEBUG.format(path=file_path, count=len(cached_raw)))
-        plugin_findings = _execute_plugin_pass_for_file(file_content, file_path)
-        return _apply_post_scan_filters(cached_raw + plugin_findings, file_content, config)
+        return _compose_file_findings(cached_raw, file_content, file_path, config)
     scannable_content = _preprocess_content_for_scan(file_content, file_path)
     raw_findings = detect_phi_in_text_content(scannable_content, file_path)
     store_cached_result(cache_key, raw_findings)
+    return _compose_file_findings(raw_findings, file_content, file_path, config)
+
+
+def _compose_file_findings(
+    raw_findings: list[ScanFinding],
+    file_content: str,
+    file_path: Path,
+    config: ScanConfig,
+) -> list[ScanFinding]:
+    """Merge built-in and plugin findings and apply post-scan filters.
+
+    Runs the scan-scoped plugin pass against ``file_content`` and returns
+    the concatenation of ``raw_findings`` + plugin findings after suppression,
+    confidence, and severity filters. Shared by the cache-hit, cache-miss,
+    and archive-member paths so that a single composition stays drift-free.
+    """
     plugin_findings = _execute_plugin_pass_for_file(file_content, file_path)
     return _apply_post_scan_filters(raw_findings + plugin_findings, file_content, config)
 
@@ -910,9 +925,8 @@ def _scan_archive_members(
             continue
         virtual_path = _compute_display_path(archive_path) / member_name
         raw_findings = detect_phi_in_text_content(member_content, virtual_path)
-        plugin_findings = _execute_plugin_pass_for_file(member_content, virtual_path)
-        member_findings = _apply_post_scan_filters(
-            raw_findings + plugin_findings, member_content, config
+        member_findings = _compose_file_findings(
+            raw_findings, member_content, virtual_path, config
         )
         findings.extend(member_findings)
     return findings
