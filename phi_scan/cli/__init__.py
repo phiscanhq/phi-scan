@@ -38,19 +38,19 @@ from phi_scan.ci_integration import (
     set_commit_status,
     upload_sarif_to_github,
 )
-from phi_scan.cli_baseline import baseline_app
-from phi_scan.cli_config import config_app
-from phi_scan.cli_explain import explain_app
-from phi_scan.cli_plugins import plugins_app
-from phi_scan.cli_report import (
+from phi_scan.cli.baseline import baseline_app
+from phi_scan.cli.config import config_app
+from phi_scan.cli.explain import explain_app
+from phi_scan.cli.plugins import plugins_app
+from phi_scan.cli.report import (
     ScanOutputOptions,
     display_report_phase_header,
     emit_report_output,
     emit_verbose_phase,
     resolve_output_format,
 )
-from phi_scan.cli_scan_config import load_scan_config
-from phi_scan.cli_watch import (
+from phi_scan.cli.scan_config import load_scan_config
+from phi_scan.cli.watch import (
     WATCH_LOG_MAX_EVENTS,
     FileChangeMonitor,
     WatchConfig,
