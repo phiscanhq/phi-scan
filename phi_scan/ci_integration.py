@@ -25,9 +25,6 @@ phrase — never the response body.
 
 from __future__ import annotations
 
-import base64
-import gzip
-import json
 import logging
 import os
 import subprocess
@@ -56,10 +53,21 @@ from phi_scan.ci._transport import (
     OperationLabel,
     execute_http_request,
 )
+from phi_scan.ci.sarif import (
+    _base64_encode_bytes as _base64_encode_bytes,
+)
+from phi_scan.ci.sarif import (
+    _gzip_compress_sarif as _gzip_compress_sarif,
+)
+from phi_scan.ci.sarif import (
+    _verify_sarif_excludes_code_snippets as _verify_sarif_excludes_code_snippets,
+)
+from phi_scan.ci.sarif import (
+    upload_sarif_to_github as upload_sarif_to_github,
+)
 from phi_scan.constants import SeverityLevel
 from phi_scan.exceptions import CIIntegrationError  # noqa: F401 — backward-compatible re-export
 from phi_scan.models import ScanResult
-from phi_scan.output import format_sarif
 
 PRContext = PullRequestContext
 get_pr_context = get_pull_request_context
@@ -406,84 +414,8 @@ def set_commit_status(scan_result: ScanResult, pr_context: PRContext) -> None:
 
 # ---------------------------------------------------------------------------
 # Public API — upload SARIF to GitHub Code Scanning
+# Implementation now lives in phi_scan.ci.sarif; re-exported at module top.
 # ---------------------------------------------------------------------------
-
-
-def _verify_sarif_excludes_code_snippets(sarif_content: str) -> None:
-    """Verify the SARIF output contains no code snippet or contextRegion fields."""
-    sarif_doc: dict[str, Any] = json.loads(sarif_content)
-    for sarif_run in sarif_doc.get("runs", []):
-        for sarif_result in sarif_run.get("results", []):
-            message_text = sarif_result.get("message", {}).get("text", "")
-            if len(message_text) > _SARIF_MAX_MESSAGE_TEXT_LENGTH:
-                raise CIIntegrationError(
-                    f"SARIF upload aborted: message.text length {len(message_text)} "
-                    f"exceeds limit of {_SARIF_MAX_MESSAGE_TEXT_LENGTH} — "
-                    "unexpected content may be embedded"
-                )
-            for location in sarif_result.get("locations", []):
-                physical_location = location.get("physicalLocation", {})
-                region = physical_location.get("region", {})
-                if "snippet" in region:
-                    raise CIIntegrationError(
-                        "SARIF upload aborted: code snippet detected in SARIF output — "
-                        "uploading would expose raw source content to GitHub Code Scanning API"
-                    )
-                if "contextRegion" in physical_location:
-                    raise CIIntegrationError(
-                        "SARIF upload aborted: contextRegion detected in SARIF output — "
-                        "uploading would expose raw source content to GitHub Code Scanning API"
-                    )
-
-
-def _gzip_compress_sarif(sarif_content: str) -> bytes:
-    return gzip.compress(sarif_content.encode("utf-8"))
-
-
-def _base64_encode_bytes(raw_bytes: bytes) -> str:
-    return base64.b64encode(raw_bytes).decode("ascii")
-
-
-def upload_sarif_to_github(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Upload a SARIF report to the GitHub Code Scanning API for inline annotations."""
-    repository = pr_context.repository
-    sha = pr_context.sha
-    if not repository or not sha:
-        _LOG.debug("GitHub SARIF upload: missing repository or SHA — skipping")
-        return
-
-    token = _env(_ENV_GITHUB_TOKEN)
-    if not token:
-        _LOG.warning("GitHub SARIF upload: GITHUB_TOKEN not set — skipping")
-        return
-
-    sarif_content = format_sarif(scan_result)
-    _verify_sarif_excludes_code_snippets(sarif_content)
-    sarif_base64_encoded = _base64_encode_bytes(_gzip_compress_sarif(sarif_content))
-
-    url = _GITHUB_API_BASE_URL + _GITHUB_API_SARIF_UPLOAD_PATH.format(repository=repository)
-    sarif_upload_payload = {
-        "commit_sha": sha,
-        "ref": pr_context.branch or _DEFAULT_GIT_REF,
-        "sarif": sarif_base64_encoded,
-        "tool_name": "phi-scan",
-    }
-
-    execute_http_request(
-        HttpRequestConfig(
-            method=HttpMethod.POST,
-            url=url,
-            operation_label=OperationLabel.GITHUB_SARIF_UPLOAD,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            json_body=sarif_upload_payload,
-        )
-    )
-
-    _LOG.debug("GitHub: SARIF uploaded to Code Scanning for %s", sha[:8])
 
 
 # ---------------------------------------------------------------------------

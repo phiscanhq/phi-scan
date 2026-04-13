@@ -1450,3 +1450,22 @@ def test_phiscan_groovy_exposes_fail_on_violation_parameter() -> None:
     assert _JENKINS_FAIL_ON_VIOLATION_PARAM in content, (
         f"phiScan.groovy must expose '{_JENKINS_FAIL_ON_VIOLATION_PARAM}' parameter"
     )
+
+
+def test_sarif_symbols_reexported_from_ci_integration() -> None:
+    """After the sarif slice moved to phi_scan.ci.sarif, the old import
+    surface on phi_scan.ci_integration must still resolve to the same
+    callables. Locks in backward compatibility for callers that imported
+    from the legacy module path."""
+    import phi_scan.ci.sarif as sarif_module
+    import phi_scan.ci_integration as ci_integration_module
+
+    for symbol_name in (
+        "upload_sarif_to_github",
+        "_verify_sarif_excludes_code_snippets",
+        "_gzip_compress_sarif",
+        "_base64_encode_bytes",
+    ):
+        assert getattr(ci_integration_module, symbol_name) is getattr(
+            sarif_module, symbol_name
+        ), f"{symbol_name} no longer re-exported from phi_scan.ci_integration"
