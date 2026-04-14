@@ -39,6 +39,7 @@ __all__ = [
     "build_watch_result",
     "count_files_in_directory",
     "display_watch_live_screen",
+    "resolve_watch_directory",
     "scan_changed_file",
     "start_watch",
 ]
@@ -46,6 +47,10 @@ __all__ = [
 _WATCH_PATH_HELP: str = "Directory to watch for file system changes."
 _WATCH_PATH_DOES_NOT_EXIST: str = "Path does not exist: {path}"
 _WATCH_PATH_NOT_DIRECTORY: str = "Path is not a directory: {path}"
+_WATCH_PATH_IS_SYMLINK: str = (
+    "Path is a symbolic link: {path}. Watch mode rejects symlink targets to prevent "
+    "traversal outside the intended directory. Pass the resolved path explicitly."
+)
 _WATCH_PATH_PARAM_HINT: str = "'PATH'"
 
 _logger: logging.Logger = get_logger("cli_watch")
@@ -277,8 +282,19 @@ def display_watch_live_screen(
             time.sleep(_WATCH_POLL_INTERVAL_SECONDS)
 
 
-def _validate_watch_path(path: Path) -> Path:
-    """Resolve and validate that the requested watch target is an existing directory."""
+def resolve_watch_directory(path: Path) -> Path:
+    """Reject symlinks, then resolve and validate the requested watch target.
+
+    Symlinks are rejected *before* ``resolve()`` is called because resolving
+    a symlink yields its target, which may sit outside the intended watch
+    root and expose PHI-containing files to the recursive watchdog observer.
+    Per CLAUDE.md: "Never follow symlinks during directory traversal."
+    """
+    if path.is_symlink():
+        raise typer.BadParameter(
+            _WATCH_PATH_IS_SYMLINK.format(path=path),
+            param_hint=_WATCH_PATH_PARAM_HINT,
+        )
     watch_path = path.resolve()
     if not watch_path.exists():
         raise typer.BadParameter(
@@ -297,7 +313,7 @@ def start_watch(
     path: Annotated[Path, typer.Argument(help=_WATCH_PATH_HELP)] = Path("."),
 ) -> None:
     """Watch a directory and re-scan changed files. Detection active from Phase 2."""
-    watch_path = _validate_watch_path(path)
+    watch_path = resolve_watch_directory(path)
     watch_config = WatchConfig(watch_root=watch_path, scan_config=ScanConfig())
     watch_events: deque[WatchEvent] = deque(maxlen=WATCH_LOG_MAX_EVENTS)
     event_handler = FileChangeMonitor(watch_config, watch_events)
