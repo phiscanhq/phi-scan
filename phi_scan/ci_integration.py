@@ -26,7 +26,6 @@ phrase — never the response body.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 
 from phi_scan.ci import (  # noqa: F401 — backward-compatible re-exports
@@ -57,6 +56,11 @@ from phi_scan.ci.aws_security_hub import (
 from phi_scan.ci.aws_security_hub import (
     import_findings_to_security_hub as import_findings_to_security_hub,
 )
+from phi_scan.ci.azure_devops import (
+    create_azure_boards_work_item as create_azure_boards_work_item,
+)
+from phi_scan.ci.azure_devops import set_azure_build_tag as set_azure_build_tag
+from phi_scan.ci.azure_devops import set_azure_pr_status as set_azure_pr_status
 from phi_scan.ci.bitbucket_insights import (
     post_bitbucket_code_insights as post_bitbucket_code_insights,
 )
@@ -138,38 +142,6 @@ _MAX_FINDINGS_IN_COMMENT_TABLE: int = 50
 # Constants — platform-specific extras
 # ---------------------------------------------------------------------------
 
-_ENV_GITHUB_TOKEN: str = "GITHUB_TOKEN"
-_ENV_SYSTEM_ACCESSTOKEN: str = "SYSTEM_ACCESSTOKEN"
-_ENV_BITBUCKET_TOKEN: str = "BITBUCKET_TOKEN"
-
-_HTTP_TIMEOUT_SECONDS: float = 15.0
-_JSON_CONTENT_TYPE: str = "application/json"
-_AZURE_PATCH_CONTENT_TYPE: str = "application/json-patch+json"
-_AZURE_BUILD_TAG_EMPTY_BODY: bytes = b""
-
-_GITHUB_API_BASE_URL: str = "https://api.github.com"
-_GITHUB_API_SARIF_UPLOAD_PATH: str = "/repos/{repository}/code-scanning/sarifs"
-_SARIF_MAX_MESSAGE_TEXT_LENGTH: int = 1_500
-
-_AZURE_API_VERSION: str = "7.1"
-_AZURE_BUILD_TAGS_PATH: str = (
-    "{collection_uri}{team_project}/_apis/build/builds/{build_id}"
-    "/tags/{tag}?api-version={api_version}"
-)
-_AZURE_PR_STATUSES_PATH: str = (
-    "{collection_uri}{team_project}/_apis/git/repositories/{repo_id}"
-    "/pullRequests/{pr_id}/statuses?api-version={api_version}"
-)
-_AZURE_TAG_CLEAN: str = "phi-scan:clean"
-_AZURE_TAG_VIOLATIONS: str = "phi-scan:violations-found"
-_AZURE_WORK_ITEM_TYPE: str = "Task"
-_AZURE_WORK_ITEMS_PATH: str = (
-    "{collection_uri}{team_project}/_apis/wit/workitems/${work_item_type}?api-version={api_version}"
-)
-_AZURE_WORK_ITEM_TITLE_FORMAT: str = (
-    "phi-scan: {count} HIGH severity PHI/PII violation(s) in PR #{pull_request_number}"
-)
-
 # ---------------------------------------------------------------------------
 # Backward-compatible type re-exports
 # ---------------------------------------------------------------------------
@@ -182,17 +154,6 @@ class BaselineComparison:
     new_findings_count: int
     baselined_count: int
     resolved_count: int
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _env(name: str) -> str | None:
-    """Return the environment variable value, or None if unset or empty."""
-    env_value = os.environ.get(name, "").strip()
-    return env_value if env_value else None
 
 
 # ---------------------------------------------------------------------------
@@ -387,168 +348,10 @@ def set_commit_status(scan_result: ScanResult, pr_context: PRContext) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Public API — Azure DevOps build tag + PR status
+# Public API — Azure DevOps build tag, PR status, and Boards work item
+# Implementation now lives in phi_scan.ci.azure_devops; re-exported at
+# module top.
 # ---------------------------------------------------------------------------
-
-
-def set_azure_build_tag(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Tag the Azure DevOps build with phi-scan:clean or phi-scan:violations-found."""
-    collection_uri = pr_context.extras.get("collection_uri", "")
-    team_project = pr_context.extras.get("team_project", "")
-    build_id = pr_context.extras.get("build_id", "")
-
-    if not all((collection_uri, team_project, build_id)):
-        _LOG.debug("Azure DevOps build tag: missing context — skipping")
-        return
-
-    token = _env(_ENV_SYSTEM_ACCESSTOKEN)
-    if not token:
-        _LOG.warning("Azure DevOps build tag: SYSTEM_ACCESSTOKEN not set — skipping")
-        return
-
-    tag = _AZURE_TAG_CLEAN if scan_result.is_clean else _AZURE_TAG_VIOLATIONS
-    url = _AZURE_BUILD_TAGS_PATH.format(
-        collection_uri=collection_uri,
-        team_project=team_project,
-        build_id=build_id,
-        tag=tag,
-        api_version=_AZURE_API_VERSION,
-    )
-
-    execute_http_request(
-        HttpRequestConfig(
-            method=HttpMethod.PUT,
-            url=url,
-            operation_label=OperationLabel.AZURE_BUILD_TAG,
-            binary_body=_AZURE_BUILD_TAG_EMPTY_BODY,
-            basic_auth_credentials=("", token),
-        )
-    )
-
-    _LOG.debug("Azure DevOps: build tagged with %s", tag)
-
-
-def set_azure_pr_status(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Set an Azure DevOps PR status to block or allow completion via branch policy."""
-    pr_id = pr_context.pull_request_number
-    repo_id = pr_context.repository
-    collection_uri = pr_context.extras.get("collection_uri", "")
-    team_project = pr_context.extras.get("team_project", "")
-
-    if not all((pr_id, repo_id, collection_uri, team_project)):
-        _LOG.debug("Azure DevOps PR status: missing context — skipping")
-        return
-
-    token = _env(_ENV_SYSTEM_ACCESSTOKEN)
-    if not token:
-        _LOG.warning("Azure DevOps PR status: SYSTEM_ACCESSTOKEN not set — skipping")
-        return
-
-    state = "succeeded" if scan_result.is_clean else "failed"
-    findings_count = len(scan_result.findings)
-    description = (
-        _COMMIT_STATUS_DESCRIPTION_CLEAN
-        if scan_result.is_clean
-        else _COMMIT_STATUS_DESCRIPTION_VIOLATIONS.format(count=findings_count)
-    )
-    url = _AZURE_PR_STATUSES_PATH.format(
-        collection_uri=collection_uri,
-        team_project=team_project,
-        repo_id=repo_id,
-        pr_id=pr_id,
-        api_version=_AZURE_API_VERSION,
-    )
-    payload = {
-        "state": state,
-        "description": description,
-        "context": {
-            "name": _COMMIT_STATUS_CONTEXT,
-            "genre": "phi-scan",
-        },
-    }
-
-    execute_http_request(
-        HttpRequestConfig(
-            method=HttpMethod.POST,
-            url=url,
-            operation_label=OperationLabel.AZURE_PR_STATUS,
-            json_body=payload,
-            basic_auth_credentials=("", token),
-        )
-    )
-
-    _LOG.debug("Azure DevOps: PR status set to %s for PR #%s", state, pr_id)
-
-
-# ---------------------------------------------------------------------------
-# Public API — Azure Boards work-item linking
-# ---------------------------------------------------------------------------
-
-
-def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext) -> None:
-    """Create an Azure Boards Task work item for HIGH severity PHI/PII findings."""
-    if _env("AZURE_BOARDS_INTEGRATION") != "true":
-        _LOG.debug("Azure Boards: AZURE_BOARDS_INTEGRATION not enabled — skipping")
-        return
-
-    high_findings = [f for f in scan_result.findings if f.severity.value.lower() == "high"]
-    if not high_findings:
-        _LOG.debug("Azure Boards: no HIGH severity findings — skipping work item")
-        return
-
-    collection_uri = pr_context.extras.get("collection_uri", "")
-    team_project = pr_context.extras.get("team_project", "")
-    pr_id = pr_context.pull_request_number or "unknown"
-
-    if not all((collection_uri, team_project)):
-        _LOG.debug("Azure Boards: missing context — skipping work item")
-        return
-
-    token = _env(_ENV_SYSTEM_ACCESSTOKEN)
-    if not token:
-        _LOG.warning("Azure Boards: SYSTEM_ACCESSTOKEN not set — skipping")
-        return
-
-    title = _AZURE_WORK_ITEM_TITLE_FORMAT.format(
-        count=len(high_findings), pull_request_number=pr_id
-    )
-    url = _AZURE_WORK_ITEMS_PATH.format(
-        collection_uri=collection_uri,
-        team_project=team_project,
-        work_item_type=_AZURE_WORK_ITEM_TYPE,
-        api_version=_AZURE_API_VERSION,
-    )
-
-    patch_payload = [
-        {"op": "add", "path": "/fields/System.Title", "value": title},
-        {
-            "op": "add",
-            "path": "/fields/System.Description",
-            "value": (
-                f"phi-scan detected {len(high_findings)} HIGH severity PHI/PII "
-                f"violation(s) in PR #{pr_id}. "
-                "Remediate before merging."
-            ),
-        },
-        {"op": "add", "path": "/fields/System.Tags", "value": "phi-scan;security;phi-pii"},
-    ]
-
-    execute_http_request(
-        HttpRequestConfig(
-            method=HttpMethod.POST,
-            url=url,
-            operation_label=OperationLabel.AZURE_WORK_ITEM,
-            headers={"Content-Type": _AZURE_PATCH_CONTENT_TYPE},
-            json_body=patch_payload,
-            basic_auth_credentials=("", token),
-        )
-    )
-
-    _LOG.debug(
-        "Azure Boards: work item created for PR #%s (%d HIGH findings)",
-        pr_id,
-        len(high_findings),
-    )
 
 
 # ---------------------------------------------------------------------------
