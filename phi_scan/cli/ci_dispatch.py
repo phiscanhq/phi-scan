@@ -69,7 +69,7 @@ class CIIntegrationOptions:
         )
 
 
-def _call_ci_integration(operation: Callable[[], None], label: str, is_rich_mode: bool) -> None:
+def _execute_ci_integration(operation: Callable[[], None], label: str, is_rich_mode: bool) -> None:
     """Execute a CI integration operation, logging warnings on failure."""
     try:
         operation()
@@ -85,17 +85,17 @@ def _dispatch_azure_devops_extras(
     scan_result: ScanResult, pr_context: PullRequestContext, is_rich_mode: bool
 ) -> None:
     """Run Azure-specific PR status, build tag, and Boards work-item calls."""
-    _call_ci_integration(
+    _execute_ci_integration(
         lambda: set_azure_pr_status(scan_result, pr_context),
         _CI_LABEL_AZURE_PR_STATUS,
         is_rich_mode,
     )
-    _call_ci_integration(
+    _execute_ci_integration(
         lambda: set_azure_build_tag(scan_result, pr_context),
         _CI_LABEL_AZURE_BUILD_TAG,
         is_rich_mode,
     )
-    _call_ci_integration(
+    _execute_ci_integration(
         lambda: create_azure_boards_work_item(scan_result, pr_context),
         _CI_LABEL_AZURE_BOARDS,
         is_rich_mode,
@@ -106,7 +106,7 @@ def _dispatch_commit_status_integrations(
     scan_result: ScanResult, pr_context: PullRequestContext, is_rich_mode: bool
 ) -> None:
     """Post the generic commit status plus platform-specific status extras."""
-    _call_ci_integration(
+    _execute_ci_integration(
         lambda: set_commit_status(scan_result, pr_context),
         _CI_LABEL_COMMIT_STATUS,
         is_rich_mode,
@@ -114,7 +114,7 @@ def _dispatch_commit_status_integrations(
     if pr_context.platform is CIPlatform.AZURE_DEVOPS:
         _dispatch_azure_devops_extras(scan_result, pr_context, is_rich_mode)
     if pr_context.platform is CIPlatform.BITBUCKET:
-        _call_ci_integration(
+        _execute_ci_integration(
             lambda: post_bitbucket_code_insights(scan_result, pr_context),
             _CI_LABEL_BITBUCKET_INSIGHTS,
             is_rich_mode,
@@ -133,7 +133,7 @@ def dispatch_ci_integrations(
     pr_context = get_pr_context()
 
     if integration_options.should_post_comment:
-        _call_ci_integration(
+        _execute_ci_integration(
             lambda: post_pr_comment(scan_result, pr_context),
             _CI_LABEL_PR_COMMENT,
             is_rich_mode,
@@ -141,13 +141,13 @@ def dispatch_ci_integrations(
     if integration_options.should_set_status:
         _dispatch_commit_status_integrations(scan_result, pr_context, is_rich_mode)
     if integration_options.should_upload_sarif:
-        _call_ci_integration(
+        _execute_ci_integration(
             lambda: upload_sarif_to_github(scan_result, pr_context),
             _CI_LABEL_SARIF_UPLOAD,
             is_rich_mode,
         )
     if integration_options.should_import_to_security_hub:
-        _call_ci_integration(
+        _execute_ci_integration(
             lambda: import_findings_to_security_hub(scan_result, pr_context),
             _CI_LABEL_SECURITY_HUB,
             is_rich_mode,
