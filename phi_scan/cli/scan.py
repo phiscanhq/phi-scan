@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
 from watchdog.observers import Observer
@@ -17,19 +16,6 @@ from phi_scan.audit import (
     _get_current_repository_path,
     ensure_current_schema,
     insert_scan_event,
-)
-from phi_scan.ci_integration import (
-    CIIntegrationError,
-    CIPlatform,
-    create_azure_boards_work_item,
-    get_pr_context,
-    import_findings_to_security_hub,
-    post_bitbucket_code_insights,
-    post_pr_comment,
-    set_azure_build_tag,
-    set_azure_pr_status,
-    set_commit_status,
-    upload_sarif_to_github,
 )
 from phi_scan.cli._shared import (
     _DEFAULT_WORKER_COUNT,
@@ -45,6 +31,7 @@ from phi_scan.cli._shared import (
     _truncate_filename_for_progress,
     _validate_worker_count,
 )
+from phi_scan.cli.ci_dispatch import CIIntegrationOptions, dispatch_ci_integrations
 from phi_scan.cli.report import (
     ScanOutputOptions,
     display_report_phase_header,
@@ -84,7 +71,6 @@ from phi_scan.output import (
     display_phase_scanning,
     display_scan_header,
     display_status_spinner,
-    get_console,
 )
 from phi_scan.scanner import (
     MAX_WORKER_COUNT,
@@ -152,6 +138,11 @@ _SCAN_UPLOAD_SARIF_HELP: str = (
     "Requires --output sarif and GITHUB_TOKEN. "
     "Each finding appears as an inline annotation on the exact line in the PR diff."
 )
+_SCAN_IMPORT_SECURITY_HUB_HELP: str = (
+    "Import findings to AWS Security Hub as ASFF. "
+    "Requires AWS_SECURITY_HUB=true, AWS_ACCOUNT_ID, and the AWS CLI. "
+    "Transmits classification metadata only — never raw PHI values or value hashes."
+)
 _SCAN_WORKERS_HELP: str = (
     f"Number of worker threads for parallel file scanning. Default 1 (sequential). "
     f"Values above 1 enable concurrent scanning up to {MAX_WORKER_COUNT}. "
@@ -172,17 +163,6 @@ _VERBOSE_PHASE_AUDIT: str = "writing audit record"
 _WATCH_PATH_DOES_NOT_EXIST: str = "Path does not exist: {path}"
 _WATCH_PATH_NOT_DIRECTORY: str = "Path is not a directory: {path}"
 _WATCH_PATH_PARAM_HINT: str = "'PATH'"
-
-_CI_LABEL_PR_COMMENT: str = "PR comment"
-_CI_LABEL_COMMIT_STATUS: str = "commit status"
-_CI_LABEL_AZURE_PR_STATUS: str = "Azure PR status"
-_CI_LABEL_AZURE_BUILD_TAG: str = "Azure build tag"
-_CI_LABEL_AZURE_BOARDS: str = "Azure Boards work item"
-_CI_LABEL_BITBUCKET_INSIGHTS: str = "Bitbucket Code Insights"
-_CI_LABEL_SARIF_UPLOAD: str = "SARIF upload"
-_CI_LABEL_SECURITY_HUB: str = "Security Hub import"
-_CI_INTEGRATION_FAILURE_LOG: str = "CI integration (%s) failed: %s"
-_CI_INTEGRATION_RICH_WARNING: str = "[yellow]Warning:[/yellow] {label} failed — {error}"
 
 
 def _run_sequential_scan_with_progress(
@@ -360,99 +340,6 @@ def _persist_audit_record(
         _write_audit_record(scan_result, scan_config.database_path, sent_channels)
 
 
-def _call_ci_integration(
-    operation: Any,
-    label: str,
-    is_rich_mode: bool,
-) -> None:
-    """Execute a CI integration operation, logging warnings on failure."""
-    try:
-        operation()
-    except CIIntegrationError as integration_error:
-        _logger.warning(_CI_INTEGRATION_FAILURE_LOG, label, integration_error)
-        if is_rich_mode:
-            get_console().print(
-                _CI_INTEGRATION_RICH_WARNING.format(label=label, error=integration_error)
-            )
-
-
-@dataclass(frozen=True)
-class _CIIntegrationOptions:
-    """Flags controlling which CI/CD integrations run after a scan."""
-
-    should_post_comment: bool
-    should_set_status: bool
-    should_upload_sarif: bool
-
-
-def _run_ci_integration(
-    scan_result: ScanResult,
-    integration_options: _CIIntegrationOptions,
-    is_rich_mode: bool,
-) -> None:
-    """Run all enabled CI/CD platform integrations after a scan completes."""
-    if not any(
-        [
-            integration_options.should_post_comment,
-            integration_options.should_set_status,
-            integration_options.should_upload_sarif,
-        ]
-    ):
-        return
-
-    pr_context = get_pr_context()
-
-    if integration_options.should_post_comment:
-        _call_ci_integration(
-            lambda: post_pr_comment(scan_result, pr_context),
-            _CI_LABEL_PR_COMMENT,
-            is_rich_mode,
-        )
-
-    if integration_options.should_set_status:
-        _call_ci_integration(
-            lambda: set_commit_status(scan_result, pr_context),
-            _CI_LABEL_COMMIT_STATUS,
-            is_rich_mode,
-        )
-        if pr_context.platform is CIPlatform.AZURE_DEVOPS:
-            _call_ci_integration(
-                lambda: set_azure_pr_status(scan_result, pr_context),
-                _CI_LABEL_AZURE_PR_STATUS,
-                is_rich_mode,
-            )
-            _call_ci_integration(
-                lambda: set_azure_build_tag(scan_result, pr_context),
-                _CI_LABEL_AZURE_BUILD_TAG,
-                is_rich_mode,
-            )
-            _call_ci_integration(
-                lambda: create_azure_boards_work_item(scan_result, pr_context),
-                _CI_LABEL_AZURE_BOARDS,
-                is_rich_mode,
-            )
-
-        if pr_context.platform is CIPlatform.BITBUCKET:
-            _call_ci_integration(
-                lambda: post_bitbucket_code_insights(scan_result, pr_context),
-                _CI_LABEL_BITBUCKET_INSIGHTS,
-                is_rich_mode,
-            )
-
-    if integration_options.should_upload_sarif:
-        _call_ci_integration(
-            lambda: upload_sarif_to_github(scan_result, pr_context),
-            _CI_LABEL_SARIF_UPLOAD,
-            is_rich_mode,
-        )
-
-    _call_ci_integration(
-        lambda: import_findings_to_security_hub(scan_result, pr_context),
-        _CI_LABEL_SECURITY_HUB,
-        is_rich_mode,
-    )
-
-
 def scan(
     path: Annotated[Path, typer.Argument(help=_SCAN_PATH_HELP)] = Path("."),
     diff_ref: Annotated[str | None, typer.Option("--diff", help=_SCAN_DIFF_HELP)] = None,
@@ -492,6 +379,9 @@ def scan(
     ] = False,
     should_upload_sarif: Annotated[
         bool, typer.Option("--upload-sarif", help=_SCAN_UPLOAD_SARIF_HELP)
+    ] = False,
+    should_import_to_security_hub: Annotated[
+        bool, typer.Option("--import-security-hub", help=_SCAN_IMPORT_SECURITY_HUB_HELP)
     ] = False,
     worker_count: Annotated[
         int, typer.Option("--workers", help=_SCAN_WORKERS_HELP)
@@ -539,12 +429,13 @@ def scan(
     )
     _display_audit_phase_header(output_options, phase_options)
     _persist_audit_record(scan_result, scan_config, output_options)
-    integration_options = _CIIntegrationOptions(
+    integration_options = CIIntegrationOptions(
         should_post_comment=should_post_comment,
         should_set_status=should_set_status,
         should_upload_sarif=should_upload_sarif,
+        should_import_to_security_hub=should_import_to_security_hub,
     )
-    _run_ci_integration(scan_result, integration_options, is_rich_mode)
+    dispatch_ci_integrations(scan_result, integration_options, is_rich_mode)
     display_report_phase_header(output_options, phase_options.is_verbose)
     emit_report_output(scan_result, output_options, phase_options.should_use_baseline)
 
