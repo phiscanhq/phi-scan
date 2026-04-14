@@ -12,10 +12,14 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Annotated
 
+import typer
 from rich.live import Live
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.observers import Observer
 
+from phi_scan.constants import EXIT_CODE_CLEAN
 from phi_scan.logging_config import get_logger
 from phi_scan.models import ScanConfig, ScanFinding
 from phi_scan.output import (
@@ -36,7 +40,13 @@ __all__ = [
     "count_files_in_directory",
     "display_watch_live_screen",
     "scan_changed_file",
+    "watch_command",
 ]
+
+_WATCH_PATH_HELP: str = "Directory to watch for file system changes."
+_WATCH_PATH_DOES_NOT_EXIST: str = "Path does not exist: {path}"
+_WATCH_PATH_NOT_DIRECTORY: str = "Path is not a directory: {path}"
+_WATCH_PATH_PARAM_HINT: str = "'PATH'"
 
 _logger: logging.Logger = get_logger("cli_watch")
 
@@ -265,3 +275,39 @@ def display_watch_live_screen(
         while True:
             live.update(build_watch_layout(watch_path, list(watch_events)))
             time.sleep(_WATCH_POLL_INTERVAL_SECONDS)
+
+
+def _validate_watch_path(path: Path) -> Path:
+    """Resolve and validate that the requested watch target is an existing directory."""
+    watch_path = path.resolve()
+    if not watch_path.exists():
+        raise typer.BadParameter(
+            _WATCH_PATH_DOES_NOT_EXIST.format(path=watch_path),
+            param_hint=_WATCH_PATH_PARAM_HINT,
+        )
+    if not watch_path.is_dir():
+        raise typer.BadParameter(
+            _WATCH_PATH_NOT_DIRECTORY.format(path=watch_path),
+            param_hint=_WATCH_PATH_PARAM_HINT,
+        )
+    return watch_path
+
+
+def watch_command(
+    path: Annotated[Path, typer.Argument(help=_WATCH_PATH_HELP)] = Path("."),
+) -> None:
+    """Watch a directory and re-scan changed files. Detection active from Phase 2."""
+    watch_path = _validate_watch_path(path)
+    watch_config = WatchConfig(watch_root=watch_path, scan_config=ScanConfig())
+    watch_events: deque[WatchEvent] = deque(maxlen=WATCH_LOG_MAX_EVENTS)
+    event_handler = FileChangeMonitor(watch_config, watch_events)
+    observer = Observer()
+    observer.schedule(event_handler, str(watch_path), recursive=True)  # type: ignore[no-untyped-call]
+    observer.start()  # type: ignore[no-untyped-call]
+    try:
+        display_watch_live_screen(watch_path, watch_events)
+    except KeyboardInterrupt:
+        raise typer.Exit(code=EXIT_CODE_CLEAN) from None
+    finally:
+        observer.stop()  # type: ignore[no-untyped-call]
+        observer.join()
