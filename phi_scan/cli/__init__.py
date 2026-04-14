@@ -10,6 +10,7 @@ import typer
 # attribute `phi_scan.cli.watch` continues to resolve to the watch-helpers
 # module, not the watch command function. Used below in app.command wiring.
 from phi_scan.cli import scan as _scan_module
+from phi_scan.cli import watch as _watch_module
 from phi_scan.cli._shared import (
     _DEFAULT_WORKER_COUNT,
     _GIT_DIR_NOT_FOUND_MESSAGE,
@@ -120,7 +121,7 @@ def main_callback(
 
 
 app.command("scan")(_scan_module.scan)
-app.command("watch")(_scan_module.watch)
+app.command("watch")(_watch_module.start_watch)
 app.command("fix")(fix_command)
 app.command("report")(display_last_scan)
 app.command("history")(display_history)

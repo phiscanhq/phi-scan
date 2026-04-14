@@ -1,14 +1,12 @@
-"""`phi-scan scan` and `phi-scan watch` commands."""
+"""`phi-scan scan` command. The `watch` command now lives in `phi_scan.cli.watch`."""
 
 from __future__ import annotations
 
 import time
-from collections import deque
 from pathlib import Path
 from typing import Annotated
 
 import typer
-from watchdog.observers import Observer
 
 from phi_scan import __version__
 from phi_scan.audit import (
@@ -40,19 +38,13 @@ from phi_scan.cli.report import (
     resolve_output_format,
 )
 from phi_scan.cli.scan_config import load_scan_config
-from phi_scan.cli.watch import (
-    WATCH_LOG_MAX_EVENTS,
-    FileChangeMonitor,
-    WatchConfig,
-    display_watch_live_screen,
-)
 from phi_scan.compliance import (
     ComplianceFramework,
     InvalidFrameworkError,
     annotate_findings,
     parse_framework_flag,
 )
-from phi_scan.constants import EXIT_CODE_CLEAN, EXIT_CODE_ERROR, OutputFormat
+from phi_scan.constants import EXIT_CODE_ERROR, OutputFormat
 from phi_scan.exceptions import AuditKeyMissingError, AuditLogError, NotificationError
 from phi_scan.logging_config import get_logger
 from phi_scan.models import ScanConfig, ScanFinding, ScanResult
@@ -62,7 +54,6 @@ from phi_scan.notifier import (
     send_webhook_notification,
 )
 from phi_scan.output import (
-    WatchEvent,
     create_scan_progress,
     display_banner,
     display_file_type_summary,
@@ -115,8 +106,6 @@ _SCAN_FRAMEWORK_HELP: str = (
 )
 _FRAMEWORK_PARSE_ERROR: str = "Invalid --framework value: {error}"
 
-_WATCH_PATH_HELP: str = "Directory to watch for file system changes."
-
 _SPINNER_CONFIG_LOAD_MESSAGE: str = "Loading configuration…"
 _SPINNER_AUDIT_WRITE_MESSAGE: str = "Writing audit log…"
 _SPINNER_NOTIFY_MESSAGE: str = "Sending notifications…"
@@ -159,10 +148,6 @@ _NOTIFICATION_WEBHOOK_FAILURE_WARNING: str = "Webhook notification failed: {erro
 _VERBOSE_PHASE_COLLECTING: str = "collecting scan targets"
 _VERBOSE_PHASE_SCANNING: str = "scanning {count} file(s)"
 _VERBOSE_PHASE_AUDIT: str = "writing audit record"
-
-_WATCH_PATH_DOES_NOT_EXIST: str = "Path does not exist: {path}"
-_WATCH_PATH_NOT_DIRECTORY: str = "Path is not a directory: {path}"
-_WATCH_PATH_PARAM_HINT: str = "'PATH'"
 
 
 def _run_sequential_scan_with_progress(
@@ -438,31 +423,3 @@ def scan(
     dispatch_ci_integrations(scan_result, integration_options, is_rich_mode)
     display_report_phase_header(output_options, phase_options.is_verbose)
     emit_report_output(scan_result, output_options, phase_options.should_use_baseline)
-
-
-def watch(
-    path: Annotated[Path, typer.Argument(help=_WATCH_PATH_HELP)] = Path("."),
-) -> None:
-    """Watch a directory and re-scan changed files. Detection active from Phase 2."""
-    watch_path = path.resolve()
-    if not watch_path.exists():
-        raise typer.BadParameter(
-            _WATCH_PATH_DOES_NOT_EXIST.format(path=watch_path), param_hint=_WATCH_PATH_PARAM_HINT
-        )
-    if not watch_path.is_dir():
-        raise typer.BadParameter(
-            _WATCH_PATH_NOT_DIRECTORY.format(path=watch_path), param_hint=_WATCH_PATH_PARAM_HINT
-        )
-    watch_config = WatchConfig(watch_root=watch_path, scan_config=ScanConfig())
-    watch_events: deque[WatchEvent] = deque(maxlen=WATCH_LOG_MAX_EVENTS)
-    event_handler = FileChangeMonitor(watch_config, watch_events)
-    observer = Observer()
-    observer.schedule(event_handler, str(watch_path), recursive=True)  # type: ignore[no-untyped-call]
-    observer.start()  # type: ignore[no-untyped-call]
-    try:
-        display_watch_live_screen(watch_path, watch_events)
-    except KeyboardInterrupt:
-        raise typer.Exit(code=EXIT_CODE_CLEAN)
-    finally:
-        observer.stop()  # type: ignore[no-untyped-call]
-        observer.join()
