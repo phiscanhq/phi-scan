@@ -5,17 +5,22 @@ Bitbucket Code Insights, and AWS Security Hub imports after a scan
 completes. Each integration failure is logged as a warning and also
 surfaced to the Rich console when the command is running in rich mode;
 a single integration error never aborts the scan.
+
+Security Hub is gated by its own opt-in flag (``should_import_to_security_hub``)
+so that enabling, say, only ``--post-comment`` never causes a surprise
+upload of classification metadata to AWS. Each integration's data-flow
+surface is explicit at the call site.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
 
 from phi_scan.ci_integration import (
     CIIntegrationError,
     CIPlatform,
+    PullRequestContext,
     create_azure_boards_work_item,
     get_pr_context,
     import_findings_to_security_hub,
@@ -51,11 +56,17 @@ class CIIntegrationOptions:
     should_post_comment: bool
     should_set_status: bool
     should_upload_sarif: bool
+    should_import_to_security_hub: bool
 
     @property
     def has_any_enabled(self) -> bool:
         """Return True when at least one integration flag is enabled."""
-        return self.should_post_comment or self.should_set_status or self.should_upload_sarif
+        return (
+            self.should_post_comment
+            or self.should_set_status
+            or self.should_upload_sarif
+            or self.should_import_to_security_hub
+        )
 
 
 def _call_ci_integration(operation: Callable[[], None], label: str, is_rich_mode: bool) -> None:
@@ -71,7 +82,7 @@ def _call_ci_integration(operation: Callable[[], None], label: str, is_rich_mode
 
 
 def _dispatch_azure_devops_extras(
-    scan_result: ScanResult, pr_context: Any, is_rich_mode: bool
+    scan_result: ScanResult, pr_context: PullRequestContext, is_rich_mode: bool
 ) -> None:
     """Run Azure-specific PR status, build tag, and Boards work-item calls."""
     _call_ci_integration(
@@ -92,7 +103,7 @@ def _dispatch_azure_devops_extras(
 
 
 def _dispatch_commit_status_integrations(
-    scan_result: ScanResult, pr_context: Any, is_rich_mode: bool
+    scan_result: ScanResult, pr_context: PullRequestContext, is_rich_mode: bool
 ) -> None:
     """Post the generic commit status plus platform-specific status extras."""
     _call_ci_integration(
@@ -135,9 +146,9 @@ def dispatch_ci_integrations(
             _CI_LABEL_SARIF_UPLOAD,
             is_rich_mode,
         )
-
-    _call_ci_integration(
-        lambda: import_findings_to_security_hub(scan_result, pr_context),
-        _CI_LABEL_SECURITY_HUB,
-        is_rich_mode,
-    )
+    if integration_options.should_import_to_security_hub:
+        _call_ci_integration(
+            lambda: import_findings_to_security_hub(scan_result, pr_context),
+            _CI_LABEL_SECURITY_HUB,
+            is_rich_mode,
+        )

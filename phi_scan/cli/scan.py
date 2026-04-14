@@ -138,6 +138,11 @@ _SCAN_UPLOAD_SARIF_HELP: str = (
     "Requires --output sarif and GITHUB_TOKEN. "
     "Each finding appears as an inline annotation on the exact line in the PR diff."
 )
+_SCAN_IMPORT_SECURITY_HUB_HELP: str = (
+    "Import findings to AWS Security Hub as ASFF. "
+    "Requires AWS_SECURITY_HUB=true, AWS_ACCOUNT_ID, and the AWS CLI. "
+    "Transmits classification metadata only — never raw PHI values or value hashes."
+)
 _SCAN_WORKERS_HELP: str = (
     f"Number of worker threads for parallel file scanning. Default 1 (sequential). "
     f"Values above 1 enable concurrent scanning up to {MAX_WORKER_COUNT}. "
@@ -375,6 +380,9 @@ def scan(
     should_upload_sarif: Annotated[
         bool, typer.Option("--upload-sarif", help=_SCAN_UPLOAD_SARIF_HELP)
     ] = False,
+    should_import_to_security_hub: Annotated[
+        bool, typer.Option("--import-security-hub", help=_SCAN_IMPORT_SECURITY_HUB_HELP)
+    ] = False,
     worker_count: Annotated[
         int, typer.Option("--workers", help=_SCAN_WORKERS_HELP)
     ] = _DEFAULT_WORKER_COUNT,
@@ -425,6 +433,7 @@ def scan(
         should_post_comment=should_post_comment,
         should_set_status=should_set_status,
         should_upload_sarif=should_upload_sarif,
+        should_import_to_security_hub=should_import_to_security_hub,
     )
     dispatch_ci_integrations(scan_result, integration_options, is_rich_mode)
     display_report_phase_header(output_options, phase_options.is_verbose)
