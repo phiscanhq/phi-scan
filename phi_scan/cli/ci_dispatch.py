@@ -9,6 +9,7 @@ a single integration error never aborts the scan.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,8 +52,13 @@ class CIIntegrationOptions:
     should_set_status: bool
     should_upload_sarif: bool
 
+    @property
+    def has_any_enabled(self) -> bool:
+        """Return True when at least one integration flag is enabled."""
+        return self.should_post_comment or self.should_set_status or self.should_upload_sarif
 
-def _call_ci_integration(operation: Any, label: str, is_rich_mode: bool) -> None:
+
+def _call_ci_integration(operation: Callable[[], None], label: str, is_rich_mode: bool) -> None:
     """Execute a CI integration operation, logging warnings on failure."""
     try:
         operation()
@@ -67,6 +73,7 @@ def _call_ci_integration(operation: Any, label: str, is_rich_mode: bool) -> None
 def _dispatch_azure_devops_extras(
     scan_result: ScanResult, pr_context: Any, is_rich_mode: bool
 ) -> None:
+    """Run Azure-specific PR status, build tag, and Boards work-item calls."""
     _call_ci_integration(
         lambda: set_azure_pr_status(scan_result, pr_context),
         _CI_LABEL_AZURE_PR_STATUS,
@@ -84,19 +91,32 @@ def _dispatch_azure_devops_extras(
     )
 
 
-def run_ci_integration(
+def _dispatch_commit_status_integrations(
+    scan_result: ScanResult, pr_context: Any, is_rich_mode: bool
+) -> None:
+    """Post the generic commit status plus platform-specific status extras."""
+    _call_ci_integration(
+        lambda: set_commit_status(scan_result, pr_context),
+        _CI_LABEL_COMMIT_STATUS,
+        is_rich_mode,
+    )
+    if pr_context.platform is CIPlatform.AZURE_DEVOPS:
+        _dispatch_azure_devops_extras(scan_result, pr_context, is_rich_mode)
+    if pr_context.platform is CIPlatform.BITBUCKET:
+        _call_ci_integration(
+            lambda: post_bitbucket_code_insights(scan_result, pr_context),
+            _CI_LABEL_BITBUCKET_INSIGHTS,
+            is_rich_mode,
+        )
+
+
+def dispatch_ci_integrations(
     scan_result: ScanResult,
     integration_options: CIIntegrationOptions,
     is_rich_mode: bool,
 ) -> None:
-    """Run all enabled CI/CD platform integrations after a scan completes."""
-    if not any(
-        [
-            integration_options.should_post_comment,
-            integration_options.should_set_status,
-            integration_options.should_upload_sarif,
-        ]
-    ):
+    """Dispatch all enabled CI/CD platform integrations after a scan completes."""
+    if not integration_options.has_any_enabled:
         return
 
     pr_context = get_pr_context()
@@ -107,22 +127,8 @@ def run_ci_integration(
             _CI_LABEL_PR_COMMENT,
             is_rich_mode,
         )
-
     if integration_options.should_set_status:
-        _call_ci_integration(
-            lambda: set_commit_status(scan_result, pr_context),
-            _CI_LABEL_COMMIT_STATUS,
-            is_rich_mode,
-        )
-        if pr_context.platform is CIPlatform.AZURE_DEVOPS:
-            _dispatch_azure_devops_extras(scan_result, pr_context, is_rich_mode)
-        if pr_context.platform is CIPlatform.BITBUCKET:
-            _call_ci_integration(
-                lambda: post_bitbucket_code_insights(scan_result, pr_context),
-                _CI_LABEL_BITBUCKET_INSIGHTS,
-                is_rich_mode,
-            )
-
+        _dispatch_commit_status_integrations(scan_result, pr_context, is_rich_mode)
     if integration_options.should_upload_sarif:
         _call_ci_integration(
             lambda: upload_sarif_to_github(scan_result, pr_context),

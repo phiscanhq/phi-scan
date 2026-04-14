@@ -31,7 +31,7 @@ from phi_scan.cli._shared import (
     _truncate_filename_for_progress,
     _validate_worker_count,
 )
-from phi_scan.cli.ci_dispatch import CIIntegrationOptions, run_ci_integration
+from phi_scan.cli.ci_dispatch import CIIntegrationOptions, dispatch_ci_integrations
 from phi_scan.cli.report import (
     ScanOutputOptions,
     display_report_phase_header,
@@ -426,7 +426,7 @@ def scan(
         should_set_status=should_set_status,
         should_upload_sarif=should_upload_sarif,
     )
-    run_ci_integration(scan_result, integration_options, is_rich_mode)
+    dispatch_ci_integrations(scan_result, integration_options, is_rich_mode)
     display_report_phase_header(output_options, phase_options.is_verbose)
     emit_report_output(scan_result, output_options, phase_options.should_use_baseline)
 
