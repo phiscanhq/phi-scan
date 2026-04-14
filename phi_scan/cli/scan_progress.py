@@ -35,13 +35,13 @@ def _run_sequential_scan_with_progress(
     scan_context: _ProgressScanContext,
 ) -> list[ScanFinding]:
     """Scan files one at a time, advancing the progress bar after each file."""
-    all_findings: list[ScanFinding] = []
+    accumulated_findings: list[ScanFinding] = []
     for file_path in scan_context.scan_targets:
         progress_label = _truncate_filename_for_progress(file_path)
         scan_context.progress.update(scan_context.task_id, description=progress_label)
-        all_findings.extend(scan_file(file_path, scan_context.config))
+        accumulated_findings.extend(scan_file(file_path, scan_context.config))
         scan_context.progress.update(scan_context.task_id, advance=1)
-    return all_findings
+    return accumulated_findings
 
 
 def _run_parallel_scan_with_progress(
@@ -90,6 +90,6 @@ def execute_scan_with_progress(
             progress=progress,
             task_id=task_id,
         )
-        all_findings = _run_scan_with_progress(progress_scan_context)
+        accumulated_findings = _run_scan_with_progress(progress_scan_context)
     scan_duration = time.monotonic() - scan_start
-    return build_scan_result(tuple(all_findings), len(scan_targets), scan_duration)
+    return build_scan_result(tuple(accumulated_findings), len(scan_targets), scan_duration)
