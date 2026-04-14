@@ -15,9 +15,10 @@ Drafts only — **do not publish** until the transfer has completed and the
 > canonical URL is https://github.com/phiscanhq/phi-scan.
 >
 > No action is required by existing users. `pip install phi-scan` still
-> installs the same package from PyPI; container images continue to be
-> published to `ghcr.io/phiscanhq/phi-scan` (with historical tags
-> remaining on the old path for this observation window).
+> installs the same package from PyPI. Container image publication to
+> the new canonical path is handled separately as a post-migration
+> hardening step and is not part of this transfer; existing
+> `ghcr.io/joeyessak/phi-scan` tags remain resolvable.
 >
 > If you sign-verify releases with Sigstore / cosign, update the
 > `--cert-identity` flag from
@@ -40,9 +41,10 @@ verification commands must reference the new OIDC subject
 `repo:phiscanhq/phi-scan:…` for releases from this version onward; the
 published `docs/supply-chain.md` example command has been updated.
 
-Old GitHub URLs redirect automatically; the old container path at
-`ghcr.io/joeyessak/phi-scan` remains resolvable during the 48-hour
-observation window documented in `docs/org-migration-checklist.md`.
+Old GitHub URLs redirect automatically. Container image publication to
+the new canonical path is deferred to a post-migration hardening track
+and is not part of this release; `ghcr.io/joeyessak/phi-scan` remains
+resolvable.
 ```
 
 ---

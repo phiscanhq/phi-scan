@@ -23,7 +23,7 @@ described in `docs/org-migration-checklist.md` §2. Every row must be
 | # | Check | Status | Evidence link |
 |---|-------|--------|---------------|
 | 8 | PyPI 2FA confirmed | `GO` / `NO-GO` | `docs/migration/maintainer-checklist.md#1-pypi-2fa-confirmation` |
-| 9 | GHCR pull + digest recorded | `GO` / `NO-GO` | `docs/migration/maintainer-checklist.md#2-ghcr-pull--digest-verification` |
+| 9 | ~~GHCR pull + digest recorded~~ | **`N/A — DEFERRED`** | Out-of-scope for migration-go; see [`docs/org-migration-status.md`](../org-migration-status.md) |
 | 10 | Sigstore bundle verifies under current subject | `GO` / `NO-GO` | `docs/migration/maintainer-checklist.md#3-sigstore--keyless-oidc-verification` |
 
 ## Operational gates

@@ -39,7 +39,8 @@ Out of scope: `phi-scan-pro` (does not exist; see
 - [ ] Repo configuration re-applied (§2.2)
 - [ ] PyPI token rotated (§2.3)
 - [ ] Sigstore bundle verified under new OIDC subject (§2.4)
-- [ ] GHCR image pushed to new canonical path (§2.5)
+- [ ] ~~GHCR image pushed to new canonical path (§2.5)~~ **Deferred —
+      out-of-scope for migration-go; post-migration hardening.**
 - [ ] Hardcoded-reference sweep round 2 (§2.6)
 - [ ] End-to-end validation (§2.7) passes
 - [ ] `phi-scan-action` transfer initiated (§3) — **only after** §2.7
@@ -48,14 +49,16 @@ Out of scope: `phi-scan-pro` (does not exist; see
 
 - [ ] 48h freeze on new releases unless emergency
 - [ ] Daily CI check
-- [ ] Ghcr pull counts monitored on old and new paths
+- [ ] ~~Ghcr pull counts monitored on old and new paths~~ **Deferred —
+      GHCR is out-of-scope for migration-go.**
 - [ ] Issues monitored for redirect or signing failures
 
 ### Cleanup (§4.3)
 
 - [ ] Old PyPI token revoked
 - [ ] Post-mortem note added to this ticket
-- [ ] Legacy ghcr image path schedule set for a future minor release
+- [ ] ~~Legacy ghcr image path schedule set for a future minor release~~
+      **Deferred — handled in post-migration hardening track.**
 
 ### Rollback plan
 

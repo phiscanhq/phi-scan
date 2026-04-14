@@ -33,14 +33,20 @@ Date confirmed: `YYYY-MM-DD`
 
 ---
 
-## 2. GHCR pull + digest verification
+## 2. GHCR pull + digest verification — **Deferred (post-migration hardening)**
 
 ```
-STATUS: PENDING
+STATUS: DEFERRED — out-of-scope for migration-go
 ```
 
-**Required:** Pull the current canonical container image and record the
-manifest digest so post-transfer parity can be verified.
+> GHCR container publication is not required for migration-go (PyPI is
+> the sole required distribution channel). This section is retained
+> for the later post-migration hardening track. See
+> [`docs/org-migration-status.md`](../org-migration-status.md).
+
+**Post-migration hardening (not a migration-go gate):** pull the current
+canonical container image and record the manifest digest so
+post-transfer parity can be verified.
 
 Commands to run (authenticated to ghcr.io):
 
@@ -103,8 +109,9 @@ Date confirmed: `YYYY-MM-DD`
 
 ## 4. Roll-up
 
-All three rows above must be `STATUS: DONE` before the maintainer gives
-the "migration go" approval referenced in §1.6 of the runbook.
+Rows §1 (PyPI 2FA) and §3 (Sigstore) must be `STATUS: DONE` before the
+maintainer gives the "migration go" approval referenced in §1.6 of the
+runbook. Row §2 (GHCR) is **deferred** and is not a migration-go gate.
 
 Signed off by: `MAINTAINER_NAME`
 Date: `YYYY-MM-DD`

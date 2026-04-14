@@ -183,7 +183,14 @@ after `pyproject.toml` is flipped (§2.2) will carry the new URLs.
 **2FA status** is not exposed on the public JSON endpoint and must be
 confirmed by the maintainer out-of-band (maintainer-run check).
 
-### 4.2 GHCR (maintainer-run — not queried live)
+### 4.2 GHCR — **Deferred (post-migration hardening)**
+
+> **Deferred — out-of-scope for migration-go.** PyPI is the only
+> required distribution channel for the transfer. GHCR container
+> publication is not a migration-go blocker. The commands below remain
+> useful for the later post-migration hardening track but must not
+> gate migration-go. See
+> [`docs/org-migration-status.md`](org-migration-status.md).
 
 - Current canonical image path per docs: `ghcr.io/joeyessak/phi-scan`.
 - Live image manifest verification is deferred to the maintainer to
@@ -236,17 +243,19 @@ confirmed by the maintainer out-of-band (maintainer-run check).
 | 5 | Variables / environments / webhooks enumerated | **READY** | §3.3–3.5 — all empty |
 | 6 | Collaborators / teams / `CODEOWNERS` enumerated | **READY** | §3.6 — solo admin, no `CODEOWNERS` |
 | 7 | PyPI owner + 2FA confirmed | **PENDING MAINTAINER** | Owner email confirmed via public API; 2FA status needs out-of-band check |
-| 8 | GHCR manifest reachable and current | **PENDING MAINTAINER** | Auth-gated; commands listed in §4.2 |
+| 8 | GHCR manifest reachable and current | **DEFERRED** | Out-of-scope for migration-go — see [`docs/org-migration-status.md`](org-migration-status.md). Post-migration hardening only. |
 | 9 | Sigstore bundle verifies under current subject | **PENDING MAINTAINER** | Commands listed in §4.3 |
-| 10 | Draft migration notice prepared | **NOT STARTED** | §1.5 of checklist (non-blocking for pre-flight merge) |
-| 11 | Draft release-notes entry prepared | **NOT STARTED** | §1.5 of checklist (non-blocking for pre-flight merge) |
+| 10 | Draft migration notice prepared | **DONE** | [`docs/migration/communication-draft.md §1`](migration/communication-draft.md) |
+| 11 | Draft release-notes entry prepared | **DONE** | [`docs/migration/communication-draft.md §2`](migration/communication-draft.md) |
 | 12 | Migration ticket opened | **NOT STARTED** | §1.6 of checklist |
 | 13 | Maintainer "migration go" approval | **NOT GIVEN** | §1.6 of checklist — requested after this report is merged |
 
-**Overall:** No P0 blockers found. Six automated gates READY; three
-require maintainer-run verification (2FA, GHCR, Sigstore) before
-transfer; four are operational tasks to complete during §1.5–§1.6 of
-the checklist.
+**Overall:** No P0 blockers found. Six automated gates READY; two
+require maintainer-run verification (PyPI 2FA, Sigstore) before
+transfer; GHCR is **deferred** as out-of-scope for migration-go;
+drafts (rows 10, 11) are complete; the remaining operational tasks
+(rows 12, 13) are executed during §1.5–§1.6 of the checklist. Live
+status tracked in [`docs/org-migration-status.md`](org-migration-status.md).
 
 ---
 

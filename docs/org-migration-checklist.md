@@ -10,6 +10,16 @@ Pre-flight execution is recorded in
 which captures the §1 snapshot, the hardcoded-reference sweep, the
 external-dependency inventory, and the go/no-go readiness matrix.
 
+Operational status (live) is tracked in
+[`docs/org-migration-status.md`](org-migration-status.md). That page is
+the single source of truth for "what is left before migration-go".
+
+**GHCR scope:** PyPI is the only required distribution channel for
+migration-go. GHCR container publication is deferred to a
+post-migration hardening track and is **not a transfer blocker**. GHCR
+items below are retained for post-migration reference and are marked
+**Deferred**.
+
 ## Scope
 
 - `joeyessak/phi-scan` → `phiscanhq/phi-scan`
@@ -52,8 +62,9 @@ or rely on GitHub redirect) before proceeding.
 - [ ] `pyproject.toml` — project URLs (`Homepage`, `Source`, `Issues`).
 - [ ] `.pre-commit-hooks.yaml` and any consumer-facing
       `.pre-commit-config.yaml` example.
-- [ ] Docker image references in docs and workflows
-      (`ghcr.io/joeyessak/phi-scan`).
+- [ ] ~~Docker image references in docs and workflows
+      (`ghcr.io/joeyessak/phi-scan`).~~ **Deferred — post-migration
+      hardening (out-of-scope for migration-go).**
 
 Command reference (run locally, not blocking):
 
@@ -91,7 +102,9 @@ new org.
 
 - [ ] PyPI project `phi-scan` — owner currently `joeyessak`; confirm
       maintainer email and 2FA status.
-- [ ] ghcr.io — current image path `ghcr.io/joeyessak/phi-scan`.
+- [ ] ~~ghcr.io — current image path `ghcr.io/joeyessak/phi-scan`.~~
+      **Deferred — post-migration hardening (out-of-scope for
+      migration-go).**
 - [ ] Sigstore signing — currently keyless OIDC with workload subject
       `repo:joeyessak/phi-scan:…`.
 - [ ] `phi-scan-action` — consumers reference via `joeyessak/phi-scan-action@v1`.
@@ -166,7 +179,13 @@ encodes the repo path and will change at transfer time from
 - [ ] Update `docs/supply-chain.md` verification example to reference the
       new subject.
 
-### 2.5 GHCR container continuity
+### 2.5 GHCR container continuity — **Deferred (post-migration hardening)**
+
+> **Deferred — out-of-scope for migration-go.** GHCR container
+> publication is not required for the PyPI-focused transfer. The steps
+> below are retained for a later post-migration hardening PR and must
+> not gate migration-go. See
+> [`docs/org-migration-status.md`](org-migration-status.md).
 
 - [ ] Build and push the image to `ghcr.io/phiscanhq/phi-scan` tagged
       with the current release version and `latest`.
@@ -232,15 +251,17 @@ During the first 48 hours after `phi-scan` transfer:
 - [ ] Monitor issues for redirect failures, pre-commit resolution errors,
       or signing verification failures.
 - [ ] Monitor CI on `main` daily.
-- [ ] Track ghcr pull counts on both old and new image paths to detect
-      stale references.
+- [ ] ~~Track ghcr pull counts on both old and new image paths to detect
+      stale references.~~ **Deferred — GHCR is out-of-scope for
+      migration-go; revisit in post-migration hardening.**
 
 ### 4.3 Cleanup (after 48h clean)
 
 - [ ] Revoke old PyPI token (if not already done in §2.3).
 - [ ] Close the migration ticket with a summary and post-mortem note.
-- [ ] Schedule removal of the legacy ghcr image path for a later minor
-      release, with notice.
+- [ ] ~~Schedule removal of the legacy ghcr image path for a later minor
+      release, with notice.~~ **Deferred — handled in post-migration
+      hardening track.**
 
 ---
 
@@ -271,8 +292,9 @@ redirect failure), execute rollback:
       token was already published.
 - [ ] Re-validate Sigstore subject reverts to
       `repo:joeyessak/phi-scan:…` for subsequent signing runs.
-- [ ] Revert ghcr image path in docs/workflows; keep any `phiscanhq/`
-      images in place for historical access.
+- [ ] ~~Revert ghcr image path in docs/workflows; keep any `phiscanhq/`
+      images in place for historical access.~~ **Deferred — GHCR was
+      out-of-scope for migration-go; no ghcr changes to revert.**
 
 ### 5.4 Post-rollback
 
@@ -298,6 +320,6 @@ written. Refresh this section immediately before execution.
 | Required status check | `Python 3.12 on ubuntu-latest` |
 | Actions secrets | `ANTHROPIC_API_KEY`, `PYPI_API_TOKEN` |
 | PyPI project | `phi-scan` |
-| Container image | `ghcr.io/joeyessak/phi-scan` → `ghcr.io/phiscanhq/phi-scan` |
+| Container image | `ghcr.io/joeyessak/phi-scan` → `ghcr.io/phiscanhq/phi-scan` *(Deferred — post-migration hardening)* |
 | Sigstore OIDC subject | `repo:joeyessak/phi-scan:…` → `repo:phiscanhq/phi-scan:…` |
 | Observation window | 48 hours post-transfer |
