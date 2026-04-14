@@ -40,7 +40,7 @@ __all__ = [
     "count_files_in_directory",
     "display_watch_live_screen",
     "scan_changed_file",
-    "watch_command",
+    "start_watch",
 ]
 
 _WATCH_PATH_HELP: str = "Directory to watch for file system changes."
@@ -293,7 +293,7 @@ def _validate_watch_path(path: Path) -> Path:
     return watch_path
 
 
-def watch_command(
+def start_watch(
     path: Annotated[Path, typer.Argument(help=_WATCH_PATH_HELP)] = Path("."),
 ) -> None:
     """Watch a directory and re-scan changed files. Detection active from Phase 2."""

@@ -121,7 +121,7 @@ def main_callback(
 
 
 app.command("scan")(_scan_module.scan)
-app.command("watch")(_watch_module.watch_command)
+app.command("watch")(_watch_module.start_watch)
 app.command("fix")(fix_command)
 app.command("report")(display_last_scan)
 app.command("history")(display_history)
