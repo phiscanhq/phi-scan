@@ -1463,3 +1463,16 @@ def test_sarif_symbols_reexported_from_ci_integration() -> None:
     assert ci_integration_module.upload_sarif_to_github is sarif_module.upload_sarif_to_github, (
         "upload_sarif_to_github no longer re-exported from phi_scan.ci_integration"
     )
+
+
+def test_bitbucket_code_insights_reexported_from_ci_integration() -> None:
+    """post_bitbucket_code_insights moved to phi_scan.ci.bitbucket_insights;
+    the legacy import path on phi_scan.ci_integration must still resolve to
+    the same callable so existing callers and CI flows keep working."""
+    import phi_scan.ci.bitbucket_insights as bitbucket_module
+    import phi_scan.ci_integration as ci_integration_module
+
+    assert (
+        ci_integration_module.post_bitbucket_code_insights
+        is bitbucket_module.post_bitbucket_code_insights
+    ), "post_bitbucket_code_insights no longer re-exported from phi_scan.ci_integration"
