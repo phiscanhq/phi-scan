@@ -1492,3 +1492,23 @@ def test_bitbucket_code_insights_reexported_from_ci_integration() -> None:
         ci_integration_module.post_bitbucket_code_insights
         is bitbucket_module.post_bitbucket_code_insights
     ), "post_bitbucket_code_insights no longer re-exported from phi_scan.ci_integration"
+
+
+def test_azure_devops_reexported_from_ci_integration() -> None:
+    """set_azure_build_tag, set_azure_pr_status, and create_azure_boards_work_item
+    moved to phi_scan.ci.azure_devops; the legacy import path on
+    phi_scan.ci_integration must still resolve to the same callables so
+    existing callers and CI flows keep working."""
+    import phi_scan.ci.azure_devops as azure_module
+    import phi_scan.ci_integration as ci_integration_module
+
+    assert ci_integration_module.set_azure_build_tag is azure_module.set_azure_build_tag, (
+        "set_azure_build_tag no longer re-exported from phi_scan.ci_integration"
+    )
+    assert ci_integration_module.set_azure_pr_status is azure_module.set_azure_pr_status, (
+        "set_azure_pr_status no longer re-exported from phi_scan.ci_integration"
+    )
+    assert (
+        ci_integration_module.create_azure_boards_work_item
+        is azure_module.create_azure_boards_work_item
+    ), "create_azure_boards_work_item no longer re-exported from phi_scan.ci_integration"
