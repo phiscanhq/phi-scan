@@ -1465,6 +1465,22 @@ def test_sarif_symbols_reexported_from_ci_integration() -> None:
     )
 
 
+def test_aws_security_hub_reexported_from_ci_integration() -> None:
+    """convert_findings_to_asff and import_findings_to_security_hub moved to
+    phi_scan.ci.aws_security_hub; legacy path must still resolve to the same
+    callables so existing callers keep working."""
+    import phi_scan.ci.aws_security_hub as aws_module
+    import phi_scan.ci_integration as ci_integration_module
+
+    assert ci_integration_module.convert_findings_to_asff is aws_module.convert_findings_to_asff, (
+        "convert_findings_to_asff no longer re-exported from phi_scan.ci_integration"
+    )
+    assert (
+        ci_integration_module.import_findings_to_security_hub
+        is aws_module.import_findings_to_security_hub
+    ), "import_findings_to_security_hub no longer re-exported from phi_scan.ci_integration"
+
+
 def test_bitbucket_code_insights_reexported_from_ci_integration() -> None:
     """post_bitbucket_code_insights moved to phi_scan.ci.bitbucket_insights;
     the legacy import path on phi_scan.ci_integration must still resolve to

@@ -27,9 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
 from dataclasses import dataclass
-from typing import Any
 
 from phi_scan.ci import (  # noqa: F401 — backward-compatible re-exports
     AzureAdapter,
@@ -53,11 +51,16 @@ from phi_scan.ci._transport import (
     OperationLabel,
     execute_http_request,
 )
+from phi_scan.ci.aws_security_hub import (
+    convert_findings_to_asff as convert_findings_to_asff,
+)
+from phi_scan.ci.aws_security_hub import (
+    import_findings_to_security_hub as import_findings_to_security_hub,
+)
 from phi_scan.ci.bitbucket_insights import (
     post_bitbucket_code_insights as post_bitbucket_code_insights,
 )
 from phi_scan.ci.sarif import upload_sarif_to_github as upload_sarif_to_github
-from phi_scan.constants import SeverityLevel
 from phi_scan.exceptions import CIIntegrationError  # noqa: F401 — backward-compatible re-export
 from phi_scan.models import ScanResult
 
@@ -166,20 +169,6 @@ _AZURE_WORK_ITEMS_PATH: str = (
 _AZURE_WORK_ITEM_TITLE_FORMAT: str = (
     "phi-scan: {count} HIGH severity PHI/PII violation(s) in PR #{pull_request_number}"
 )
-
-_AWS_SECURITY_HUB_PRODUCT_ARN_FORMAT: str = (
-    "arn:aws:securityhub:{region}:{account_id}:product/{account_id}/default"
-)
-_AWS_SECURITY_HUB_HIGH_SEVERITY_LABEL: str = "HIGH"
-_AWS_SECURITY_HUB_MEDIUM_SEVERITY_LABEL: str = "MEDIUM"
-_AWS_SECURITY_HUB_LOW_SEVERITY_LABEL: str = "LOW"
-_AWS_SECURITY_HUB_INFO_SEVERITY_LABEL: str = "INFORMATIONAL"
-_AWS_SECURITY_HUB_SEVERITY_MAP: dict[SeverityLevel, str] = {
-    SeverityLevel.HIGH: _AWS_SECURITY_HUB_HIGH_SEVERITY_LABEL,
-    SeverityLevel.MEDIUM: _AWS_SECURITY_HUB_MEDIUM_SEVERITY_LABEL,
-    SeverityLevel.LOW: _AWS_SECURITY_HUB_LOW_SEVERITY_LABEL,
-    SeverityLevel.INFO: _AWS_SECURITY_HUB_INFO_SEVERITY_LABEL,
-}
 
 # ---------------------------------------------------------------------------
 # Backward-compatible type re-exports
@@ -564,121 +553,6 @@ def create_azure_boards_work_item(scan_result: ScanResult, pr_context: PRContext
 
 # ---------------------------------------------------------------------------
 # Public API — AWS Security Hub ASFF import
+# Implementation now lives in phi_scan.ci.aws_security_hub; re-exported at
+# module top.
 # ---------------------------------------------------------------------------
-
-
-def convert_findings_to_asff(
-    scan_result: ScanResult,
-    aws_account_id: str,
-    aws_region: str,
-    repository: str,
-) -> list[dict[str, Any]]:
-    """Convert phi-scan findings to AWS Security Finding Format (ASFF)."""
-    from datetime import UTC, datetime
-
-    product_arn = _AWS_SECURITY_HUB_PRODUCT_ARN_FORMAT.format(
-        region=aws_region,
-        account_id=aws_account_id,
-    )
-    now_iso = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
-    asff_findings = []
-    for finding in scan_result.findings:
-        severity_label = _AWS_SECURITY_HUB_SEVERITY_MAP.get(finding.severity, "MEDIUM")
-        severity_score_map = {"HIGH": 70, "MEDIUM": 40, "LOW": 10, "INFORMATIONAL": 0}
-        severity_score = severity_score_map.get(severity_label, 40)
-
-        asff_finding: dict[str, Any] = {
-            "SchemaVersion": "2018-10-08",
-            "Id": (f"{repository}/{finding.file_path}/{finding.line_number}/{finding.entity_type}"),
-            "ProductArn": product_arn,
-            "GeneratorId": f"phi-scan/{finding.entity_type}",
-            "AwsAccountId": aws_account_id,
-            "Types": ["Software and Configuration Checks/Vulnerabilities/CVE"],
-            "FirstObservedAt": now_iso,
-            "UpdatedAt": now_iso,
-            "CreatedAt": now_iso,
-            "Severity": {
-                "Label": severity_label,
-                "Normalized": severity_score,
-            },
-            "Title": (
-                f"PHI/PII detected: {finding.hipaa_category.value} "
-                f"in {finding.file_path}:{finding.line_number}"
-            ),
-            "Description": (
-                f"phi-scan detected a {finding.hipaa_category.value} ({finding.entity_type}) "
-                f"with {finding.confidence:.0%} confidence at "
-                f"{finding.file_path} line {finding.line_number}. "
-                "No raw value is stored — only a one-way hash of the detected entity."
-            ),
-            "Remediation": {
-                "Recommendation": {
-                    "Text": finding.remediation_hint or "Remove or de-identify the PHI/PII value.",
-                }
-            },
-            "SourceUrl": f"https://github.com/{repository}/blob/HEAD/{finding.file_path}#L{finding.line_number}",
-            "Resources": [
-                {
-                    "Type": "Other",
-                    "Id": f"file://{finding.file_path}",
-                    "Details": {
-                        "Other": {
-                            "line_number": str(finding.line_number),
-                            "entity_type": finding.entity_type,
-                            "hipaa_category": finding.hipaa_category.value,
-                            "confidence": f"{finding.confidence:.4f}",
-                        }
-                    },
-                }
-            ],
-        }
-        asff_findings.append(asff_finding)
-
-    return asff_findings
-
-
-def import_findings_to_security_hub(
-    scan_result: ScanResult,
-    pr_context: PRContext,
-) -> None:
-    """Import phi-scan findings to AWS Security Hub via BatchImportFindings."""
-    if _env("AWS_SECURITY_HUB") != "true":
-        _LOG.debug("Security Hub: AWS_SECURITY_HUB not enabled — skipping")
-        return
-
-    if scan_result.is_clean:
-        _LOG.debug("Security Hub: no findings to import")
-        return
-
-    account_id = _env("AWS_ACCOUNT_ID") or ""
-    region = _env("AWS_DEFAULT_REGION") or _env("AWS_REGION") or "us-east-1"
-    repository = pr_context.repository or _env("GITHUB_REPOSITORY") or "unknown/repo"
-
-    if not account_id:
-        _LOG.warning("Security Hub: AWS_ACCOUNT_ID not set — skipping")
-        return
-
-    import json as _json
-
-    asff_findings = convert_findings_to_asff(scan_result, account_id, region, repository)
-    findings_json = _json.dumps({"Findings": asff_findings})
-
-    try:
-        aws_cli_result = subprocess.run(
-            ["aws", "securityhub", "batch-import-findings", "--cli-input-json", findings_json],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if aws_cli_result.returncode != 0:
-            raise CIIntegrationError(
-                f"AWS Security Hub import failed (exit {aws_cli_result.returncode}): "
-                f"{aws_cli_result.stderr.strip()[:_MAX_ERROR_RESPONSE_LOG_LENGTH]}"
-            )
-    except FileNotFoundError as not_found_error:
-        raise CIIntegrationError(
-            "AWS CLI not found — install awscli to enable Security Hub integration"
-        ) from not_found_error
-
-    _LOG.debug("Security Hub: imported %d ASFF finding(s)", len(asff_findings))
