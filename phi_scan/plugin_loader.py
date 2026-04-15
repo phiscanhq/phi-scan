@@ -413,12 +413,14 @@ def _classify_suppressor_entry_points(
     skipped_suppressors: list[SkippedPlugin] = []
     reserved_names: set[str] = set()
     for entry_point in sorted_entry_points:
-        load_outcome = _load_or_skip_suppressor_entry_point(entry_point, reserved_names)
-        if isinstance(load_outcome, LoadedSuppressor):
-            loaded_suppressors.append(load_outcome)
-            reserved_names.add(load_outcome.suppressor.name)
+        loaded_or_skipped_suppressor = _load_or_skip_suppressor_entry_point(
+            entry_point, reserved_names
+        )
+        if isinstance(loaded_or_skipped_suppressor, LoadedSuppressor):
+            loaded_suppressors.append(loaded_or_skipped_suppressor)
+            reserved_names.add(loaded_or_skipped_suppressor.suppressor.name)
             continue
-        skipped_suppressors.append(load_outcome)
+        skipped_suppressors.append(loaded_or_skipped_suppressor)
     return loaded_suppressors, skipped_suppressors
 
 
