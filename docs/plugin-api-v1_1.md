@@ -152,6 +152,11 @@ not caught.
 A return value that is not an instance of `SuppressDecision` is
 handled the same way: WARNING-logged, treated as pass-through.
 
+Only the exception **type name** is logged; the exception message
+(`str(exception)`) is deliberately dropped because a suppressor
+receives the source line directly and could embed line text in its
+exception message, which would leak raw PHI to the log stream.
+
 This mirrors the recognizer-side boundary in
 `phi_scan.plugin_runtime._invoke_detect_with_isolation`.
 

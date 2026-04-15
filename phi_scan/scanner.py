@@ -636,49 +636,48 @@ def _compose_file_findings(
     confidence, and severity filters. Shared by the cache-hit, cache-miss,
     and archive-member paths so that a single composition stays drift-free.
     """
-    plugin_findings = _execute_plugin_pass_for_file(scan_inputs.file_content, scan_inputs.file_path)
-    return _apply_post_scan_filters(
-        scan_inputs.raw_findings + plugin_findings,
-        scan_inputs.file_content,
-        config,
+    plugin_registry = _load_cached_plugin_registry()
+    plugin_findings = _execute_plugin_pass_for_file(
+        scan_inputs.file_content, scan_inputs.file_path, plugin_registry
     )
+    filter_inputs = _PostScanFilterInputs(
+        merged_findings=scan_inputs.raw_findings + plugin_findings,
+        file_content=scan_inputs.file_content,
+        plugin_registry=plugin_registry,
+    )
+    return _apply_post_scan_filters(filter_inputs, config)
 
 
-def _execute_plugin_pass_for_file(file_content: str, file_path: Path) -> list[ScanFinding]:
-    """Run the scan-scoped plugin pass against one file and return findings.
+def _execute_plugin_pass_for_file(
+    file_content: str, file_path: Path, plugin_registry: PluginRegistry
+) -> list[ScanFinding]:
+    """Thin seam over ``execute_plugin_pass`` kept as a patch target for tests."""
+    return execute_plugin_pass(file_content, file_path, plugin_registry)
 
-    ``execute_scan`` clears the registry cache synchronously before any
-    worker threads are spawned. The first worker to reach this function
-    populates the cache via ``functools.cache``, whose underlying
-    ``lru_cache`` lock serialises concurrent callers so
-    ``load_plugin_registry`` runs at most once per scan; subsequent
-    readers hit the populated cache directly.
-    """
-    registry = _load_cached_plugin_registry()
-    return execute_plugin_pass(file_content, file_path, registry)
+
+@dataclass(frozen=True)
+class _PostScanFilterInputs:
+    """Bundle of inputs threaded through the post-scan filter chain."""
+
+    merged_findings: list[ScanFinding]
+    file_content: str
+    plugin_registry: PluginRegistry
 
 
 def _apply_post_scan_filters(
-    raw_findings: list[ScanFinding],
-    file_content: str,
+    filter_inputs: _PostScanFilterInputs,
     config: ScanConfig,
 ) -> list[ScanFinding]:
-    """Apply suppression, confidence, and severity filters to raw detection findings.
+    """Apply inline suppression, plugin suppressors, confidence, and severity filters.
 
-    Called after detection (fresh scan) and after cache retrieval so that
-    threshold or suppression changes take effect even when returning cached results.
-
-    Args:
-        raw_findings: Unfiltered findings from detect_phi_in_text_content.
-        file_content: Raw file content used to parse suppression directives.
-        config: Scan configuration controlling the confidence and severity thresholds.
-
-    Returns:
-        Findings that passed suppression, confidence, and severity filtering.
+    The plugin registry is received rather than fetched so the filter
+    chain has a single responsibility (filtering) and is trivially
+    testable with a synthetic registry.
     """
-    plugin_registry = _load_cached_plugin_registry()
-    filtered = _apply_suppression_filter(raw_findings, file_content)
-    filtered = apply_suppressor_pass(filtered, plugin_registry, file_content)
+    filtered = _apply_suppression_filter(filter_inputs.merged_findings, filter_inputs.file_content)
+    filtered = apply_suppressor_pass(
+        filtered, filter_inputs.plugin_registry, filter_inputs.file_content
+    )
     filtered = _apply_confidence_filter(filtered, config.confidence_threshold)
     return _apply_severity_filter(filtered, config.severity_threshold)
 

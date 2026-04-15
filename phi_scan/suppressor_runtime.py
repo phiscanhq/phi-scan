@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 
 from phi_scan.models import ScanFinding
 from phi_scan.plugin_api import (
@@ -37,18 +38,27 @@ _SUPPRESSOR_WARNING_LOG: str = "Suppressor %r at %s:%d — %s"
 _SUPPRESSOR_SUMMARY_LOG: str = (
     "Suppressor %r produced %d warnings during this scan (first %d shown above)"
 )
-_EVALUATE_EXCEPTION_ERROR: str = "evaluate() raised {error_type}: {error_message}"
+_EVALUATE_EXCEPTION_ERROR: str = "evaluate() raised {error_type}"
 _INVALID_RETURN_TYPE_ERROR: str = "returned {actual_type} instead of SuppressDecision"
 
 
 @dataclass(frozen=True)
-class _SuppressorInvocation:
-    """One suppressor's invocation against one host finding."""
+class _SuppressorCallContext:
+    """Inputs needed to invoke one suppressor on one host finding.
+
+    Carries only the fields the isolation boundary consumes — the
+    plugin-stable view plus the source line and the (file_path,
+    line_number) logging location. The full host ``ScanFinding`` is
+    deliberately not stored here so the boundary cannot read host
+    fields (``value_hash``, ``code_context``) that the Plugin API
+    withholds from suppressors.
+    """
 
     loaded_suppressor: LoadedSuppressor
     finding_view: SuppressorFindingView
     line_text: str
-    finding: ScanFinding
+    file_path: Path
+    line_number: int
 
 
 class _SuppressorWarningBudget:
@@ -56,27 +66,31 @@ class _SuppressorWarningBudget:
 
     def __init__(self, limit: int = _MAX_WARNINGS_PER_SUPPRESSOR) -> None:
         self._limit = limit
-        self._counts: Counter[str] = Counter()
+        self._warning_counts_by_suppressor_name: Counter[str] = Counter()
 
     def claim_suppressor_warning_slot(self, suppressor_name: str) -> bool:
-        self._counts[suppressor_name] += 1
-        return self._counts[suppressor_name] <= self._limit
+        self._warning_counts_by_suppressor_name[suppressor_name] += 1
+        return self._warning_counts_by_suppressor_name[suppressor_name] <= self._limit
 
     def log_suppressor_warning(
-        self, suppressor_name: str, finding: ScanFinding, message: str
+        self,
+        suppressor_name: str,
+        file_path: Path,
+        line_number: int,
+        message: str,
     ) -> None:
         if not self.claim_suppressor_warning_slot(suppressor_name):
             return
         _LOG.warning(
             _SUPPRESSOR_WARNING_LOG,
             suppressor_name,
-            finding.file_path,
-            finding.line_number,
+            file_path,
+            line_number,
             message,
         )
 
     def emit_suppressor_warning_summary(self) -> None:
-        for suppressor_name, total_count in self._counts.items():
+        for suppressor_name, total_count in self._warning_counts_by_suppressor_name.items():
             if total_count > self._limit:
                 _LOG.warning(
                     _SUPPRESSOR_SUMMARY_LOG,
@@ -140,13 +154,14 @@ def _is_finding_suppressed(
     finding_view = _build_finding_view(finding)
     line_text = _resolve_line_text(finding, file_lines)
     for loaded_suppressor in loaded_suppressors:
-        invocation = _SuppressorInvocation(
+        call_context = _SuppressorCallContext(
             loaded_suppressor=loaded_suppressor,
             finding_view=finding_view,
             line_text=line_text,
-            finding=finding,
+            file_path=finding.file_path,
+            line_number=finding.line_number,
         )
-        decision = _evaluate_suppressor_with_isolation(invocation, warning_budget)
+        decision = _evaluate_suppressor_with_isolation(call_context, warning_budget)
         if decision is not None and decision.is_suppressed:
             return True
     return False
@@ -170,7 +185,7 @@ def _resolve_line_text(finding: ScanFinding, file_lines: list[str]) -> str:
 
 
 def _evaluate_suppressor_with_isolation(
-    invocation: _SuppressorInvocation,
+    call_context: _SuppressorCallContext,
     warning_budget: _SuppressorWarningBudget,
 ) -> SuppressDecision | None:
     """Call ``suppressor.evaluate`` under exception isolation.
@@ -185,24 +200,30 @@ def _evaluate_suppressor_with_isolation(
     ``BaseException`` (``KeyboardInterrupt``, ``SystemExit``) is
     deliberately not caught. A non-``SuppressDecision`` return value
     is treated the same way.
+
+    Only the exception's type name is logged. The ``str(exception)``
+    message is deliberately dropped because a third-party suppressor
+    receives the source line directly and may embed line content in
+    its exception message; logging that text would risk exfiltrating
+    raw PHI to the log stream. Same rationale as
+    ``_instantiate_suppressor`` in ``plugin_loader``.
     """
-    suppressor: BaseSuppressor = invocation.loaded_suppressor.suppressor
+    suppressor: BaseSuppressor = call_context.loaded_suppressor.suppressor
     try:
-        decision = suppressor.evaluate(invocation.finding_view, invocation.line_text)
+        decision = suppressor.evaluate(call_context.finding_view, call_context.line_text)
     except Exception as exception:  # noqa: BLE001 — suppressor isolation boundary (see docstring)
         warning_budget.log_suppressor_warning(
             suppressor.name,
-            invocation.finding,
-            _EVALUATE_EXCEPTION_ERROR.format(
-                error_type=type(exception).__name__,
-                error_message=str(exception),
-            ),
+            call_context.file_path,
+            call_context.line_number,
+            _EVALUATE_EXCEPTION_ERROR.format(error_type=type(exception).__name__),
         )
         return None
     if not isinstance(decision, SuppressDecision):
         warning_budget.log_suppressor_warning(
             suppressor.name,
-            invocation.finding,
+            call_context.file_path,
+            call_context.line_number,
             _INVALID_RETURN_TYPE_ERROR.format(actual_type=type(decision).__name__),
         )
         return None

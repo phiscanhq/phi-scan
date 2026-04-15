@@ -220,7 +220,19 @@ def test_raising_suppressor_does_not_abort_scan(caplog: pytest.LogCaptureFixture
     with caplog.at_level(logging.WARNING, logger="phi_scan.suppressor_runtime"):
         result = apply_suppressor_pass([_build_finding()], registry, _SAMPLE_LINE)
     assert len(result) == 1
-    assert any("simulated suppressor failure" in record.message for record in caplog.records)
+    assert any("RuntimeError" in record.message for record in caplog.records)
+
+
+def test_raising_suppressor_log_does_not_leak_exception_message(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Exception .args content must never reach the log stream (PHI exfiltration risk)."""
+    registry = _build_registry(_RaisingSuppressor())
+    with caplog.at_level(logging.WARNING, logger="phi_scan.suppressor_runtime"):
+        apply_suppressor_pass([_build_finding()], registry, _SAMPLE_LINE)
+    assert not any(
+        "simulated suppressor failure" in record.getMessage() for record in caplog.records
+    )
 
 
 def test_raising_suppressor_does_not_block_later_suppressor_that_suppresses(
@@ -248,9 +260,7 @@ def test_warnings_are_rate_limited_per_suppressor(caplog: pytest.LogCaptureFixtu
     findings = [_build_finding(line_number=i + 1) for i in range(_RATE_LIMIT_TEST_FINDING_COUNT)]
     with caplog.at_level(logging.WARNING, logger="phi_scan.suppressor_runtime"):
         apply_suppressor_pass(findings, registry, _SAMPLE_LINE)
-    per_finding_records = [
-        record for record in caplog.records if "simulated suppressor failure" in record.message
-    ]
+    per_finding_records = [record for record in caplog.records if "RuntimeError" in record.message]
     summary_records = [
         record
         for record in caplog.records
