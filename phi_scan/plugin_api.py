@@ -42,12 +42,17 @@ from pathlib import Path
 
 __all__ = [
     "BaseRecognizer",
+    "BaseSuppressor",
     "PLUGIN_API_VERSION",
+    "SUPPRESSOR_API_VERSION",
     "ScanContext",
     "ScanFinding",
+    "SuppressDecision",
+    "SuppressorFindingView",
 ]
 
 PLUGIN_API_VERSION: str = "1.0"
+SUPPRESSOR_API_VERSION: str = "1.1"
 
 RECOGNIZER_NAME_PATTERN: re.Pattern[str] = re.compile(r"^[a-z][a-z0-9_]*$")
 ENTITY_TYPE_PATTERN: re.Pattern[str] = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -246,4 +251,108 @@ class BaseRecognizer(ABC):
             Raising from ``detect`` is allowed; the host catches the
             exception and drops the batch for that line with a
             WARNING-level log entry.
+        """
+
+
+@dataclass(frozen=True)
+class SuppressorFindingView:
+    """Plugin-stable view of a host finding passed to ``BaseSuppressor.evaluate``.
+
+    Exposes only the fields a suppressor needs to make a decision. The
+    raw matched value is never included — suppressors operate on
+    metadata and the surrounding line text only. Host-internal fields
+    (``value_hash``, ``code_context``, ``detection_layer``) are
+    intentionally withheld so the API surface stays stable across
+    future host refactors.
+
+    Attributes:
+        entity_type: Uppercase entity-type string of the finding.
+        confidence: Host-computed confidence in [0.0, 1.0].
+        line_number: 1-indexed line number of the finding.
+        file_path: Path of the scanned file. Suppressors MUST NOT open
+            or stat this path; it is supplied for language-gating and
+            logging only.
+        file_extension: File extension including the leading dot (e.g.
+            ``".py"``); empty string when the file has no extension.
+    """
+
+    entity_type: str
+    confidence: float
+    line_number: int
+    file_path: Path
+    file_extension: str
+
+
+@dataclass(frozen=True)
+class SuppressDecision:
+    """Outcome of one ``BaseSuppressor.evaluate`` call.
+
+    Attributes:
+        is_suppressed: When ``True`` the finding is dropped before the
+            confidence and severity filters run. The first suppressor
+            whose decision sets this to ``True`` wins; later
+            suppressors for the same finding are not consulted.
+        reason: Short human-readable description of why the suppressor
+            chose this outcome. Logged for diagnostics and surfaced by
+            future audit tooling. Plugins MUST NOT include raw PHI in
+            the reason string.
+    """
+
+    is_suppressed: bool
+    reason: str
+
+
+class BaseSuppressor(ABC):
+    """Abstract base class for third-party suppressor plugins (API v1.1).
+
+    Suppressors run after inline ``phi-scan:ignore`` directives and
+    before the confidence and severity filters. Each loaded suppressor
+    is consulted once per surviving finding, in deterministic
+    ``(distribution_name, entry_point_name)`` order; the first
+    ``SuppressDecision`` with ``is_suppressed=True`` drops the finding.
+
+    Class attribute contract:
+
+        * ``name`` — lowercase snake_case identifier matching
+          ``RECOGNIZER_NAME_PATTERN``. Used as the collision key for
+          deduplicating suppressors across installed distributions.
+        * ``plugin_api_version`` — must equal the host's
+          ``SUPPRESSOR_API_VERSION`` constant (``"1.1"``) for the
+          plugin to be loaded.
+        * ``version`` — plugin's own semantic version, informational.
+        * ``description`` — one-line human description, informational.
+
+    Plugin authors MUST NOT:
+
+        * Open, stat, or mutate ``finding.file_path``.
+        * Send any data to a remote service.
+        * Mutate the passed ``SuppressorFindingView`` or ``line`` string.
+        * Include raw PHI in ``SuppressDecision.reason``.
+
+    Raising from ``evaluate`` is allowed; the host catches the
+    exception at the designated isolation boundary and treats the
+    suppressor as having decided ``is_suppressed=False`` for that one
+    finding. Other suppressors and findings are unaffected.
+    """
+
+    name: str
+    plugin_api_version: str = SUPPRESSOR_API_VERSION
+    version: str = _DEFAULT_PLUGIN_VERSION
+    description: str = _DEFAULT_PLUGIN_DESCRIPTION
+
+    @abstractmethod
+    def evaluate(self, finding: SuppressorFindingView, line: str) -> SuppressDecision:
+        """Decide whether ``finding`` should be suppressed.
+
+        Args:
+            finding: Plugin-stable projection of the host finding.
+            line: Full text of the source line containing the finding,
+                without the trailing newline. May be empty when the
+                line cannot be reconstructed.
+
+        Returns:
+            A ``SuppressDecision``. ``is_suppressed=True`` drops the
+            finding; ``False`` passes it through to the next
+            suppressor and ultimately to the confidence and severity
+            filters.
         """

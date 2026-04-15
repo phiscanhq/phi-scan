@@ -31,24 +31,33 @@ from phi_scan.plugin_api import (
     ENTITY_TYPE_PATTERN,
     PLUGIN_API_VERSION,
     RECOGNIZER_NAME_PATTERN,
+    SUPPRESSOR_API_VERSION,
     BaseRecognizer,
+    BaseSuppressor,
 )
 
 __all__ = [
     "LoadedPlugin",
+    "LoadedSuppressor",
     "PLUGIN_ENTRY_POINT_GROUP",
     "PluginRegistry",
+    "SUPPRESSOR_ENTRY_POINT_GROUP",
     "SkippedPlugin",
     "discover_plugin_registry",
     "load_plugin_registry",
 ]
 
 PLUGIN_ENTRY_POINT_GROUP: str = "phi_scan.plugins"
+SUPPRESSOR_ENTRY_POINT_GROUP: str = "phi_scan.suppressors"
 
 _UNKNOWN_DISTRIBUTION_LABEL: str = "<unknown distribution>"
 
 _NOT_A_CLASS_REASON: str = "entry point did not resolve to a class"
 _NOT_A_RECOGNIZER_REASON: str = "class does not inherit from BaseRecognizer"
+_NOT_A_SUPPRESSOR_REASON: str = "class does not inherit from BaseSuppressor"
+_SUPPRESSOR_API_VERSION_MISMATCH_REASON: str = (
+    "plugin_api_version {plugin_version!r} does not match host suppressor API {host_version!r}"
+)
 _MISSING_NAME_REASON: str = "class does not declare a 'name' attribute"
 _INVALID_NAME_REASON: str = "name {name!r} does not match pattern {pattern}"
 _MISSING_ENTITY_TYPES_REASON: str = "class does not declare 'entity_types'"
@@ -108,8 +117,26 @@ class SkippedPlugin:
 
 
 @dataclass(frozen=True)
+class LoadedSuppressor:
+    """A suppressor plugin that passed validation and was instantiated.
+
+    Attributes:
+        entry_point_name: Name field on the setuptools entry point.
+        distribution_name: Name of the installed distribution that
+            provided the entry point, or ``None`` if the metadata
+            was unavailable.
+        suppressor: The instantiated suppressor, ready to be invoked
+            by ``evaluate(finding_view, line)``.
+    """
+
+    entry_point_name: str
+    distribution_name: str | None
+    suppressor: BaseSuppressor
+
+
+@dataclass(frozen=True)
 class PluginRegistry:
-    """The result of one plugin-discovery pass over the entry-point group.
+    """The result of one plugin-discovery pass over the entry-point groups.
 
     Attributes:
         loaded: Tuple of recognizers that passed validation, in the
@@ -117,10 +144,16 @@ class PluginRegistry:
             name then entry-point name).
         skipped: Tuple of recognizers that were rejected, in the
             same deterministic order.
+        loaded_suppressors: Tuple of suppressor plugins that passed
+            validation, in deterministic discovery order.
+        skipped_suppressors: Tuple of suppressor plugins that were
+            rejected, in the same deterministic order.
     """
 
     loaded: tuple[LoadedPlugin, ...] = ()
     skipped: tuple[SkippedPlugin, ...] = ()
+    loaded_suppressors: tuple[LoadedSuppressor, ...] = ()
+    skipped_suppressors: tuple[SkippedPlugin, ...] = ()
 
 
 def discover_plugin_registry() -> PluginRegistry:
@@ -137,9 +170,17 @@ def discover_plugin_registry() -> PluginRegistry:
     """
     sorted_entry_points = _sort_entry_points_deterministically(_discover_entry_points())
     loaded_plugins, skipped_plugins = _classify_entry_points(sorted_entry_points)
+    sorted_suppressor_entry_points = _sort_entry_points_deterministically(
+        _discover_suppressor_entry_points()
+    )
+    loaded_suppressors, skipped_suppressors = _classify_suppressor_entry_points(
+        sorted_suppressor_entry_points
+    )
     return PluginRegistry(
         loaded=tuple(loaded_plugins),
         skipped=tuple(skipped_plugins),
+        loaded_suppressors=tuple(loaded_suppressors),
+        skipped_suppressors=tuple(skipped_suppressors),
     )
 
 
@@ -155,6 +196,8 @@ def load_plugin_registry() -> PluginRegistry:
     registry = discover_plugin_registry()
     for skipped_plugin in registry.skipped:
         _log_skipped_plugin(skipped_plugin)
+    for skipped_suppressor in registry.skipped_suppressors:
+        _log_skipped_plugin(skipped_suppressor)
     return registry
 
 
@@ -353,6 +396,111 @@ def _instantiate_recognizer(
     # and the reason string is logged at WARNING level.
     try:
         return recognizer_class()
+    except Exception as init_error:  # noqa: BLE001 — see comment above
+        raise PluginValidationError(
+            _INSTANTIATION_FAILURE_REASON.format(error_type=type(init_error).__name__)
+        ) from init_error
+
+
+def _discover_suppressor_entry_points() -> tuple[EntryPoint, ...]:
+    return tuple(entry_points(group=SUPPRESSOR_ENTRY_POINT_GROUP))
+
+
+def _classify_suppressor_entry_points(
+    sorted_entry_points: tuple[EntryPoint, ...],
+) -> tuple[list[LoadedSuppressor], list[SkippedPlugin]]:
+    loaded_suppressors: list[LoadedSuppressor] = []
+    skipped_suppressors: list[SkippedPlugin] = []
+    reserved_names: set[str] = set()
+    for entry_point in sorted_entry_points:
+        load_outcome = _load_or_skip_suppressor_entry_point(entry_point, reserved_names)
+        if isinstance(load_outcome, LoadedSuppressor):
+            loaded_suppressors.append(load_outcome)
+            reserved_names.add(load_outcome.suppressor.name)
+            continue
+        skipped_suppressors.append(load_outcome)
+    return loaded_suppressors, skipped_suppressors
+
+
+def _load_or_skip_suppressor_entry_point(
+    entry_point: EntryPoint,
+    reserved_names: set[str],
+) -> LoadedSuppressor | SkippedPlugin:
+    distribution_name = _resolve_distribution_name(entry_point)
+    try:
+        suppressor_class = _import_validated_suppressor_class(entry_point, reserved_names)
+        suppressor_instance = _instantiate_suppressor(suppressor_class)
+    except PluginValidationError as validation_error:
+        return SkippedPlugin(
+            entry_point_name=entry_point.name,
+            distribution_name=distribution_name,
+            reason=str(validation_error),
+        )
+    return LoadedSuppressor(
+        entry_point_name=entry_point.name,
+        distribution_name=distribution_name,
+        suppressor=suppressor_instance,
+    )
+
+
+def _import_validated_suppressor_class(
+    entry_point: EntryPoint,
+    reserved_names: set[str],
+) -> type[BaseSuppressor]:
+    entry_point_target = _import_entry_point_object(entry_point)
+    suppressor_class = _coerce_to_suppressor_class(entry_point_target)
+    _validate_suppressor_class(suppressor_class)
+    _reject_reserved_name(suppressor_class.name, reserved_names)
+    return suppressor_class
+
+
+def _coerce_to_suppressor_class(entry_point_target: object) -> type[BaseSuppressor]:
+    if not isinstance(entry_point_target, type):
+        raise PluginValidationError(_NOT_A_CLASS_REASON)
+    if not issubclass(entry_point_target, BaseSuppressor):
+        raise PluginValidationError(_NOT_A_SUPPRESSOR_REASON)
+    return entry_point_target
+
+
+def _validate_suppressor_class(suppressor_class: type[BaseSuppressor]) -> None:
+    _validate_suppressor_api_version(suppressor_class)
+    _validate_suppressor_name(suppressor_class)
+
+
+def _validate_suppressor_api_version(suppressor_class: type[BaseSuppressor]) -> None:
+    declared_version = suppressor_class.plugin_api_version
+    if declared_version != SUPPRESSOR_API_VERSION:
+        raise PluginValidationError(
+            _SUPPRESSOR_API_VERSION_MISMATCH_REASON.format(
+                plugin_version=declared_version,
+                host_version=SUPPRESSOR_API_VERSION,
+            )
+        )
+
+
+def _validate_suppressor_name(suppressor_class: type[BaseSuppressor]) -> None:
+    declared_name = getattr(suppressor_class, "name", None)
+    if declared_name is None:
+        raise PluginValidationError(_MISSING_NAME_REASON)
+    if not isinstance(declared_name, str) or not RECOGNIZER_NAME_PATTERN.match(declared_name):
+        raise PluginValidationError(
+            _INVALID_NAME_REASON.format(
+                name=declared_name,
+                pattern=RECOGNIZER_NAME_PATTERN.pattern,
+            )
+        )
+
+
+def _instantiate_suppressor(
+    suppressor_class: type[BaseSuppressor],
+) -> BaseSuppressor:
+    # Same trust-boundary behaviour as ``_instantiate_recognizer``: any
+    # constructor exception from a third-party plugin is converted into a
+    # skip outcome so the scan continues. Only the type name is embedded
+    # in the reason because a failing constructor may have read values
+    # from the environment that could incidentally contain PHI.
+    try:
+        return suppressor_class()
     except Exception as init_error:  # noqa: BLE001 — see comment above
         raise PluginValidationError(
             _INSTANTIATION_FAILURE_REASON.format(error_type=type(init_error).__name__)

@@ -56,6 +56,7 @@ from phi_scan.models import ScanConfig, ScanFinding, ScanResult
 from phi_scan.plugin_loader import PluginRegistry, load_plugin_registry
 from phi_scan.plugin_runtime import execute_plugin_pass
 from phi_scan.suppression import is_finding_suppressed, load_suppressions
+from phi_scan.suppressor_runtime import apply_suppressor_pass
 
 __all__ = [
     "MAX_WORKER_COUNT",
@@ -676,8 +677,23 @@ def _apply_post_scan_filters(
         Findings that passed suppression, confidence, and severity filtering.
     """
     filtered = _apply_suppression_filter(raw_findings, file_content)
+    filtered = _apply_suppressor_plugin_filter(filtered, file_content)
     filtered = _apply_confidence_filter(filtered, config.confidence_threshold)
     return _apply_severity_filter(filtered, config.severity_threshold)
+
+
+def _apply_suppressor_plugin_filter(
+    findings: list[ScanFinding],
+    file_content: str,
+) -> list[ScanFinding]:
+    """Run loaded suppressor plugins against ``findings`` between inline
+    suppression and the confidence/severity filters.
+
+    Reuses the scan-scoped plugin registry populated by the recognizer
+    pass so a scan invocation performs a single discovery pass.
+    """
+    registry = _load_cached_plugin_registry()
+    return apply_suppressor_pass(findings, registry, file_content)
 
 
 def _preprocess_content_for_scan(file_content: str, file_path: Path) -> str:

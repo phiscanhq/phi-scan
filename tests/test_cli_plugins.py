@@ -15,8 +15,20 @@ from typer.testing import CliRunner  # phi-scan:ignore
 
 from phi_scan.cli import app
 from phi_scan.constants import EXIT_CODE_CLEAN
-from phi_scan.plugin_api import PLUGIN_API_VERSION, BaseRecognizer, ScanContext, ScanFinding
-from phi_scan.plugin_loader import PLUGIN_ENTRY_POINT_GROUP
+from phi_scan.plugin_api import (
+    PLUGIN_API_VERSION,
+    SUPPRESSOR_API_VERSION,
+    BaseRecognizer,
+    BaseSuppressor,
+    ScanContext,
+    ScanFinding,
+    SuppressDecision,
+    SuppressorFindingView,
+)
+from phi_scan.plugin_loader import (
+    PLUGIN_ENTRY_POINT_GROUP,
+    SUPPRESSOR_ENTRY_POINT_GROUP,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -43,6 +55,13 @@ _STATUS_LOADED_LABEL: str = "loaded"
 _STATUS_SKIPPED: str = "skipped-invalid"
 
 _JSON_KEY_PLUGINS: str = "plugins"
+_JSON_KEY_SUPPRESSORS: str = "suppressors"
+
+_SUPPRESSOR_NAME: str = "test_suppressor"
+_SUPPRESSOR_DISTRIBUTION: str = "phi-scan-ext-suppressor"
+_SUPPRESSOR_ENTRY_POINT_NAME: str = "test_suppressor_entry"
+_INVALID_SUPPRESSOR_NAME: str = "invalid_suppressor_entry"
+_INVALID_SUPPRESSOR_DISTRIBUTION: str = "phi-scan-ext-invalid-suppressor"
 _JSON_KEY_NAME: str = "name"
 _JSON_KEY_VERSION: str = "version"
 _JSON_KEY_API_VERSION: str = "api_version"
@@ -133,6 +152,24 @@ class _BetaRecognizer(BaseRecognizer):
         return []
 
 
+class _TestSuppressor(BaseSuppressor):
+    name = _SUPPRESSOR_NAME
+    plugin_api_version = SUPPRESSOR_API_VERSION
+
+    def evaluate(self, finding: SuppressorFindingView, line: str) -> SuppressDecision:
+        del finding, line
+        return SuppressDecision(is_suppressed=False, reason="noop")
+
+
+class _MismatchedVersionSuppressor(BaseSuppressor):
+    name = "mismatched_suppressor"
+    plugin_api_version = "9.9"
+
+    def evaluate(self, finding: SuppressorFindingView, line: str) -> SuppressDecision:
+        del finding, line
+        return SuppressDecision(is_suppressed=False, reason="noop")
+
+
 class _MismatchedVersionRecognizer(BaseRecognizer):
     name = "mismatched_version"
     entity_types = ["MISMATCHED_TYPE"]
@@ -151,11 +188,16 @@ class _MismatchedVersionRecognizer(BaseRecognizer):
 def _patch_entry_point_discovery(
     monkeypatch: pytest.MonkeyPatch,
     entry_point_stubs: list[_EntryPointStub],
+    suppressor_entry_point_stubs: list[_EntryPointStub] | None = None,
 ) -> None:
+    resolved_suppressor_stubs = suppressor_entry_point_stubs or []
+
     def _return_stub_entry_points(*, group: str) -> list[_EntryPointStub]:
-        if group != PLUGIN_ENTRY_POINT_GROUP:
-            return []
-        return list(entry_point_stubs)
+        if group == PLUGIN_ENTRY_POINT_GROUP:
+            return list(entry_point_stubs)
+        if group == SUPPRESSOR_ENTRY_POINT_GROUP:
+            return list(resolved_suppressor_stubs)
+        return []
 
     monkeypatch.setattr(_ENTRY_POINTS_PATCH_TARGET, _return_stub_entry_points)
 
@@ -165,8 +207,9 @@ def _invoke_plugins_list(
     entry_point_stubs: list[_EntryPointStub],
     *,
     is_json: bool = False,
+    suppressor_entry_point_stubs: list[_EntryPointStub] | None = None,
 ) -> str:
-    _patch_entry_point_discovery(monkeypatch, entry_point_stubs)
+    _patch_entry_point_discovery(monkeypatch, entry_point_stubs, suppressor_entry_point_stubs)
     monkeypatch.setenv("COLUMNS", _WIDE_TERMINAL_COLUMNS)
     cli_arguments = ["plugins", "list"]
     if is_json:
@@ -398,3 +441,79 @@ class TestCommandIntegration:
         runner = CliRunner()
         invocation_result = runner.invoke(app, ["plugins", "--help"])
         assert "list" in invocation_result.output
+
+
+# ---------------------------------------------------------------------------
+# Tests — suppressor plugins in `plugins list`
+# ---------------------------------------------------------------------------
+
+
+class TestSuppressorPluginsListed:
+    def test_no_suppressors_shows_empty_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        output = _invoke_plugins_list(monkeypatch, [])
+        assert "No suppressor plugins discovered" in output
+
+    def test_loaded_suppressor_name_appears_in_output(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        suppressor_stubs = [
+            _EntryPointStub(
+                _SUPPRESSOR_ENTRY_POINT_NAME, _TestSuppressor, _SUPPRESSOR_DISTRIBUTION
+            ),
+        ]
+        output = _invoke_plugins_list(
+            monkeypatch, [], suppressor_entry_point_stubs=suppressor_stubs
+        )
+        assert _SUPPRESSOR_NAME in output
+
+    def test_loaded_suppressor_shows_loaded_status(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        suppressor_stubs = [
+            _EntryPointStub(
+                _SUPPRESSOR_ENTRY_POINT_NAME, _TestSuppressor, _SUPPRESSOR_DISTRIBUTION
+            ),
+        ]
+        output = _invoke_plugins_list(
+            monkeypatch, [], suppressor_entry_point_stubs=suppressor_stubs
+        )
+        assert _STATUS_LOADED_LABEL in output
+
+    def test_invalid_suppressor_shows_skipped_status(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        suppressor_stubs = [
+            _EntryPointStub(
+                _INVALID_SUPPRESSOR_NAME,
+                _MismatchedVersionSuppressor,
+                _INVALID_SUPPRESSOR_DISTRIBUTION,
+            ),
+        ]
+        output = _invoke_plugins_list(
+            monkeypatch, [], suppressor_entry_point_stubs=suppressor_stubs
+        )
+        assert _STATUS_SKIPPED in output
+
+
+class TestSuppressorJsonOutput:
+    def test_json_has_suppressors_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        output = _invoke_plugins_list(monkeypatch, [], is_json=True)
+        parsed_output = json.loads(output)
+        assert _JSON_KEY_SUPPRESSORS in parsed_output
+
+    def test_empty_suppressors_json_is_empty_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        output = _invoke_plugins_list(monkeypatch, [], is_json=True)
+        parsed_output = json.loads(output)
+        assert parsed_output[_JSON_KEY_SUPPRESSORS] == []
+
+    def test_loaded_suppressor_json_has_metadata(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        suppressor_stubs = [
+            _EntryPointStub(
+                _SUPPRESSOR_ENTRY_POINT_NAME, _TestSuppressor, _SUPPRESSOR_DISTRIBUTION
+            ),
+        ]
+        output = _invoke_plugins_list(
+            monkeypatch, [], is_json=True, suppressor_entry_point_stubs=suppressor_stubs
+        )
+        parsed_output = json.loads(output)
+        suppressor_record = parsed_output[_JSON_KEY_SUPPRESSORS][0]
+        assert suppressor_record[_JSON_KEY_NAME] == _SUPPRESSOR_NAME
+        assert suppressor_record[_JSON_KEY_API_VERSION] == SUPPRESSOR_API_VERSION
+        assert suppressor_record[_JSON_KEY_STATUS] == _STATUS_LOADED_LABEL
+        assert suppressor_record[_JSON_KEY_DISTRIBUTION] == _SUPPRESSOR_DISTRIBUTION

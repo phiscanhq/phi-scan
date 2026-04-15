@@ -1,5 +1,10 @@
 # Plugin API v1 — Compatibility and Deprecation Policy
 
+> **Suppressor plugins (v1.1):** the suppressor hook under the
+> `phi_scan.suppressors` entry-point group is documented separately in
+> [`plugin-api-v1_1.md`](plugin-api-v1_1.md). The recognizer contract
+> below is unchanged.
+
 This document defines the compatibility contract, deprecation rules, and
 authoring constraints for third-party recognizer plugins that register
 under the `phi_scan.plugins` entry-point group.
