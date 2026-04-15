@@ -41,6 +41,7 @@ _SARIF_VERSION_KEY: str = "version"
 _SARIF_EXPECTED_VERSION: str = "2.1.0"
 _HOOK_PATH_RELATIVE: str = ".git/hooks/pre-commit"
 _FOREIGN_HOOK_CONTENT: str = "#!/bin/sh\necho hello\n"
+_MISSING_DIRECTORY_NAME: str = "does-not-exist"
 # Observable hook marker — the string phi-scan writes into every hook it installs.
 _EXPECTED_HOOK_MARKER: str = "phi-scan scan"
 # Full hook script content — must match what install_hook writes verbatim so
@@ -224,6 +225,14 @@ def test_scan_unsupported_output_format_prints_error_message(tmp_path: Path) -> 
     result = _runner.invoke(app, ["scan", str(tmp_path), "--output", _UNSUPPORTED_FORMAT_NAME])
 
     assert _UNSUPPORTED_FORMAT_NAME in result.output
+
+
+def test_scan_nonexistent_path_exits_nonzero(tmp_path: Path) -> None:
+    missing_path = tmp_path / _MISSING_DIRECTORY_NAME
+
+    result = _runner.invoke(app, ["scan", str(missing_path)])
+
+    assert result.exit_code != _EXIT_CODE_SUCCESS
 
 
 # ---------------------------------------------------------------------------
