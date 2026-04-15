@@ -105,3 +105,69 @@ def test_post_pr_comment_forwards_to_resolved_adapter(
     posted_body, posted_context = fake_adapter.post_pull_request_comment.call_args.args
     assert "No PHI/PII Violations Found" in str(posted_body)
     assert posted_context is pr_context
+
+
+def test_set_commit_status_forwards_to_resolved_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_adapter = MagicMock()
+    fake_adapter.can_post_commit_status = True
+    monkeypatch.setattr(canonical_dispatch, "resolve_adapter", lambda _platform: fake_adapter)
+
+    clean_scan = MagicMock(spec=ScanResult)
+    pr_context = PullRequestContext(
+        platform=CIPlatform.GITHUB_ACTIONS,
+        pull_request_number="42",
+        repository="acme/example",
+        sha="deadbeef",
+        branch="feature",
+        base_branch="main",
+    )
+
+    ci_integration.set_commit_status(clean_scan, pr_context)
+
+    assert fake_adapter.set_commit_status.call_count == 1
+    forwarded_scan, forwarded_context = fake_adapter.set_commit_status.call_args.args
+    assert forwarded_scan is clean_scan
+    assert forwarded_context is pr_context
+
+
+def test_set_commit_status_returns_early_when_sha_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_adapter = MagicMock()
+    monkeypatch.setattr(canonical_dispatch, "resolve_adapter", lambda _platform: fake_adapter)
+
+    pr_context = PullRequestContext(
+        platform=CIPlatform.GITHUB_ACTIONS,
+        pull_request_number="42",
+        repository="acme/example",
+        sha=None,
+        branch="feature",
+        base_branch="main",
+    )
+
+    ci_integration.set_commit_status(MagicMock(spec=ScanResult), pr_context)
+
+    assert fake_adapter.set_commit_status.call_count == 0
+
+
+def test_set_commit_status_returns_early_when_adapter_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_adapter = MagicMock()
+    fake_adapter.can_post_commit_status = False
+    monkeypatch.setattr(canonical_dispatch, "resolve_adapter", lambda _platform: fake_adapter)
+
+    pr_context = PullRequestContext(
+        platform=CIPlatform.GITHUB_ACTIONS,
+        pull_request_number="42",
+        repository="acme/example",
+        sha="deadbeef",
+        branch="feature",
+        base_branch="main",
+    )
+
+    ci_integration.set_commit_status(MagicMock(spec=ScanResult), pr_context)
+
+    assert fake_adapter.set_commit_status.call_count == 0

@@ -27,7 +27,7 @@ _COMMENT_BADGE_VIOLATIONS: str = (
 )
 
 _MAX_COMMENT_LENGTH: int = 60_000
-_COMMENT_BODY_SPLIT_MAXSPLIT: int = 2
+_COMMENT_BODY_NEWLINE_SPLIT_LIMIT: int = 2
 _COMMENT_MIN_SECTION_COUNT: int = 2
 _BASELINE_CONTEXT_FORMAT: str = (
     "**{new_findings_count} new** | "
@@ -144,7 +144,7 @@ def _insert_baseline_context_into_comment(
     baseline_line: str,
 ) -> str:
     """Insert a baseline context line after the first header line of a comment body."""
-    lines = comment_body.split("\n", _COMMENT_BODY_SPLIT_MAXSPLIT)
+    lines = comment_body.split("\n", _COMMENT_BODY_NEWLINE_SPLIT_LIMIT)
     if len(lines) < _COMMENT_MIN_SECTION_COUNT:
         return baseline_line + "\n\n" + comment_body
     return "\n".join([lines[0], "", baseline_line, "", *lines[1:]])
