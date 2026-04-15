@@ -43,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `completion_tokens`, and `estimated_cost_usd` in the SQLite audit trail for cost tracking
   and compliance reporting.
 
+### Deprecated
+
+- **Top-level `phi_scan.cli_*` compatibility shims** (`cli_baseline`, `cli_config`,
+  `cli_explain`, `cli_plugins`, `cli_report`, `cli_scan_config`, `cli_watch`) are
+  deprecated. The canonical import paths are `phi_scan.cli.<name>`. The shims
+  continue to work unchanged for the v1.x series and will be **removed in v2.0**.
+  A runtime `DeprecationWarning` will be added in a later pre-v2.0 minor release.
+  See `docs/lts-eol-policy.md` for the full deprecation timeline.
+
 ### Changed
 
 - `ai.enable_claude_review` is deprecated — emits `DeprecationWarning`; still accepted for

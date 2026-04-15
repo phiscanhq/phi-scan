@@ -146,8 +146,24 @@ Python version support follows this policy:
 
 ---
 
+## Deprecation Timelines
+
+Public API deprecations that have a scheduled removal target are recorded
+here so consumers can plan upgrades against a known horizon.
+
+| Deprecated surface | Deprecated in | Removal target | Canonical replacement |
+|--------------------|--------------|----------------|----------------------|
+| Top-level `phi_scan.cli_*` compatibility shims (`cli_baseline`, `cli_config`, `cli_explain`, `cli_plugins`, `cli_report`, `cli_scan_config`, `cli_watch`) | v1.x (see `CHANGELOG.md` Unreleased) | **v2.0** | `phi_scan.cli.<name>` |
+
+A runtime `DeprecationWarning` for the above shims is deferred to a
+pre-v2.0 minor release so that v1.x consumers do not experience a
+silent behavior change mid-series.
+
+---
+
 ## Version History
 
 | Date | Change |
 |------|--------|
 | 2026-04-16 | Initial LTS and EOL policy for C6 scorecard check |
+| 2026-04-14 | Added deprecation timeline for `phi_scan.cli_*` shims (removal v2.0) |

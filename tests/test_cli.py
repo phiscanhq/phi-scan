@@ -226,6 +226,14 @@ def test_scan_unsupported_output_format_prints_error_message(tmp_path: Path) -> 
     assert _UNSUPPORTED_FORMAT_NAME in result.output
 
 
+def test_scan_nonexistent_path_exits_nonzero(tmp_path: Path) -> None:
+    missing_path = tmp_path / "does-not-exist"
+
+    result = _runner.invoke(app, ["scan", str(missing_path)])
+
+    assert result.exit_code != _EXIT_CODE_SUCCESS
+
+
 # ---------------------------------------------------------------------------
 # scan — severity threshold override
 # ---------------------------------------------------------------------------
