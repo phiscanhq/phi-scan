@@ -24,7 +24,7 @@ described in `docs/org-migration-checklist.md` §2. Every row must be
 |---|-------|--------|---------------|
 | 8 | PyPI 2FA confirmed | `GO` (confirmed 2026-04-14) | `docs/migration/maintainer-checklist.md#1-pypi-2fa-confirmation` |
 | 9 | ~~GHCR pull + digest recorded~~ | **`N/A — DEFERRED`** | Out-of-scope for migration-go; see [`docs/org-migration-status.md`](../org-migration-status.md) |
-| 10 | Sigstore bundle verifies under current subject | `PENDING-UNTIL-SIGNED-RELEASE` | Bound to the first S11-signed release (≥ v0.6.0). `v0.5.0` pre-dates S11 signing (PR #123, 2026-04-11) and carries no `.sigstore.json`. See `docs/migration/maintainer-checklist.md#3-sigstore--keyless-oidc-verification`. |
+| 10 | Sigstore bundle verifies under current subject | `GO` (v0.6.1, verified 2026-04-15) | Both wheel + sdist bundles `Verified OK` via `cosign verify-blob`. See `docs/migration/maintainer-checklist.md#3-sigstore--keyless-oidc-verification`. |
 
 ## Operational gates
 

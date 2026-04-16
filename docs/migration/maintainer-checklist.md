@@ -75,53 +75,67 @@ Record the post-transfer digest here after §2.5 of the runbook completes.
 ## 3. Sigstore / keyless OIDC verification
 
 ```
-STATUS: PENDING-UNTIL-SIGNED-RELEASE
+STATUS: DONE
 ```
 
-**Historical gap (recorded 2026-04-15):** The latest release at the time
-of this checklist — `v0.5.0`, tagged 2026-04-04 — pre-dates the S11
-Sigstore signing step added to `.github/workflows/release.yml` in PR
-#123 (commit `7c7a21d`, merged 2026-04-11). Verified by
-`git merge-base --is-ancestor 7c7a21d v0.5.0` returning non-zero and
-by `gh release view v0.5.0 --json assets` listing only the `.whl` and
-`.tar.gz` — no `.sigstore.json` bundle is attached. As a result, no
-Sigstore evidence can be captured against `v0.5.0`, and this gate
-cannot clear under the current latest release.
+**Historical gap (recorded 2026-04-15):** `v0.5.0` (tagged 2026-04-04)
+pre-dates the S11 Sigstore signing step (PR #123, merged 2026-04-11)
+and has no `.sigstore.json` bundle. The gate was bound to the first
+S11-signed release (≥ v0.6.0). `v0.6.0` was published to PyPI on
+2026-04-15 but its GitHub Release creation failed (release-workflow
+notes-escaping bug, fixed in #163); `v0.6.1` is the first release
+with a complete GitHub Release + Sigstore bundles attached.
 
-**Binding rule:** This gate is bound to the **first S11-signed release
-(≥ v0.6.0)**. Evidence below must be captured against that release,
-not against `v0.5.0`. Migration-go cannot be approved until this row
-is `STATUS: DONE` with evidence from a release whose workflow run
-executed the `Sign wheel and sdist with Sigstore (S11)` step.
-
-**Command pack (unchanged; run once a signed release exists).** Replace
-`<version>` with the first version ≥ 0.6.0 whose GitHub Release assets
-include `phi_scan-<version>-py3-none-any.whl.sigstore.json`:
+**Commands executed against v0.6.1:**
 
 ```bash
-gh release download v<version> --repo joeyessak/phi-scan
+gh release download v0.6.1 --repo joeyessak/phi-scan
 
 cosign verify-blob \
-  --cert-identity "https://github.com/joeyessak/phi-scan/.github/workflows/release.yml@refs/tags/v<version>" \
+  --cert-identity "https://github.com/joeyessak/phi-scan/.github/workflows/release.yml@refs/tags/v0.6.1" \
   --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
-  --bundle phi_scan-<version>-py3-none-any.whl.sigstore.json \
-  phi_scan-<version>-py3-none-any.whl
+  --bundle phi_scan-0.6.1-py3-none-any.whl.sigstore.json \
+  phi_scan-0.6.1-py3-none-any.whl
 ```
 
-This bundle is the **pre-transfer baseline** whose OIDC subject
-(`repo:joeyessak/phi-scan:…`) the post-transfer bundle
-(`repo:phiscanhq/phi-scan:…`) will be compared against.
-
-Evidence to paste (after a signed release exists):
+**Evidence — wheel verification:**
 
 ```
-PASTE EVIDENCE HERE
-— released version (must be ≥ 0.6.0 and carry a .sigstore.json asset)
-— full `cosign verify-blob` stdout, including the "Verified OK" line
-— the OIDC subject embedded in the cert
+Verified OK
 ```
 
-Date confirmed: `YYYY-MM-DD`
+```bash
+cosign verify-blob \
+  --cert-identity "https://github.com/joeyessak/phi-scan/.github/workflows/release.yml@refs/tags/v0.6.1" \
+  --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
+  --bundle phi_scan-0.6.1.tar.gz.sigstore.json \
+  phi_scan-0.6.1.tar.gz
+```
+
+**Evidence — sdist verification:**
+
+```
+Verified OK
+```
+
+**GitHub Release assets confirmed (v0.6.1):**
+
+```
+phi_scan-0.6.1-py3-none-any.whl
+phi_scan-0.6.1-py3-none-any.whl.sigstore.json
+phi_scan-0.6.1.tar.gz
+phi_scan-0.6.1.tar.gz.sigstore.json
+sbom.cyclonedx.json
+```
+
+**OIDC subject:** `repo:joeyessak/phi-scan:…` (pre-transfer baseline).
+Post-transfer bundles will verify under `repo:phiscanhq/phi-scan:…`.
+
+**Cosign version:** v3.0.6 (linux/amd64)
+
+**Release workflow run:** https://github.com/joeyessak/phi-scan/actions/runs/24487133619 (all 13 steps SUCCESS)
+
+Date confirmed: `2026-04-15`
 
 ---
 
@@ -131,10 +145,10 @@ Rows §1 (PyPI 2FA) and §3 (Sigstore) must be `STATUS: DONE` before the
 maintainer gives the "migration go" approval referenced in §1.6 of the
 runbook. Row §2 (GHCR) is **deferred** and is not a migration-go gate.
 
-Row §3 is currently `PENDING-UNTIL-SIGNED-RELEASE`: it cannot clear
-until a release ≥ v0.6.0 (the first release built with the S11 signing
-step) has been published and its Sigstore bundle verified with the
-command pack above.
+Row §3 cleared on 2026-04-15: `v0.6.1` is the first release with a
+complete GitHub Release + Sigstore bundles. Both wheel and sdist
+bundles verified with `cosign verify-blob` → `Verified OK`. All
+required rows (§1, §3) are now `STATUS: DONE`.
 
 Signed off by: `MAINTAINER_NAME`
 Date: `YYYY-MM-DD`

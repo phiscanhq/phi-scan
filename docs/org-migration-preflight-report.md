@@ -248,7 +248,7 @@ confirmed by the maintainer out-of-band (maintainer-run check).
 | 6 | Collaborators / teams / `CODEOWNERS` enumerated | **READY** | §3.6 — solo admin, no `CODEOWNERS` |
 | 7 | PyPI owner + 2FA confirmed | **PENDING MAINTAINER** | Owner email confirmed via public API; 2FA status needs out-of-band check |
 | 8 | GHCR manifest reachable and current | **DEFERRED** | Out-of-scope for migration-go — see [`docs/org-migration-status.md`](org-migration-status.md). Post-migration hardening only. |
-| 9 | Sigstore bundle verifies under current subject | **PENDING-UNTIL-SIGNED-RELEASE** | `v0.5.0` (2026-04-04) pre-dates S11 signing (PR #123, merged 2026-04-11) and has no `.sigstore.json` asset; gate bound to first release ≥ v0.6.0. Commands listed in §4.3. |
+| 9 | Sigstore bundle verifies under current subject | **DONE** | `v0.6.1` wheel + sdist verified 2026-04-15 via `cosign verify-blob` → `Verified OK`. Evidence in `docs/migration/maintainer-checklist.md §3`. |
 | 10 | Draft migration notice prepared | **DONE** | [`docs/migration/communication-draft.md §1`](migration/communication-draft.md) |
 | 11 | Draft release-notes entry prepared | **DONE** | [`docs/migration/communication-draft.md §2`](migration/communication-draft.md) |
 | 12 | Migration ticket opened | **NOT STARTED** | §1.6 of checklist |

@@ -47,7 +47,7 @@ execute from one page.
 | 6 | Collaborators / teams / `CODEOWNERS` | **done-with-evidence** | Pre-flight §3.6 (solo admin, no `CODEOWNERS`) |
 | 7 | PyPI 2FA confirmed | **done-with-evidence** | Maintainer confirmed 2026-04-14; see `docs/migration/maintainer-checklist.md §1` |
 | 8 | GHCR pull + digest recorded | **de-scoped** | See "Scope decision — GHCR deferred" above |
-| 9 | Sigstore bundle verifies under current subject | **pending-until-signed-release** | Bound to first S11-signed release (≥ v0.6.0); `v0.5.0` pre-dates S11 (PR #123, 2026-04-11) and has no `.sigstore.json` asset. Command pack retained in `docs/migration/maintainer-checklist.md §3`. |
+| 9 | Sigstore bundle verifies under current subject | **done-with-evidence** | `v0.6.1` wheel + sdist bundles verified 2026-04-15 via `cosign verify-blob` → `Verified OK`. Evidence in `docs/migration/maintainer-checklist.md §3`. |
 | 10 | Draft migration notice prepared | **done-with-evidence** | [`docs/migration/communication-draft.md §1`](migration/communication-draft.md) |
 | 11 | Draft release-notes entry prepared | **done-with-evidence** | [`docs/migration/communication-draft.md §2`](migration/communication-draft.md) |
 | 12 | Migration ticket opened | **done-with-evidence** | [`joeyessak/phi-scan#158`](https://github.com/joeyessak/phi-scan/issues/158) — opened 2026-04-14 from `docs/migration/ticket-template.md` |
@@ -57,19 +57,11 @@ execute from one page.
 
 ## Migration-go blockers remaining
 
-Only two items stand between current state and executable migration-go:
+Only one item stands between current state and executable migration-go:
 
-1. **Sigstore verification** — bound to the **first S11-signed release
-   (≥ v0.6.0)**. The latest release `v0.5.0` was tagged 2026-04-04,
-   before the S11 Sigstore signing step was merged to
-   `.github/workflows/release.yml` in PR #123 on 2026-04-11, so no
-   `.sigstore.json` bundle exists for `v0.5.0`. Once a release ≥ v0.6.0
-   is cut, the maintainer runs the command pack in
-   `docs/migration/maintainer-checklist.md §3` and pastes the
-   `Verified OK` stdout into that section. Publishing v0.6.0 is a
-   separate go/no-go decision outside this status doc.
-2. **Maintainer go approval** — sign off on `docs/migration/go-no-go.md`
-   once every other gate reads `GO`.
+1. **Maintainer go approval** — sign off on `docs/migration/go-no-go.md`
+   once every row in the automated, maintainer-run, and operational
+   sections reads `GO` (or `N/A` for deferred items).
 
 Cleared since last status:
 - PyPI 2FA confirmed by maintainer 2026-04-14 (row 7).
@@ -77,6 +69,9 @@ Cleared since last status:
 - Sigstore gate language tightened 2026-04-15: rebound row 9 to the
   first S11-signed release (≥ v0.6.0) after confirming `v0.5.0` carries
   no Sigstore bundle.
+- Sigstore gate cleared 2026-04-15: `v0.6.1` wheel and sdist bundles
+  verified via `cosign verify-blob` → `Verified OK`; evidence pasted
+  in `docs/migration/maintainer-checklist.md §3` (row 9).
 
 No other gate requires action. No repo config, workflow, or code change
 is needed before migration-go.
