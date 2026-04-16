@@ -1,6 +1,6 @@
 # Org Migration Status — `joeyessak/*` → `phiscanhq/*`
 
-**Last updated:** 2026-04-16
+**Last updated:** 2026-04-18
 **Pre-flight evidence date:** 2026-04-18 (per [`docs/org-migration-preflight-report.md`](org-migration-preflight-report.md))
 **Purpose:** Single operational source of truth for migration status.
 **Runbook:** [`docs/org-migration-checklist.md`](org-migration-checklist.md)
@@ -13,7 +13,8 @@
 **Post-transfer canonical patch pack:** [`docs/migration/post-transfer-patch-pack.md`](migration/post-transfer-patch-pack.md)
 
 **Transfer executed 2026-04-16.** Both repositories now live under `phiscanhq/*`.
-48-hour observation window: 2026-04-16 → 2026-04-18.
+48-hour observation window: 2026-04-16 → 2026-04-18. **Closed — no regressions.**
+Tracking issue: #158 (closed 2026-04-18).
 
 ---
 
@@ -67,7 +68,7 @@ execute from one page.
 | §2.6 | Post-transfer patch pack applied | PR #166 merged (`bd5687f`) — 11 files, 31 ins / 26 del |
 | §2.7 | End-to-end validation | `pip install phi-scan==0.6.1` → OK; `phi-scan --version` → `0.6.1`; `joeyessak/phi-scan` 301 → `phiscanhq/phi-scan`; ruleset intact |
 | §3   | `joeyessak/phi-scan-action` → `phiscanhq/phi-scan-action` | `gh api repos/phiscanhq/phi-scan-action` confirms transfer |
-| §4   | 48-hour observation window started | 2026-04-16 → 2026-04-18 |
+| §4   | 48-hour observation window | 2026-04-16 → 2026-04-18 — closed, no regressions |
 
 ### Old URL redirect
 
@@ -76,12 +77,16 @@ execute from one page.
 
 ---
 
-## What remains
+## Migration complete
 
-1. **48-hour observation window** (2026-04-16 → 2026-04-18): monitor
-   PyPI installs, GitHub redirect, CI runs, and pre-commit fetches.
-2. **Close observation window**: update this doc and close tracking
-   issue #158 with post-transfer evidence.
-3. **PyPI token rotation** (optional hardening): generate new token
+**Observation window closed 2026-04-18 — no critical regressions.**
+Tracking issue #158 closed with evidence.
+
+### Post-migration follow-up (non-blocking)
+
+1. **PyPI token rotation** (optional hardening): generate new token
    scoped to `phiscanhq` org, rotate old `joeyessak`-scoped token.
-4. **GHCR** remains deferred — not a transfer blocker.
+2. **GHCR** remains deferred to post-migration hardening track.
+3. **Long-tail redirect monitoring**: GitHub 301 redirect from
+   `joeyessak/phi-scan` is active; monitor for consumers that
+   hard-code the old URL.
