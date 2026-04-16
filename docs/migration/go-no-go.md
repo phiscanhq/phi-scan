@@ -22,7 +22,7 @@ described in `docs/org-migration-checklist.md` §2. Every row must be
 
 | # | Check | Status | Evidence link |
 |---|-------|--------|---------------|
-| 8 | PyPI 2FA confirmed | `GO` / `NO-GO` | `docs/migration/maintainer-checklist.md#1-pypi-2fa-confirmation` |
+| 8 | PyPI 2FA confirmed | `GO` (confirmed 2026-04-14) | `docs/migration/maintainer-checklist.md#1-pypi-2fa-confirmation` |
 | 9 | ~~GHCR pull + digest recorded~~ | **`N/A — DEFERRED`** | Out-of-scope for migration-go; see [`docs/org-migration-status.md`](../org-migration-status.md) |
 | 10 | Sigstore bundle verifies under current subject | `GO` / `NO-GO` | `docs/migration/maintainer-checklist.md#3-sigstore--keyless-oidc-verification` |
 
@@ -30,7 +30,7 @@ described in `docs/org-migration-checklist.md` §2. Every row must be
 
 | # | Check | Status |
 |---|-------|--------|
-| 11 | Migration ticket is open and linked to runbook + pre-flight | `GO` / `NO-GO` |
+| 11 | Migration ticket is open and linked to runbook + pre-flight | `GO` ([#158](https://github.com/joeyessak/phi-scan/issues/158), opened 2026-04-14) |
 | 12 | Communication drafts reviewed (not yet published) | `GO` / `NO-GO` |
 | 13 | Rollback plan reviewed by maintainer | `GO` / `NO-GO` |
 | 14 | Maintainer has allocated a 4-hour transfer window plus the 48-hour observation window | `GO` / `NO-GO` |

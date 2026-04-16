@@ -13,23 +13,23 @@ runbook.
 ## 1. PyPI 2FA confirmation
 
 ```
-STATUS: PENDING
+STATUS: DONE
 ```
 
 **Required:** Confirm the account that owns the `phi-scan` project on
 PyPI has 2FA enabled **and** that the 2FA device / recovery codes are
 accessible to the maintainer performing the transfer.
 
-Evidence to paste:
+Evidence:
 
 ```
-PASTE EVIDENCE HERE
-— screenshot of the PyPI account settings page showing 2FA active
-— confirmation that recovery codes are stored in the maintainer's
-  password manager or equivalent
+Maintainer confirmed out-of-band on 2026-04-14 that:
+— 2FA is active on the PyPI account that owns the `phi-scan` project
+— 2FA device and recovery codes are accessible to the maintainer
+  performing the transfer
 ```
 
-Date confirmed: `YYYY-MM-DD`
+Date confirmed: `2026-04-14`
 
 ---
 
