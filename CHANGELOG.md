@@ -7,8 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.6.0] - TBD
+
+_Release date is set at tag time. This section collects every change
+shipped on `main` since `v0.5.0` (2026-04-04), including the public
+Plugin API v1 / v1.1 surface that motivates the minor-version bump._
+
+### Added
+
+- **Plugin API v1 — recognizer surface (A1–A4):** Public, entry-point-based
+  extension contract for custom PHI/PII recognizers. `BaseRecognizer`,
+  `ScanContext`, `ScanFinding`, `PLUGIN_API_VERSION` are exported from
+  `phi_scan`; plugins register via the `phi_scan.recognizers` entry-point
+  group; `phi-scan plugins list` (with `--json`) enumerates discovered
+  plugins. Per-plugin isolation boundary in
+  `phi_scan.plugin_runtime._invoke_detect_with_isolation` documented in
+  `CLAUDE.md`. Canonical contract: `docs/plugin-api-v1.md`.
+- **Plugin API v1.1 — suppressor surface:** `BaseSuppressor.evaluate(finding,
+  line) -> SuppressDecision`, entry-point group `phi_scan.suppressors`,
+  deterministic `(distribution_name, entry_point_name)` ordering,
+  first-`is_suppressed=True`-wins semantics. The suppressor stage runs in
+  `_apply_post_scan_filters` after inline `phi-scan:ignore` and before the
+  confidence/severity gates. Mirrors the recognizer isolation boundary.
+  `phi-scan plugins list` now reports suppressors in both table and
+  `--json` output (additive `suppressors` top-level key; existing
+  `plugins` contract preserved byte-for-byte). Canonical contract:
+  `docs/plugin-api-v1_1.md`.
+- **Multi-provider AI support:** AI confidence review now supports Anthropic, OpenAI, and
+  Google AI providers. Provider is inferred automatically from the model name:
+  `claude-*` → Anthropic, `gpt-*`/`o1`/`o3`/`o4` → OpenAI, `gemini-*` → Google.
+  Install the matching extra: `phi-scan[ai-anthropic]`, `phi-scan[ai-openai]`, or
+  `phi-scan[ai-google]`. The existing `phi-scan[ai]` meta-extra continues to install Anthropic.
+- **Provider-neutral configuration:** New `ai.enable_ai_review` key replaces the deprecated
+  `ai.enable_claude_review`; new `ai.model` field selects the model and determines the provider.
+  API keys are read from `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY` environment
+  variables — storing keys in `.phi-scanner.yml` is explicitly rejected with a clear error.
+- **AI token usage in audit log:** Each scan that uses AI review records `prompt_tokens`,
+  `completion_tokens`, and `estimated_cost_usd` in the SQLite audit trail for cost tracking
+  and compliance reporting.
+
 ### Security
 
+- **Supply-chain gates (S9/S10/S11):** `pip-audit` dependency vulnerability
+  gate in CI (S9); CycloneDX SBOM generated per release (S10); wheel and
+  sdist signed with Sigstore keyless OIDC and bundles (`*.sigstore.json`)
+  attached to each GitHub Release (S11). First release built with S11 is
+  this one (`v0.6.0`).
 - **ZIP decompression bomb protection:** Archive members are now validated against
   two guards before being read into memory: an absolute uncompressed size limit
   (`ARCHIVE_MAX_MEMBER_UNCOMPRESSED_BYTES`, 100 MB) and a compression ratio ceiling
@@ -27,21 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accurately reflect that the "no external network calls" guarantee applies by
   default; the optional AI review layer is explicitly qualified as an opt-in
   exception.
-
-### Added
-
-- **Multi-provider AI support:** AI confidence review now supports Anthropic, OpenAI, and
-  Google AI providers. Provider is inferred automatically from the model name:
-  `claude-*` → Anthropic, `gpt-*`/`o1`/`o3`/`o4` → OpenAI, `gemini-*` → Google.
-  Install the matching extra: `phi-scan[ai-anthropic]`, `phi-scan[ai-openai]`, or
-  `phi-scan[ai-google]`. The existing `phi-scan[ai]` meta-extra continues to install Anthropic.
-- **Provider-neutral configuration:** New `ai.enable_ai_review` key replaces the deprecated
-  `ai.enable_claude_review`; new `ai.model` field selects the model and determines the provider.
-  API keys are read from `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY` environment
-  variables — storing keys in `.phi-scanner.yml` is explicitly rejected with a clear error.
-- **AI token usage in audit log:** Each scan that uses AI review records `prompt_tokens`,
-  `completion_tokens`, and `estimated_cost_usd` in the SQLite audit trail for cost tracking
-  and compliance reporting.
 
 ### Deprecated
 
