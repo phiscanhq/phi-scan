@@ -10,6 +10,7 @@
 **Tracking issue:** [`joeyessak/phi-scan#158`](https://github.com/joeyessak/phi-scan/issues/158)
 **Comms drafts (not published):** [`docs/migration/communication-draft.md`](migration/communication-draft.md)
 **Tracking-issue template:** [`docs/migration/ticket-template.md`](migration/ticket-template.md)
+**Post-transfer canonical patch pack (draft):** [`docs/migration/post-transfer-patch-pack.md`](migration/post-transfer-patch-pack.md)
 
 No transfer action has been taken. No repo config has been changed.
 
