@@ -1,18 +1,19 @@
 # Org Migration Status — `joeyessak/*` → `phiscanhq/*`
 
-**Last updated:** 2026-04-15
-**Pre-flight evidence date:** 2026-04-18 (per [`docs/org-migration-preflight-report.md`](org-migration-preflight-report.md); evidence remains valid — refresh before transfer per runbook Appendix A)
-**Purpose:** Single operational source of truth for migration-go readiness.
+**Last updated:** 2026-04-16
+**Pre-flight evidence date:** 2026-04-18 (per [`docs/org-migration-preflight-report.md`](org-migration-preflight-report.md))
+**Purpose:** Single operational source of truth for migration status.
 **Runbook:** [`docs/org-migration-checklist.md`](org-migration-checklist.md)
 **Pre-flight snapshot:** [`docs/org-migration-preflight-report.md`](org-migration-preflight-report.md)
 **Final gate form:** [`docs/migration/go-no-go.md`](migration/go-no-go.md)
 **Maintainer evidence form:** [`docs/migration/maintainer-checklist.md`](migration/maintainer-checklist.md)
-**Tracking issue:** [`joeyessak/phi-scan#158`](https://github.com/joeyessak/phi-scan/issues/158)
+**Tracking issue:** [`phiscanhq/phi-scan#158`](https://github.com/phiscanhq/phi-scan/issues/158)
 **Comms drafts (not published):** [`docs/migration/communication-draft.md`](migration/communication-draft.md)
 **Tracking-issue template:** [`docs/migration/ticket-template.md`](migration/ticket-template.md)
-**Post-transfer canonical patch pack (draft):** [`docs/migration/post-transfer-patch-pack.md`](migration/post-transfer-patch-pack.md)
+**Post-transfer canonical patch pack:** [`docs/migration/post-transfer-patch-pack.md`](migration/post-transfer-patch-pack.md)
 
-No transfer action has been taken. No repo config has been changed.
+**Transfer executed 2026-04-16.** Both repositories now live under `phiscanhq/*`.
+48-hour observation window: 2026-04-16 → 2026-04-18.
 
 ---
 
@@ -55,45 +56,32 @@ execute from one page.
 
 ---
 
-## Migration-go blockers remaining
+## Transfer execution log
 
-**All migration-go gates are cleared.** Transfer execution awaits
-the maintainer's explicit "execute transfer now" instruction.
+**Transfer executed 2026-04-16** by maintainer instruction.
 
-Cleared since last status:
-- PyPI 2FA confirmed by maintainer 2026-04-14 (row 7).
-- Migration tracking issue opened (row 12); see link below.
-- Sigstore gate language tightened 2026-04-15: rebound row 9 to the
-  first S11-signed release (≥ v0.6.0) after confirming `v0.5.0` carries
-  no Sigstore bundle.
-- Sigstore gate cleared 2026-04-15: `v0.6.1` wheel and sdist bundles
-  verified via `cosign verify-blob` → `Verified OK`; evidence pasted
-  in `docs/migration/maintainer-checklist.md §3` (row 9).
+| Step | Action | Evidence |
+|------|--------|----------|
+| §2.1 | `joeyessak/phi-scan` → `phiscanhq/phi-scan` | `gh api repos/phiscanhq/phi-scan` confirms `full_name: phiscanhq/phi-scan` |
+| §2.2 | Ruleset + secrets verified intact | Ruleset `Protect main` present; `ANTHROPIC_API_KEY` + `PYPI_API_TOKEN` confirmed |
+| §2.6 | Post-transfer patch pack applied | PR #166 merged (`bd5687f`) — 11 files, 31 ins / 26 del |
+| §2.7 | End-to-end validation | `pip install phi-scan==0.6.1` → OK; `phi-scan --version` → `0.6.1`; `joeyessak/phi-scan` 301 → `phiscanhq/phi-scan`; ruleset intact |
+| §3   | `joeyessak/phi-scan-action` → `phiscanhq/phi-scan-action` | `gh api repos/phiscanhq/phi-scan-action` confirms transfer |
+| §4   | 48-hour observation window started | 2026-04-16 → 2026-04-18 |
 
-No other gate requires action. No repo config, workflow, or code change
-is needed before migration-go.
+### Old URL redirect
 
----
-
-## What changes after migration-go
-
-Execution order is frozen in `docs/org-migration-checklist.md` §2–§5.
-This status doc is updated after each phase boundary:
-
-1. After §2.7 passes — mark `phi-scan` transfer complete; append digest
-   evidence if available.
-2. After §3 completes — mark `phi-scan-action` transfer complete.
-3. After the 48-hour observation window closes — close out this status
-   doc and link to the post-mortem note on the migration ticket.
+`https://github.com/joeyessak/phi-scan` returns HTTP 301 →
+`https://github.com/phiscanhq/phi-scan`. GitHub redirect is active.
 
 ---
 
-## Not in PR 1
+## What remains
 
-The following are intentionally out of scope for the status-closure PR:
-
-- CI workflow edits (including any `ghcr.io/joeyessak/phi-scan` references).
-- Relocation of drafts out of `docs/migration/communication-draft.md`.
-- Any transfer action or URL flip.
-- Any content change to the drafts themselves beyond softening the
-  container-image language consistent with the GHCR deferral.
+1. **48-hour observation window** (2026-04-16 → 2026-04-18): monitor
+   PyPI installs, GitHub redirect, CI runs, and pre-commit fetches.
+2. **Close observation window**: update this doc and close tracking
+   issue #158 with post-transfer evidence.
+3. **PyPI token rotation** (optional hardening): generate new token
+   scoped to `phiscanhq` org, rotate old `joeyessak`-scoped token.
+4. **GHCR** remains deferred — not a transfer blocker.
