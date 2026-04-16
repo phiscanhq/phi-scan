@@ -150,5 +150,5 @@ complete GitHub Release + Sigstore bundles. Both wheel and sdist
 bundles verified with `cosign verify-blob` → `Verified OK`. All
 required rows (§1, §3) are now `STATUS: DONE`.
 
-Signed off by: `MAINTAINER_NAME`
-Date: `YYYY-MM-DD`
+Signed off by: Joey Essak
+Date: 2026-04-15

@@ -51,17 +51,14 @@ execute from one page.
 | 10 | Draft migration notice prepared | **done-with-evidence** | [`docs/migration/communication-draft.md §1`](migration/communication-draft.md) |
 | 11 | Draft release-notes entry prepared | **done-with-evidence** | [`docs/migration/communication-draft.md §2`](migration/communication-draft.md) |
 | 12 | Migration ticket opened | **done-with-evidence** | [`joeyessak/phi-scan#158`](https://github.com/joeyessak/phi-scan/issues/158) — opened 2026-04-14 from `docs/migration/ticket-template.md` |
-| 13 | Maintainer "migration go" approval | **pending-with-command** | Sign off on [`docs/migration/go-no-go.md`](migration/go-no-go.md) after rows 1–12 are GO |
+| 13 | Maintainer "migration go" approval | **done-with-evidence** | Signed off on [`docs/migration/go-no-go.md`](migration/go-no-go.md) 2026-04-15 — all gates GO |
 
 ---
 
 ## Migration-go blockers remaining
 
-Only one item stands between current state and executable migration-go:
-
-1. **Maintainer go approval** — sign off on `docs/migration/go-no-go.md`
-   once every row in the automated, maintainer-run, and operational
-   sections reads `GO` (or `N/A` for deferred items).
+**All migration-go gates are cleared.** Transfer execution awaits
+the maintainer's explicit "execute transfer now" instruction.
 
 Cleared since last status:
 - PyPI 2FA confirmed by maintainer 2026-04-14 (row 7).
