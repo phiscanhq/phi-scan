@@ -72,10 +72,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
+          RELEASE_NOTES: ${{ steps.changelog.outputs.notes }}
         run: |
+          printf '%s\n' "$RELEASE_NOTES" > /tmp/release-notes.md
           gh release create "$TAG_NAME" \
             --title "phi-scan $TAG_NAME" \
-            --notes "${{ steps.changelog.outputs.notes }}" \
+            --notes-file /tmp/release-notes.md \
             dist/*.whl \
             dist/*.tar.gz \
             dist/*.sigstore.json \

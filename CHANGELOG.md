@@ -9,9 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _No changes yet._
 
-## [0.6.0] - TBD
+## [0.6.1] - TBD
 
-_Release date is set at tag time. This section collects every change
+### Fixed
+
+- **Release workflow GitHub Release creation:** The `Create GitHub Release`
+  step in `.github/workflows/release.yml` passed changelog content via
+  `--notes "${{ steps.changelog.outputs.notes }}"`, which expanded multi-line
+  text directly into the shell command before parsing. Tokens like
+  `phi_scan.output.console:` were interpreted as shell commands, crashing the
+  step. Fixed by writing notes to a temp file and using `--notes-file`. This
+  caused the v0.6.0 GitHub Release to never be created (PyPI publish
+  succeeded; Sigstore bundle was generated but never uploaded).
+
+## [0.6.0] - 2026-04-15
+
+_First S11-signed release. This section collects every change
 shipped on `main` since `v0.5.0` (2026-04-04), including the public
 Plugin API v1 / v1.1 surface that motivates the minor-version bump._
 
