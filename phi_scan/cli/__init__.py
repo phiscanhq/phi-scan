@@ -94,7 +94,7 @@ __all__ = [
 
 app = typer.Typer(
     name="phi-scan",
-    help="PHI/PII Scanner for CI/CD pipelines. HIPAA & FHIR compliant. Local execution only.",
+    help="PHI/PII Scanner for HIPAA-aligned and FHIR-based environments. Local-first execution.",
     no_args_is_help=True,
 )
 
@@ -117,7 +117,7 @@ def main_callback(
         ),
     ] = False,
 ) -> None:
-    """PHI/PII Scanner for CI/CD pipelines. HIPAA & FHIR compliant. Local execution only."""
+    """PHI/PII Scanner for HIPAA-aligned and FHIR-based environments. Local-first execution."""
 
 
 app.command("scan")(_scan_module.scan)

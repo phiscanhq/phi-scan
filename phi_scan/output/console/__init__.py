@@ -148,7 +148,7 @@ _VIOLATION_BORDER_STYLE: str = _STYLE_BOLD_RED
 
 _BANNER_FONT: str = "slant"
 _BANNER_TEXT: str = "PhiScan"
-_BANNER_TAGLINE_TEMPLATE: str = "v{version}  —  HIPAA-Compliant PHI/PII Scanner"
+_BANNER_TAGLINE_TEMPLATE: str = "v{version}  —  PHI/PII Scanner for HIPAA-Aligned Environments"
 _BANNER_STYLE: str = _STYLE_BOLD_CYAN
 _BANNER_TAGLINE_STYLE: str = _STYLE_DIM
 _BANNER_PYFIGLET_MISSING_NOTE: str = (

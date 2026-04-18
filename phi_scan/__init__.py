@@ -1,4 +1,4 @@
-"""PhiScan — HIPAA & FHIR compliant PHI/PII scanner for CI/CD pipelines."""
+"""PhiScan — PHI/PII scanner for HIPAA-aligned and FHIR-based environments."""
 
 from importlib.metadata import PackageNotFoundError, version
 

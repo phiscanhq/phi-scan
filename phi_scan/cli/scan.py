@@ -314,6 +314,8 @@ def scan(
     if is_rich_mode:
         display_banner()
         display_scan_header(path, scan_config)
+    if single_file is None and path.is_file():
+        single_file = path
     target_options = _ScanTargetOptions(
         scan_root=path, diff_ref=diff_ref, single_file=single_file, config=scan_config
     )

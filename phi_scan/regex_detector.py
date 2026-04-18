@@ -251,6 +251,9 @@ _CONFIDENCE_STANDARD_REGEX: float = 0.88
 _CONFIDENCE_CONTEXT_CONFIRMED: float = 0.88
 # Context-dependent patterns when required context is absent.
 _CONFIDENCE_CONTEXT_ABSENT: float = 0.65
+# Broad alphanumeric patterns (health plan, account) without context — kept
+# below DEFAULT_CONFIDENCE_THRESHOLD so they only surface with context keywords.
+_CONFIDENCE_BROAD_ALPHANUMERIC_NO_CONTEXT: float = 0.45
 # Regex floor — validated patterns must stay at or above this.
 _CONFIDENCE_REGEX_VALIDATED_FLOOR: float = CONFIDENCE_REGEX_MAX - _CONFIDENCE_VALIDATED_FLOOR_OFFSET
 
@@ -1111,7 +1114,7 @@ _PATTERN_REGISTRY: tuple[PhiPattern, ...] = (
         compiled_pattern=_PATTERN_ACCOUNT_VALUE,
         base_confidence=_CONFIDENCE_CONTEXT_CONFIRMED,
         context_pattern=_CONTEXT_ACCOUNT,
-        no_context_confidence=_CONFIDENCE_CONTEXT_ABSENT,
+        no_context_confidence=_CONFIDENCE_BROAD_ALPHANUMERIC_NO_CONTEXT,
     ),
     # --- Health plan number (context-dependent) ---
     PhiPattern(
@@ -1120,7 +1123,7 @@ _PATTERN_REGISTRY: tuple[PhiPattern, ...] = (
         compiled_pattern=_PATTERN_HEALTH_PLAN_VALUE,
         base_confidence=_CONFIDENCE_CONTEXT_CONFIRMED,
         context_pattern=_CONTEXT_HEALTH_PLAN,
-        no_context_confidence=_CONFIDENCE_CONTEXT_ABSENT,
+        no_context_confidence=_CONFIDENCE_BROAD_ALPHANUMERIC_NO_CONTEXT,
     ),
     # --- Certificate / license number (context-dependent) ---
     PhiPattern(
