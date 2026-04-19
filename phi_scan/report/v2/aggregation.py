@@ -9,6 +9,9 @@ from phi_scan.models import ScanFinding
 from phi_scan.report.v2.models import FileAggregate, LineAggregate, RemediationAction
 
 _TOP_ACTIONS_COUNT: int = 5
+_HOTSPOT_CATEGORY_THRESHOLD: int = 2
+_QUASI_COMBO_THRESHOLD: int = 5
+_HINT_TRUNCATION_LENGTH: int = 60
 
 _ACTION_TITLE_MAP: dict[PhiCategory, str] = {
     PhiCategory.SSN: "Remove Social Security Numbers",
@@ -54,7 +57,7 @@ def _build_category_counts(findings: tuple[ScanFinding, ...]) -> dict[str, int]:
     return counts
 
 
-def _combine_fixes(findings: tuple[ScanFinding, ...]) -> str:
+def _combine_remediation_hints(findings: tuple[ScanFinding, ...]) -> str:
     """Join unique remediation hints with semicolons."""
     seen: list[str] = []
     for finding in findings:
@@ -82,8 +85,8 @@ def group_by_line(findings: tuple[ScanFinding, ...]) -> list[LineAggregate]:
                 findings=frozen_findings,
                 highest_severity=_highest_severity(line_findings),
                 category_counts=_build_category_counts(frozen_findings),
-                combined_code_context=line_findings[0].code_context,
-                combined_fix=_combine_fixes(frozen_findings),
+                display_context=line_findings[0].code_context,
+                combined_fix=_combine_remediation_hints(frozen_findings),
             )
         )
     return aggregates
@@ -103,13 +106,13 @@ def group_by_file(line_aggregates: list[LineAggregate]) -> list[FileAggregate]:
             lines,
             key=lambda la: (-la.severity_rank, -la.finding_count, la.line_number),
         )
-        all_findings = [f for la in sorted_lines for f in la.findings]
+        file_findings = [f for la in sorted_lines for f in la.findings]
         file_aggregates.append(
             FileAggregate(
                 file_path=file_path,
                 line_aggregates=tuple(sorted_lines),
                 total_finding_count=sum(la.finding_count for la in sorted_lines),
-                highest_severity=_highest_severity(all_findings),
+                highest_severity=_highest_severity(file_findings),
             )
         )
     return file_aggregates
@@ -129,7 +132,7 @@ def dedupe_remediations(findings: tuple[ScanFinding, ...]) -> list[RemediationAc
     actions: list[RemediationAction] = []
     for hint, grouped_findings in buckets.items():
         highest_sev = _highest_severity(grouped_findings)
-        mean_conf = sum(f.confidence for f in grouped_findings) / len(grouped_findings)
+        mean_confidence = sum(f.confidence for f in grouped_findings) / len(grouped_findings)
         affected: list[tuple[Path, int]] = []
         seen_lines: set[tuple[Path, int]] = set()
         for finding in grouped_findings:
@@ -139,7 +142,7 @@ def dedupe_remediations(findings: tuple[ScanFinding, ...]) -> list[RemediationAc
                 affected.append(key)
         affected.sort(key=lambda pair: (pair[0], pair[1]))
         primary_category = grouped_findings[0].hipaa_category
-        title = _ACTION_TITLE_MAP.get(primary_category, hint[:60])
+        title = _ACTION_TITLE_MAP.get(primary_category, hint[:_HINT_TRUNCATION_LENGTH])
 
         actions.append(
             RemediationAction(
@@ -148,7 +151,7 @@ def dedupe_remediations(findings: tuple[ScanFinding, ...]) -> list[RemediationAc
                 hipaa_category=primary_category,
                 finding_count=len(grouped_findings),
                 highest_severity=highest_sev,
-                mean_confidence=mean_conf,
+                mean_confidence=mean_confidence,
                 affected_lines=tuple(affected),
                 severity_weight_score=SEVERITY_RANK[highest_sev] * len(grouped_findings),
             )
@@ -168,9 +171,8 @@ def rank_top_actions(
 
 def compute_hotspot_count(line_aggregates: list[LineAggregate]) -> int:
     """Count lines with 2 or more distinct PHI categories."""
-    _hotspot_category_threshold = 2
     return sum(
-        1 for la in line_aggregates if len(la.category_counts) >= _hotspot_category_threshold
+        1 for la in line_aggregates if len(la.category_counts) >= _HOTSPOT_CATEGORY_THRESHOLD
     )
 
 
@@ -192,8 +194,7 @@ def build_line_title(line_aggregate: LineAggregate) -> str:
     """Build a human-readable title for a line aggregate."""
     categories = list(line_aggregate.category_counts.keys())
 
-    _quasi_combo_threshold = 5
-    if len(categories) >= _quasi_combo_threshold:
+    if len(categories) >= _QUASI_COMBO_THRESHOLD:
         return f"Quasi-identifier cluster  ({len(categories)} categories co-located)"
 
     has_date = any("DATE" in c for c in categories)

@@ -28,8 +28,9 @@ _DEFAULT_EXPAND_CUTOFF: SeverityLevel = SeverityLevel.MEDIUM
 def _resolve_expand_cutoff(severity_threshold: SeverityLevel) -> SeverityLevel:
     """Determine the expansion cutoff for line cards.
 
-    If the user set --severity-threshold to low, expand low-severity cards
-    inline instead of collapsing them. Otherwise default to medium.
+    When the user passes a threshold at or below LOW (i.e. LOW or INFO),
+    all findings at that level and above are expanded inline.  Otherwise
+    the default cutoff of MEDIUM applies, collapsing LOW and INFO cards.
     """
     if SEVERITY_RANK[severity_threshold] <= SEVERITY_RANK[SeverityLevel.LOW]:
         return severity_threshold

@@ -42,7 +42,7 @@ from phi_scan.compliance import (
     annotate_findings,
     parse_framework_flag,
 )
-from phi_scan.constants import EXIT_CODE_ERROR, OutputFormat
+from phi_scan.constants import EXIT_CODE_ERROR, OutputFormat, SeverityLevel
 from phi_scan.exceptions import AuditKeyMissingError, AuditLogError, NotificationError
 from phi_scan.logging_config import get_logger
 from phi_scan.models import ScanConfig, ScanResult
@@ -344,7 +344,9 @@ def scan(
     framework_annotations = (
         annotate_findings(scan_result.findings, enabled_frameworks) if enabled_frameworks else None
     )
-    effective_threshold = severity_threshold if severity_threshold is not None else "low"
+    effective_threshold = (
+        SeverityLevel(severity_threshold) if severity_threshold is not None else SeverityLevel.LOW
+    )
     output_options = ScanOutputOptions(
         output_format=output_format_enum,
         is_rich_mode=is_rich_mode,
@@ -353,7 +355,7 @@ def scan(
         framework_annotations=framework_annotations,
         is_v2=is_v2,
         is_verbose=is_verbose,
-        severity_threshold_value=effective_threshold,
+        severity_threshold=effective_threshold,
     )
     phase_options = _ScanPhaseOptions(
         is_verbose=is_verbose,

@@ -11,14 +11,20 @@ from phi_scan.models import ScanFinding
 
 @dataclass(frozen=True)
 class LineAggregate:
-    """All findings on a single (file_path, line_number)."""
+    """All findings on a single (file_path, line_number).
+
+    ``display_context`` holds the pre-redacted code context from the first
+    finding on this line.  ScanFinding enforces at construction time that
+    ``code_context`` always contains ``[REDACTED]`` in place of the matched
+    PHI value, so ``display_context`` is safe for terminal rendering.
+    """
 
     file_path: Path
     line_number: int
     findings: tuple[ScanFinding, ...]
     highest_severity: SeverityLevel
     category_counts: dict[str, int]
-    combined_code_context: str
+    display_context: str
     combined_fix: str
 
     @property

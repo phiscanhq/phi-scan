@@ -34,6 +34,7 @@ _CONFIDENCE_DOT_EMPTY: str = "○"
 _CONFIDENCE_DOT_COUNT: int = 5
 
 _MAX_DISPLAYED_LINES: int = 12
+_MAX_HINT_DISPLAY_LENGTH: int = 100
 
 
 def _render_confidence_dots(mean_confidence: float) -> str:
@@ -113,7 +114,7 @@ def _render_action_card(
     body = (
         f" ({index})  [bold]{escape_markup(action.title)}[/bold]"
         f"     {count_label}  {pill}\n"
-        f"      [dim]{escape_markup(action.remediation_hint[:100])}[/dim]\n"
+        f"      [dim]{escape_markup(action.remediation_hint[:_MAX_HINT_DISPLAY_LENGTH])}[/dim]\n"
         f"      [dim]{lines_str}[/dim]\n"
         f"      {dots}"
     )

@@ -31,6 +31,7 @@ from phi_scan.constants import (
     EXIT_CODE_VIOLATION,
     IMPLEMENTED_OUTPUT_FORMATS,
     OutputFormat,
+    SeverityLevel,
 )
 from phi_scan.exceptions import BaselineError
 from phi_scan.output import (
@@ -127,7 +128,7 @@ class ScanOutputOptions:
     framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None
     is_v2: bool = False
     is_verbose: bool = False
-    severity_threshold_value: str = "low"
+    severity_threshold: SeverityLevel = SeverityLevel.LOW
 
 
 # ---------------------------------------------------------------------------
@@ -210,14 +211,12 @@ def display_rich_scan_results(scan_result: ScanResult) -> None:
 
 def _dispatch_v2_renderer(scan_result: ScanResult, options: ScanOutputOptions) -> None:
     """Dispatch to the v2 terminal report renderer."""
-    from phi_scan.constants import SeverityLevel
     from phi_scan.report.v2.console import display_rich_scan_results_v2
 
-    severity_threshold = SeverityLevel(options.severity_threshold_value)
     display_rich_scan_results_v2(
         scan_result,
         scan_target=str(options.scan_target),
-        severity_threshold=severity_threshold,
+        severity_threshold=options.severity_threshold,
         is_verbose=options.is_verbose,
         report_path=options.report_path,
     )

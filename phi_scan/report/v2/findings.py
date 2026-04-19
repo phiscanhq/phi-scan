@@ -38,6 +38,7 @@ _LINE_BADGE_STYLE: dict[SeverityLevel, str] = {
 _TYPE_CHIP_STYLE: str = "cyan"
 _PREVIEW_MARKER: str = "▸"
 _EXPAND_CUTOFF_DEFAULT: SeverityLevel = SeverityLevel.MEDIUM
+_MAX_FIX_DISPLAY_LENGTH: int = 120
 
 
 def _should_expand_line(
@@ -78,13 +79,12 @@ def _render_line_card(console: Console, line_aggregate: LineAggregate) -> None:
         f"     [dim]{line_aggregate.finding_count} {finding_word}[/dim]  {pill}"
     )
 
-    preview = f"  {_PREVIEW_MARKER}  {escape_markup(line_aggregate.combined_code_context)}"
+    preview = f"  {_PREVIEW_MARKER}  {escape_markup(line_aggregate.display_context)}"
     type_chips = f"  types: {_build_type_chips(line_aggregate.category_counts)}"
 
     fix_text = line_aggregate.combined_fix
-    _max_fix_display_length = 120
-    if len(fix_text) > _max_fix_display_length:
-        fix_text = fix_text[:_max_fix_display_length] + "..."
+    if len(fix_text) > _MAX_FIX_DISPLAY_LENGTH:
+        fix_text = fix_text[:_MAX_FIX_DISPLAY_LENGTH] + "..."
     fix_line = f"  fix:   {escape_markup(fix_text)}"
 
     body = f"{header}\n\n{preview}\n{type_chips}\n{fix_line}"
