@@ -207,6 +207,7 @@ def display_rich_scan_results(scan_result: ScanResult) -> None:
 # V2 renderer dispatch
 # ---------------------------------------------------------------------------
 
+
 def _dispatch_v2_renderer(scan_result: ScanResult, options: ScanOutputOptions) -> None:
     """Dispatch to the v2 terminal report renderer."""
     from phi_scan.constants import SeverityLevel
