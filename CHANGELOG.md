@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _No changes yet._
 
-## [0.7.0] - TBD
+## [0.7.0] - 2026-04-19
 
 ### Changed
 
@@ -36,7 +36,7 @@ _No changes yet._
   been removed — it was an opt-in for v2 during the flagged-preview period and
   is redundant now that v2 is the default.
 
-## [0.6.2] - TBD
+## [0.6.2] - 2026-04-15
 
 ### Changed
 
@@ -50,7 +50,7 @@ _No changes yet._
   API changes — PyPI long description and short summary will be refreshed on
   the next tagged release.
 
-## [0.6.1] - TBD
+## [0.6.1] - 2026-04-15
 
 ### Fixed
 

@@ -1,6 +1,6 @@
 [project]
 name = "phi-scan"
-version = "0.6.2"
+version = "0.7.0"
 description = "PHI/PII scanner for HIPAA-aligned and FHIR-based environments. Local-first execution for CI/CD pipelines."
 readme = "README.md"
 license = {file = "LICENSE"}
