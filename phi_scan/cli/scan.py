@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -41,7 +42,7 @@ from phi_scan.compliance import (
     annotate_findings,
     parse_framework_flag,
 )
-from phi_scan.constants import EXIT_CODE_ERROR, OutputFormat
+from phi_scan.constants import EXIT_CODE_ERROR, OutputFormat, SeverityLevel
 from phi_scan.exceptions import AuditKeyMissingError, AuditLogError, NotificationError
 from phi_scan.logging_config import get_logger
 from phi_scan.models import ScanConfig, ScanResult
@@ -126,6 +127,14 @@ _SCAN_WORKERS_HELP: str = (
     f"Values above 1 enable concurrent scanning up to {MAX_WORKER_COUNT}. "
     "Output ordering is deterministic regardless of thread completion order."
 )
+_SCAN_REPORT_FORMAT_HELP: str = (
+    "Terminal report format: v1 (current default) or v2 (redesigned grouped output). "
+    "Also settable via PHI_SCAN_REPORT_V2=1 environment variable."
+)
+_REPORT_FORMAT_V2: str = "v2"
+_REPORT_FORMAT_V1: str = "v1"
+_REPORT_FORMAT_ENV_VAR: str = "PHI_SCAN_REPORT_V2"
+_REPORT_FORMAT_ENV_TRUTHY: str = "1"
 
 _AUDIT_WRITE_FAILURE_WARNING: str = "Audit log write failed — scan result not persisted: {error}"
 _AUDIT_KEY_MISSING_DEBUG: str = (
@@ -296,6 +305,9 @@ def scan(
     worker_count: Annotated[
         int, typer.Option("--workers", help=_SCAN_WORKERS_HELP)
     ] = _DEFAULT_WORKER_COUNT,
+    report_format: Annotated[
+        str, typer.Option("--report-format", help=_SCAN_REPORT_FORMAT_HELP)
+    ] = _REPORT_FORMAT_V1,
 ) -> None:
     """Scan a directory or file for PHI/PII.
 
@@ -309,9 +321,13 @@ def scan(
     output_format_enum = resolve_output_format(output_format)
     enabled_frameworks = _resolve_framework_flag(framework)
     is_rich_mode = not is_quiet and output_format_enum is OutputFormat.TABLE
+    is_v2 = (
+        report_format == _REPORT_FORMAT_V2
+        or os.environ.get(_REPORT_FORMAT_ENV_VAR) == _REPORT_FORMAT_ENV_TRUTHY
+    )
     with display_status_spinner(_SPINNER_CONFIG_LOAD_MESSAGE, is_active=is_rich_mode):
         scan_config = load_scan_config(config_path, severity_threshold)
-    if is_rich_mode:
+    if is_rich_mode and not is_v2:
         display_banner()
         display_scan_header(path, scan_config)
     if single_file is None and path.is_file():
@@ -328,12 +344,18 @@ def scan(
     framework_annotations = (
         annotate_findings(scan_result.findings, enabled_frameworks) if enabled_frameworks else None
     )
+    effective_threshold = (
+        SeverityLevel(severity_threshold) if severity_threshold is not None else SeverityLevel.LOW
+    )
     output_options = ScanOutputOptions(
         output_format=output_format_enum,
         is_rich_mode=is_rich_mode,
         report_path=report_path,
         scan_target=path,
         framework_annotations=framework_annotations,
+        is_v2=is_v2,
+        is_verbose=is_verbose,
+        severity_threshold=effective_threshold,
     )
     phase_options = _ScanPhaseOptions(
         is_verbose=is_verbose,
@@ -348,5 +370,6 @@ def scan(
         should_import_to_security_hub=should_import_to_security_hub,
     )
     dispatch_ci_integrations(scan_result, integration_options, is_rich_mode)
-    display_report_phase_header(output_options, phase_options.is_verbose)
+    if not is_v2:
+        display_report_phase_header(output_options, phase_options.is_verbose)
     emit_report_output(scan_result, output_options, phase_options.should_use_baseline)
