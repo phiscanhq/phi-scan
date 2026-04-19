@@ -133,6 +133,10 @@ _SCAN_REPORT_FORMAT_HELP: str = (
 )
 _REPORT_FORMAT_V2: str = "v2"
 _REPORT_FORMAT_V1: str = "v1"
+_VALID_REPORT_FORMATS: frozenset[str] = frozenset({_REPORT_FORMAT_V1, _REPORT_FORMAT_V2})
+_REPORT_FORMAT_INVALID_ERROR: str = (
+    "Invalid --report-format value: {value!r}. Expected one of: {valid}."
+)
 _REPORT_FORMAT_V1_DEPRECATION_NOTICE: str = (
     "DeprecationWarning: --report-format v1 is deprecated and will be removed in "
     "phi-scan 0.8.0. The v2 renderer is now the default. Terminal output is not a "
@@ -218,6 +222,23 @@ def _resolve_framework_flag(framework_flag_value: str | None) -> frozenset[Compl
     except InvalidFrameworkError as framework_error:
         typer.echo(_FRAMEWORK_PARSE_ERROR.format(error=framework_error), err=True)
         raise typer.Exit(code=EXIT_CODE_ERROR) from framework_error
+
+
+def _resolve_report_format(report_format_value: str) -> bool:
+    """Validate ``--report-format`` and return whether v2 rendering is selected.
+
+    Unknown values are rejected with a clear stderr message and a non-zero exit
+    code rather than silently resolving to a default; this keeps typos like
+    ``--report-format v3`` from masquerading as a valid v2 request.
+    """
+    if report_format_value not in _VALID_REPORT_FORMATS:
+        valid = ", ".join(sorted(_VALID_REPORT_FORMATS))
+        typer.echo(
+            _REPORT_FORMAT_INVALID_ERROR.format(value=report_format_value, valid=valid),
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_CODE_ERROR)
+    return report_format_value == _REPORT_FORMAT_V2
 
 
 def _collect_scan_targets_for_phase(
@@ -325,8 +346,8 @@ def scan(
     output_format_enum = resolve_output_format(output_format)
     enabled_frameworks = _resolve_framework_flag(framework)
     is_rich_mode = not is_quiet and output_format_enum is OutputFormat.TABLE
-    is_v2 = report_format != _REPORT_FORMAT_V1
-    if report_format == _REPORT_FORMAT_V1 and is_rich_mode:
+    is_v2 = _resolve_report_format(report_format)
+    if report_format == _REPORT_FORMAT_V1 and not is_quiet:
         typer.echo(_REPORT_FORMAT_V1_DEPRECATION_NOTICE, err=True)
     with display_status_spinner(_SPINNER_CONFIG_LOAD_MESSAGE, is_active=is_rich_mode):
         scan_config = load_scan_config(config_path, severity_threshold)
