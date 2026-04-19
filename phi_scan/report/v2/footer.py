@@ -11,6 +11,14 @@ from rich.panel import Panel
 
 from phi_scan.constants import SeverityLevel
 from phi_scan.models import ScanResult
+from phi_scan.report.v2.glyphs import (
+    ARROW,
+    CLEAN_MARKER,
+    EM_DASH,
+    SECTION_BAR,
+    SEPARATOR,
+    VIOLATION_MARKER,
+)
 
 _SECTION_HEADER_STYLE: str = "bold green"
 _SECTION_BAR_STYLE: str = "green"
@@ -27,9 +35,9 @@ def _build_violation_left(scan_result: ScanResult, unique_action_count: int) -> 
     files_total = scan_result.files_scanned
 
     return (
-        "[bold red]⚠ VIOLATION[/bold red]\n\n"
+        f"[bold red]{VIOLATION_MARKER} VIOLATION[/bold red]\n\n"
         f"Risk level:  [bold red]{risk_label}[/bold red]\n\n"
-        f"Findings:    [bold]{total}[/bold]  ·  "
+        f"Findings:    [bold]{total}[/bold]  {SEPARATOR}  "
         f"high {high}   medium {medium}   low {low}\n"
         f"Files:       {files_with} of {files_total} contain PHI\n"
         f"Actions:     {unique_action_count} unique remediations required\n"
@@ -42,9 +50,12 @@ def _build_violation_right(report_path: Path | None) -> str:
     next_steps = "[bold]Next steps[/bold]\n\n"
 
     if report_path is not None:
-        next_steps += f"  →  open   {report_path}\n"
+        next_steps += f"  {ARROW}  open   {report_path}\n"
 
-    next_steps += "  →  run    phi-scan fix --interactive\n  →  rerun  phi-scan scan . --verbose\n"
+    next_steps += (
+        f"  {ARROW}  run    phi-scan fix --interactive\n"
+        f"  {ARROW}  rerun  phi-scan scan . --verbose\n"
+    )
 
     exit_panel = (
         "\n[bold red]EXIT 1[/bold red]\n"
@@ -59,7 +70,7 @@ def _build_violation_right(report_path: Path | None) -> str:
 def _build_clean_left(scan_result: ScanResult) -> str:
     """Build the left column content for a clean scan-complete card."""
     return (
-        "[bold green]✓ CLEAN[/bold green]\n\n"
+        f"[bold green]{CLEAN_MARKER} CLEAN[/bold green]\n\n"
         f"Files:       {scan_result.files_scanned} scanned\n"
         f"Findings:    0\n"
         f"Elapsed:     {scan_result.scan_duration:.2f} s"
@@ -68,7 +79,11 @@ def _build_clean_left(scan_result: ScanResult) -> str:
 
 def _build_clean_right() -> str:
     """Build the right column content for a clean scan."""
-    return "[bold]Next steps[/bold]\n\n  →  No action required.\n  →  Pipeline clear — exit code 0."
+    return (
+        f"[bold]Next steps[/bold]\n\n"
+        f"  {ARROW}  No action required.\n"
+        f"  {ARROW}  Pipeline clear {EM_DASH} exit code 0."
+    )
 
 
 def render_scan_complete(
@@ -81,7 +96,7 @@ def render_scan_complete(
     console.print()
     console.print()
     console.print(
-        f"[{_SECTION_BAR_STYLE}]▎[/{_SECTION_BAR_STYLE}] "
+        f"[{_SECTION_BAR_STYLE}]{SECTION_BAR}[/{_SECTION_BAR_STYLE}] "
         f"[{_SECTION_HEADER_STYLE}]SCAN COMPLETE[/{_SECTION_HEADER_STYLE}]"
     )
     console.print()

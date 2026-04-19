@@ -20,16 +20,25 @@ from phi_scan.report.v2.aggregation import (
     group_by_line,
     rank_top_actions,
 )
+from phi_scan.report.v2.glyphs import (
+    BAR_FILLED,
+    CLEAN_MARKER,
+    EM_DASH,
+    SECTION_BAR,
+    SEPARATOR,
+    VIOLATION_MARKER,
+)
 from phi_scan.report.v2.models import LineAggregate, RemediationAction
 
 _TITLE_TEMPLATE: str = (
-    "[bold]phi-scan[/bold] v{version}   PHI / PII Scanner  ·  HIPAA Safe-Harbor aligned"
+    "[bold]phi-scan[/bold] v{version}   PHI / PII Scanner"
+    f"  {SEPARATOR}  HIPAA Safe-Harbor aligned"
 )
 _TIMESTAMP_FORMAT: str = "%Y-%m-%d  %H:%M:%S"
 
 _STATUS_VIOLATION: str = "VIOLATION"
 _STATUS_CLEAN: str = "CLEAN"
-_VIOLATION_SUBTITLE_TEMPLATE: str = "Pipeline blocked — {risk} risk level, exit code 1"
+_VIOLATION_SUBTITLE_TEMPLATE: str = f"Pipeline blocked {EM_DASH} {{risk}} risk level, exit code 1"
 _CLEAN_SUBTITLE: str = "No PHI/PII detected. Pipeline clear."
 
 _STAT_FINDINGS: str = "FINDINGS"
@@ -38,9 +47,11 @@ _STAT_MEDIUM: str = "MEDIUM"
 _STAT_LOW: str = "LOW"
 _STAT_HOTSPOTS: str = "HOTSPOTS"
 
-_BAR_FILLED: str = "█"
 _BAR_MAX_WIDTH: int = 40
 _BAR_DENOMINATOR_FLOOR: int = 1
+_MAX_DISPLAYED_AFFECTED_LINES: int = 8
+_NAME_COLUMN_WIDTH: int = 16
+_COUNT_COLUMN_WIDTH: int = 5
 
 _SEVERITY_BAR_COLORS: dict[SeverityLevel, str] = {
     SeverityLevel.HIGH: "red",
@@ -78,10 +89,10 @@ def render_status_banner(
         right_meta = (
             f"Target: [bold]{escape_markup(scan_target)}[/bold]\n"
             f"Elapsed: [bold]{scan_result.scan_duration:.2f} s[/bold]"
-            f"  ·  {scan_result.files_scanned} file(s)"
+            f"  {SEPARATOR}  {scan_result.files_scanned} file(s)"
         )
         clean_body = (
-            f"  [bold green]✓ {_STATUS_CLEAN}[/bold green]\n"
+            f"  [bold green]{CLEAN_MARKER} {_STATUS_CLEAN}[/bold green]\n"
             f"  [green]{_CLEAN_SUBTITLE}[/green]\n\n  {right_meta}"
         )
         console.print(
@@ -98,11 +109,13 @@ def render_status_banner(
     subtitle = _VIOLATION_SUBTITLE_TEMPLATE.format(risk=risk_label)
     right_meta = (
         f"Target: [bold]{escape_markup(scan_target)}[/bold]\n"
-        f"Elapsed: [bold]{scan_result.scan_duration:.2f} s[/bold]  ·  "
+        f"Elapsed: [bold]{scan_result.scan_duration:.2f} s[/bold]  {SEPARATOR}  "
         f"{scan_result.files_scanned} file(s)"
     )
 
-    left_text = f"  [bold red]⚠ {_STATUS_VIOLATION}[/bold red]\n  [dim]{subtitle}[/dim]"
+    left_text = (
+        f"  [bold red]{VIOLATION_MARKER} {_STATUS_VIOLATION}[/bold red]\n  [dim]{subtitle}[/dim]"
+    )
     content = f"{left_text}\n\n  {right_meta}"
 
     console.print(
@@ -144,7 +157,9 @@ def render_stat_tiles(
         _render_stat_tile(_STAT_HIGH, high, "red"),
         _render_stat_tile(_STAT_MEDIUM, medium, "yellow"),
         _render_stat_tile(_STAT_LOW, low, "green"),
-        _render_stat_tile(_STAT_HOTSPOTS, hotspots, "magenta", "— unique PHI hotspot lines —"),
+        _render_stat_tile(
+            _STAT_HOTSPOTS, hotspots, "magenta", f"{EM_DASH} unique PHI hotspot lines {EM_DASH}"
+        ),
     ]
     console.print(Columns(tiles, equal=True, expand=True))
 
@@ -156,7 +171,7 @@ def render_top_actions(
     """Print the TOP ACTIONS section — numbered remediation priorities."""
     console.print()
     console.print(
-        f"[{_SECTION_BAR_STYLE}]▎[/{_SECTION_BAR_STYLE}] "
+        f"[{_SECTION_BAR_STYLE}]{SECTION_BAR}[/{_SECTION_BAR_STYLE}] "
         f"[{_SECTION_HEADER_STYLE}]TOP ACTIONS[/{_SECTION_HEADER_STYLE}]"
         "    [dim]ranked by residual risk if ignored[/dim]"
     )
@@ -182,12 +197,11 @@ def _format_affected_lines_compact(
     affected_lines: tuple[tuple[Path, int], ...],
 ) -> str:
     """Format affected lines as a compact string like 'lines 7, 24, 40, 54'."""
-    _max_displayed_lines = 8
     line_numbers = [pair[1] for pair in affected_lines]
-    if len(line_numbers) <= _max_displayed_lines:
+    if len(line_numbers) <= _MAX_DISPLAYED_AFFECTED_LINES:
         return "lines " + ", ".join(str(ln) for ln in line_numbers)
-    shown = ", ".join(str(ln) for ln in line_numbers[:_max_displayed_lines])
-    remaining = len(line_numbers) - _max_displayed_lines
+    shown = ", ".join(str(ln) for ln in line_numbers[:_MAX_DISPLAYED_AFFECTED_LINES])
+    remaining = len(line_numbers) - _MAX_DISPLAYED_AFFECTED_LINES
     return f"lines {shown} (+{remaining} more)"
 
 
@@ -198,7 +212,7 @@ def render_category_breakdown(
     """Print the CATEGORY BREAKDOWN section with severity-segmented bars."""
     console.print()
     console.print(
-        f"[{_SECTION_BAR_STYLE}]▎[/{_SECTION_BAR_STYLE}] "
+        f"[{_SECTION_BAR_STYLE}]{SECTION_BAR}[/{_SECTION_BAR_STYLE}] "
         f"[{_SECTION_HEADER_STYLE}]CATEGORY BREAKDOWN[/{_SECTION_HEADER_STYLE}]"
     )
     console.print()
@@ -213,9 +227,6 @@ def render_category_breakdown(
 
     max_count = max((ct[1] for ct in category_totals), default=_BAR_DENOMINATOR_FLOOR)
     max_count = max(max_count, _BAR_DENOMINATOR_FLOOR)
-
-    _name_col_width = 16
-    _count_col_width = 5
 
     for category_name, total, sev_dist in category_totals:
         bar_width = round(total / max_count * _BAR_MAX_WIDTH)
@@ -233,11 +244,11 @@ def render_category_breakdown(
             if sev_count > 0:
                 segment_width = max(round(sev_count / total * bar_width), 1)
                 color = _SEVERITY_BAR_COLORS[severity]
-                bar_parts.append(f"[{color}]{_BAR_FILLED * segment_width}[/{color}]")
+                bar_parts.append(f"[{color}]{BAR_FILLED * segment_width}[/{color}]")
 
         bar_str = "".join(bar_parts)
-        name_padded = category_name.ljust(_name_col_width)
-        count_padded = str(total).rjust(_count_col_width)
+        name_padded = category_name.ljust(_NAME_COLUMN_WIDTH)
+        count_padded = str(total).rjust(_COUNT_COLUMN_WIDTH)
 
         console.print(f"  {name_padded}{count_padded}  {bar_str}")
 

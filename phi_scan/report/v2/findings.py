@@ -9,6 +9,7 @@ from rich.panel import Panel
 
 from phi_scan.constants import SEVERITY_RANK, SeverityLevel
 from phi_scan.report.v2.aggregation import build_line_title
+from phi_scan.report.v2.glyphs import MULTIPLIER, PREVIEW_MARKER, SECTION_BAR, SEPARATOR
 from phi_scan.report.v2.models import FileAggregate, LineAggregate
 
 _SECTION_HEADER_STYLE: str = "bold green"
@@ -36,7 +37,6 @@ _LINE_BADGE_STYLE: dict[SeverityLevel, str] = {
 }
 
 _TYPE_CHIP_STYLE: str = "cyan"
-_PREVIEW_MARKER: str = "▸"
 _EXPAND_CUTOFF_DEFAULT: SeverityLevel = SeverityLevel.MEDIUM
 _MAX_FIX_DISPLAY_LENGTH: int = 120
 
@@ -57,10 +57,11 @@ def _build_type_chips(category_counts: dict[str, int]) -> str:
     chips: list[str] = []
     for entity_type, count in sorted(category_counts.items()):
         if count > 1:
-            chips.append(f"[{_TYPE_CHIP_STYLE}]{entity_type} ×{count}[/{_TYPE_CHIP_STYLE}]")
+            chip = f"[{_TYPE_CHIP_STYLE}]{entity_type} {MULTIPLIER}{count}[/{_TYPE_CHIP_STYLE}]"
+            chips.append(chip)
         else:
             chips.append(f"[{_TYPE_CHIP_STYLE}]{entity_type}[/{_TYPE_CHIP_STYLE}]")
-    return "  ·  ".join(chips)
+    return f"  {SEPARATOR}  ".join(chips)
 
 
 def _render_line_card(console: Console, line_aggregate: LineAggregate) -> None:
@@ -79,7 +80,7 @@ def _render_line_card(console: Console, line_aggregate: LineAggregate) -> None:
         f"     [dim]{line_aggregate.finding_count} {finding_word}[/dim]  {pill}"
     )
 
-    preview = f"  {_PREVIEW_MARKER}  {escape_markup(line_aggregate.display_context)}"
+    preview = f"  {PREVIEW_MARKER}  {escape_markup(line_aggregate.display_context)}"
     type_chips = f"  types: {_build_type_chips(line_aggregate.category_counts)}"
 
     fix_text = line_aggregate.combined_fix
@@ -104,7 +105,7 @@ def render_findings_by_line(
     console.print()
     console.print()
     console.print(
-        f"[{_SECTION_BAR_STYLE}]▎[/{_SECTION_BAR_STYLE}] "
+        f"[{_SECTION_BAR_STYLE}]{SECTION_BAR}[/{_SECTION_BAR_STYLE}] "
         f"[{_SECTION_HEADER_STYLE}]FINDINGS BY LINE[/{_SECTION_HEADER_STYLE}]"
     )
     console.print(
@@ -142,7 +143,7 @@ def render_findings_by_line(
         console.print()
         console.print(
             Panel(
-                f"[bold]+ {collapsed_line_count} more lines[/bold]  ·  "
+                f"[bold]+ {collapsed_line_count} more lines[/bold]  {SEPARATOR}  "
                 f"[dim]{collapsed_finding_count} low-severity findings collapsed.[/dim]\n"
                 "[dim]Re-run with [bold]--verbose[/bold] or "
                 "[bold]--severity-threshold low[/bold] to expand them.[/dim]",

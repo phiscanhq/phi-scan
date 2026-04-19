@@ -10,6 +10,13 @@ from rich.markup import escape as escape_markup
 from rich.panel import Panel
 
 from phi_scan.constants import SeverityLevel
+from phi_scan.report.v2.glyphs import (
+    CONFIDENCE_DOT_EMPTY,
+    CONFIDENCE_DOT_FILLED,
+    EN_DASH,
+    SECTION_BAR,
+    SEPARATOR,
+)
 from phi_scan.report.v2.models import RemediationAction
 
 _SECTION_HEADER_STYLE: str = "bold green"
@@ -29,8 +36,6 @@ _SEVERITY_BORDER_STYLE: dict[SeverityLevel, str] = {
     SeverityLevel.INFO: "dim",
 }
 
-_CONFIDENCE_DOT_FILLED: str = "●"
-_CONFIDENCE_DOT_EMPTY: str = "○"
 _CONFIDENCE_DOT_COUNT: int = 5
 
 _MAX_DISPLAYED_LINES: int = 12
@@ -42,7 +47,7 @@ def _render_confidence_dots(mean_confidence: float) -> str:
     filled_count = round(mean_confidence * _CONFIDENCE_DOT_COUNT)
     filled_count = max(0, min(_CONFIDENCE_DOT_COUNT, filled_count))
     empty_count = _CONFIDENCE_DOT_COUNT - filled_count
-    return _CONFIDENCE_DOT_FILLED * filled_count + _CONFIDENCE_DOT_EMPTY * empty_count
+    return CONFIDENCE_DOT_FILLED * filled_count + CONFIDENCE_DOT_EMPTY * empty_count
 
 
 def _format_lines_compact(affected_lines: tuple[tuple[Path, int], ...]) -> str:
@@ -59,8 +64,8 @@ def _format_lines_compact(affected_lines: tuple[tuple[Path, int], ...]) -> str:
             if start == end:
                 parts.append(f"line {start}")
             else:
-                parts.append(f"lines {start}–{end}")
-        return "  ·  ".join(parts)
+                parts.append(f"lines {start}{EN_DASH}{end}")
+        return f"  {SEPARATOR}  ".join(parts)
 
     shown = line_numbers[:_MAX_DISPLAYED_LINES]
     ranges = _compress_line_ranges(shown)
@@ -69,7 +74,7 @@ def _format_lines_compact(affected_lines: tuple[tuple[Path, int], ...]) -> str:
         if start == end:
             parts.append(str(start))
         else:
-            parts.append(f"{start}–{end}")
+            parts.append(f"{start}{EN_DASH}{end}")
     remaining = len(line_numbers) - _MAX_DISPLAYED_LINES
     return "lines " + ", ".join(parts) + f" (+{remaining} more)"
 
@@ -132,7 +137,7 @@ def render_remediation_playbook(
     console.print()
     console.print()
     console.print(
-        f"[{_SECTION_BAR_STYLE}]▎[/{_SECTION_BAR_STYLE}] "
+        f"[{_SECTION_BAR_STYLE}]{SECTION_BAR}[/{_SECTION_BAR_STYLE}] "
         f"[{_SECTION_HEADER_STYLE}]REMEDIATION PLAYBOOK[/{_SECTION_HEADER_STYLE}]"
     )
     action_word = "action" if len(actions) == 1 else "actions"
