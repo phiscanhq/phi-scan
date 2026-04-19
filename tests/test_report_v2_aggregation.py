@@ -134,37 +134,76 @@ class TestGroupByFile:
 
 
 class TestDedupeRemediations:
-    def test_groups_by_remediation_hint(self) -> None:
+    def test_groups_by_hipaa_category(self) -> None:
         findings = (
-            _make_finding(line_number=1, remediation_hint="Remove SSN"),
-            _make_finding(line_number=2, remediation_hint="Remove SSN"),
-            _make_finding(line_number=3, remediation_hint="Fix dates"),
+            _make_finding(
+                line_number=1,
+                hipaa_category=PhiCategory.SSN,
+                remediation_hint="Remove SSN",
+            ),
+            _make_finding(
+                line_number=2,
+                hipaa_category=PhiCategory.SSN,
+                remediation_hint="Remove SSN",
+            ),
+            _make_finding(
+                line_number=3,
+                hipaa_category=PhiCategory.DATE,
+                remediation_hint="Fix dates",
+            ),
         )
         actions = dedupe_remediations(findings)
         assert len(actions) == 2
-        ssn_action = [a for a in actions if a.remediation_hint == "Remove SSN"][0]
+        ssn_action = [a for a in actions if a.hipaa_category == PhiCategory.SSN][0]
         assert ssn_action.finding_count == 2
 
-    def test_no_duplicate_remediation_strings(self) -> None:
+    def test_collapses_varied_hints_within_same_category(self) -> None:
         findings = (
-            _make_finding(remediation_hint="Hint A"),
-            _make_finding(remediation_hint="Hint A"),
-            _make_finding(remediation_hint="Hint B"),
-            _make_finding(remediation_hint="Hint B"),
-            _make_finding(remediation_hint="Hint C"),
+            _make_finding(
+                line_number=1,
+                hipaa_category=PhiCategory.QUASI_IDENTIFIER_COMBINATION,
+                remediation_hint="Break up combo A + B.",
+            ),
+            _make_finding(
+                line_number=2,
+                hipaa_category=PhiCategory.QUASI_IDENTIFIER_COMBINATION,
+                remediation_hint="Break up combo C + D + E.",
+            ),
         )
         actions = dedupe_remediations(findings)
-        hints = [a.remediation_hint for a in actions]
-        assert len(hints) == len(set(hints))
+        assert len(actions) == 1
+        assert actions[0].finding_count == 2
+
+    def test_no_duplicate_categories(self) -> None:
+        findings = (
+            _make_finding(hipaa_category=PhiCategory.SSN, remediation_hint="Hint A"),
+            _make_finding(hipaa_category=PhiCategory.SSN, remediation_hint="Hint A"),
+            _make_finding(hipaa_category=PhiCategory.DATE, remediation_hint="Hint B"),
+            _make_finding(hipaa_category=PhiCategory.DATE, remediation_hint="Hint B"),
+            _make_finding(hipaa_category=PhiCategory.EMAIL, remediation_hint="Hint C"),
+        )
+        actions = dedupe_remediations(findings)
+        categories = [a.hipaa_category for a in actions]
+        assert len(categories) == len(set(categories))
 
     def test_sorted_by_severity_then_count(self) -> None:
         findings = (
-            _make_finding(line_number=1, severity=SeverityLevel.LOW, remediation_hint="Low fix"),
-            _make_finding(line_number=2, severity=SeverityLevel.HIGH, remediation_hint="High fix"),
+            _make_finding(
+                line_number=1,
+                hipaa_category=PhiCategory.EMAIL,
+                severity=SeverityLevel.LOW,
+                remediation_hint="Low fix",
+            ),
+            _make_finding(
+                line_number=2,
+                hipaa_category=PhiCategory.SSN,
+                severity=SeverityLevel.HIGH,
+                remediation_hint="High fix",
+            ),
         )
         actions = dedupe_remediations(findings)
-        assert actions[0].remediation_hint == "High fix"
-        assert actions[1].remediation_hint == "Low fix"
+        assert actions[0].hipaa_category == PhiCategory.SSN
+        assert actions[1].hipaa_category == PhiCategory.EMAIL
 
     def test_mean_confidence(self) -> None:
         findings = (
@@ -197,23 +236,26 @@ class TestRankTopActions:
         findings = (
             _make_finding(
                 line_number=1,
+                hipaa_category=PhiCategory.SSN,
                 severity=SeverityLevel.HIGH,
                 remediation_hint="High",
             ),
             _make_finding(
                 line_number=2,
+                hipaa_category=PhiCategory.EMAIL,
                 severity=SeverityLevel.LOW,
                 remediation_hint="Low 1",
             ),
             _make_finding(
                 line_number=3,
+                hipaa_category=PhiCategory.ACCOUNT,
                 severity=SeverityLevel.LOW,
                 remediation_hint="Low 2",
             ),
         )
         actions = dedupe_remediations(findings)
         top = rank_top_actions(actions)
-        assert top[0].remediation_hint == "High"
+        assert top[0].hipaa_category == PhiCategory.SSN
 
 
 class TestHotspotCount:

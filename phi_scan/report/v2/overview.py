@@ -6,13 +6,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from rich import box as rich_box
-from rich.columns import Columns
 from rich.console import Console
 from rich.markup import escape as escape_markup
 from rich.panel import Panel
+from rich.table import Table
 
 from phi_scan import __version__
-from phi_scan.constants import SeverityLevel
+from phi_scan.constants import PhiCategory, SeverityLevel
 from phi_scan.models import ScanResult
 from phi_scan.report.v2.aggregation import (
     compute_category_severity_distribution,
@@ -49,15 +49,49 @@ _STAT_HOTSPOTS: str = "HOTSPOTS"
 
 _BAR_MAX_WIDTH: int = 40
 _BAR_DENOMINATOR_FLOOR: int = 1
+_BAR_MIN_FILLED: int = 0
 _MAX_DISPLAYED_AFFECTED_LINES: int = 8
 _NAME_COLUMN_WIDTH: int = 16
 _COUNT_COLUMN_WIDTH: int = 5
+_STAT_TILE_COUNT: int = 5
+_STAT_TILE_BAR_WIDTH: int = 12
+
+_KNOWN_PHI_CATEGORY_VALUES: frozenset[str] = frozenset(member.value for member in PhiCategory)
 
 _SEVERITY_BAR_COLORS: dict[SeverityLevel, str] = {
     SeverityLevel.HIGH: "red",
     SeverityLevel.MEDIUM: "yellow",
     SeverityLevel.LOW: "green",
     SeverityLevel.INFO: "dim",
+}
+
+_CATEGORY_BAR_COLORS: dict[PhiCategory, str] = {
+    PhiCategory.UNIQUE_ID: "magenta",
+    PhiCategory.HEALTH_PLAN: "bright_blue",
+    PhiCategory.DATE: "yellow",
+    PhiCategory.ACCOUNT: "yellow",
+    PhiCategory.MRN: "yellow",
+    PhiCategory.GEOGRAPHIC: "green",
+    PhiCategory.SSN: "red",
+    PhiCategory.PHONE: "red",
+    PhiCategory.EMAIL: "red",
+    PhiCategory.FAX: "red",
+    PhiCategory.IP: "red",
+    PhiCategory.QUASI_IDENTIFIER_COMBINATION: "red",
+    PhiCategory.NAME: "red",
+    PhiCategory.CERTIFICATE: "yellow",
+    PhiCategory.URL: "cyan",
+    PhiCategory.VEHICLE: "cyan",
+    PhiCategory.DEVICE: "cyan",
+    PhiCategory.BIOMETRIC: "red",
+    PhiCategory.PHOTO: "red",
+    PhiCategory.SUBSTANCE_USE_DISORDER: "red",
+}
+_CATEGORY_BAR_DEFAULT: str = "cyan"
+
+_CATEGORY_DISPLAY_NAMES: dict[PhiCategory, str] = {
+    PhiCategory.QUASI_IDENTIFIER_COMBINATION: "quasi_combo",
+    PhiCategory.SUBSTANCE_USE_DISORDER: "sud",
 }
 
 _SEVERITY_PILL_STYLE: dict[SeverityLevel, str] = {
@@ -128,10 +162,30 @@ def render_status_banner(
     )
 
 
-def _render_stat_tile(label: str, value: int, color: str, subtitle: str = "") -> Panel:
+def _render_proportional_bar(value: int, max_value: int, color: str) -> str:
+    """Render a proportional single-line bar shown under severity tile counts."""
+    denominator = max(max_value, _BAR_DENOMINATOR_FLOOR)
+    ratio = value / denominator
+    filled = round(ratio * _STAT_TILE_BAR_WIDTH)
+    filled = max(_BAR_MIN_FILLED, min(_STAT_TILE_BAR_WIDTH, filled))
+    empty = _STAT_TILE_BAR_WIDTH - filled
+    filled_segment = f"[{color}]{BAR_FILLED * filled}[/{color}]"
+    empty_segment = f"[dim]{BAR_FILLED * empty}[/dim]"
+    return filled_segment + empty_segment
+
+
+def _render_stat_tile(
+    label: str,
+    value: int,
+    color: str,
+    subtitle: str = "",
+    bar_markup: str = "",
+) -> Panel:
     """Build a single stat tile panel."""
     value_text = f"[{color}]{value}[/{color}]"
     body = f"[dim]{label}[/dim]\n[bold]{value_text}[/bold]"
+    if bar_markup:
+        body += f"\n{bar_markup}"
     if subtitle:
         body += f"\n[dim]{subtitle}[/dim]"
     return Panel(body, box=rich_box.ROUNDED, expand=True, padding=(0, 1))
@@ -152,16 +206,30 @@ def render_stat_tiles(
     file_count = scan_result.files_with_findings
     file_label = "file" if file_count == 1 else "files"
 
+    severity_max = max(high, medium, low, _BAR_DENOMINATOR_FLOOR)
+    high_bar = _render_proportional_bar(high, severity_max, "red")
+    medium_bar = _render_proportional_bar(medium, severity_max, "yellow")
+    low_bar = _render_proportional_bar(low, severity_max, "green")
+
+    findings_subtitle = f"across {file_count} {file_label}"
     tiles = [
-        _render_stat_tile(_STAT_FINDINGS, total, "white", f"across {file_count} {file_label}"),
-        _render_stat_tile(_STAT_HIGH, high, "red"),
-        _render_stat_tile(_STAT_MEDIUM, medium, "yellow"),
-        _render_stat_tile(_STAT_LOW, low, "green"),
+        _render_stat_tile(_STAT_FINDINGS, total, "white", subtitle=findings_subtitle),
+        _render_stat_tile(_STAT_HIGH, high, "red", bar_markup=high_bar),
+        _render_stat_tile(_STAT_MEDIUM, medium, "yellow", bar_markup=medium_bar),
+        _render_stat_tile(_STAT_LOW, low, "green", bar_markup=low_bar),
         _render_stat_tile(
-            _STAT_HOTSPOTS, hotspots, "magenta", f"{EM_DASH} unique PHI hotspot lines {EM_DASH}"
+            _STAT_HOTSPOTS,
+            hotspots,
+            "magenta",
+            subtitle="unique PHI hotspot lines",
         ),
     ]
-    console.print(Columns(tiles, equal=True, expand=True))
+
+    grid = Table.grid(expand=True, padding=(0, 1))
+    for _ in range(_STAT_TILE_COUNT):
+        grid.add_column(ratio=1)
+    grid.add_row(*tiles)
+    console.print(grid)
 
 
 def render_top_actions(
@@ -197,7 +265,7 @@ def _format_affected_lines_compact(
     affected_lines: tuple[tuple[Path, int], ...],
 ) -> str:
     """Format affected lines as a compact string like 'lines 7, 24, 40, 54'."""
-    line_numbers = [pair[1] for pair in affected_lines]
+    line_numbers = [path_line_pair[1] for path_line_pair in affected_lines]
     if len(line_numbers) <= _MAX_DISPLAYED_AFFECTED_LINES:
         return "lines " + ", ".join(str(ln) for ln in line_numbers)
     shown = ", ".join(str(ln) for ln in line_numbers[:_MAX_DISPLAYED_AFFECTED_LINES])
@@ -205,11 +273,25 @@ def _format_affected_lines_compact(
     return f"lines {shown} (+{remaining} more)"
 
 
+def _resolve_category_color(category_name: str) -> str:
+    """Map a category name (enum value) to its display color."""
+    if category_name not in _KNOWN_PHI_CATEGORY_VALUES:
+        return _CATEGORY_BAR_DEFAULT
+    return _CATEGORY_BAR_COLORS[PhiCategory(category_name)]
+
+
+def _resolve_category_display(category_name: str) -> str:
+    """Abbreviate long category names for the breakdown label column."""
+    if category_name not in _KNOWN_PHI_CATEGORY_VALUES:
+        return category_name
+    return _CATEGORY_DISPLAY_NAMES.get(PhiCategory(category_name), category_name)
+
+
 def render_category_breakdown(
     console: Console,
     scan_result: ScanResult,
 ) -> None:
-    """Print the CATEGORY BREAKDOWN section with severity-segmented bars."""
+    """Print the CATEGORY BREAKDOWN section with per-category colored bars."""
     console.print()
     console.print(
         f"[{_SECTION_BAR_STYLE}]{SECTION_BAR}[/{_SECTION_BAR_STYLE}] "
@@ -218,39 +300,29 @@ def render_category_breakdown(
     console.print()
 
     distribution = compute_category_severity_distribution(scan_result.findings)
-    category_totals: list[tuple[str, int, dict[SeverityLevel, int]]] = []
-    for category_name, sev_dist in distribution.items():
-        total = sum(sev_dist.values())
-        category_totals.append((category_name, total, sev_dist))
-
+    category_totals: list[tuple[str, int]] = [
+        (category_name, sum(sev_dist.values())) for category_name, sev_dist in distribution.items()
+    ]
     category_totals.sort(key=lambda ct: -ct[1])
 
     max_count = max((ct[1] for ct in category_totals), default=_BAR_DENOMINATOR_FLOOR)
     max_count = max(max_count, _BAR_DENOMINATOR_FLOOR)
 
-    for category_name, total, sev_dist in category_totals:
-        bar_width = round(total / max_count * _BAR_MAX_WIDTH)
-        bar_width = max(bar_width, 1)
+    for category_name, total in category_totals:
+        filled_width = round(total / max_count * _BAR_MAX_WIDTH)
+        filled_width = max(1, min(_BAR_MAX_WIDTH, filled_width))
+        empty_width = _BAR_MAX_WIDTH - filled_width
 
-        bar_parts: list[str] = []
-        severity_order = (
-            SeverityLevel.HIGH,
-            SeverityLevel.MEDIUM,
-            SeverityLevel.LOW,
-            SeverityLevel.INFO,
+        color = _resolve_category_color(category_name)
+        bar_str = (
+            f"[{color}]{BAR_FILLED * filled_width}[/{color}][dim]{BAR_FILLED * empty_width}[/dim]"
         )
-        for severity in severity_order:
-            sev_count = sev_dist.get(severity, 0)
-            if sev_count > 0:
-                segment_width = max(round(sev_count / total * bar_width), 1)
-                color = _SEVERITY_BAR_COLORS[severity]
-                bar_parts.append(f"[{color}]{BAR_FILLED * segment_width}[/{color}]")
 
-        bar_str = "".join(bar_parts)
-        name_padded = category_name.ljust(_NAME_COLUMN_WIDTH)
-        count_padded = str(total).rjust(_COUNT_COLUMN_WIDTH)
+        display_name = _resolve_category_display(category_name)
+        name_markup = f"[dim]{display_name.ljust(_NAME_COLUMN_WIDTH)}[/dim]"
+        count_markup = f"[bold {color}]{str(total).rjust(_COUNT_COLUMN_WIDTH)}[/bold {color}]"
 
-        console.print(f"  {name_padded}{count_padded}  {bar_str}")
+        console.print(f"  {name_markup}{count_markup}  {bar_str}")
 
 
 def render_overview(

@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from rich import box as rich_box
-from rich.columns import Columns
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 
 from phi_scan.constants import SeverityLevel
 from phi_scan.models import ScanResult
@@ -22,6 +22,7 @@ from phi_scan.report.v2.glyphs import (
 
 _SECTION_HEADER_STYLE: str = "bold green"
 _SECTION_BAR_STYLE: str = "green"
+_FOOTER_COLUMN_GAP: int = 4
 
 
 def _build_violation_left(scan_result: ScanResult, unique_action_count: int) -> str:
@@ -110,14 +111,16 @@ def render_scan_complete(
         right_content = _build_violation_right(report_path)
         border_style = "bold red"
 
-    left_panel = Panel(left_content, box=rich_box.ROUNDED, expand=True, padding=(1, 2))
-    right_panel = Panel(right_content, box=rich_box.ROUNDED, expand=True, padding=(1, 2))
+    layout = Table.grid(expand=True, padding=(0, _FOOTER_COLUMN_GAP))
+    layout.add_column(ratio=1)
+    layout.add_column(ratio=1)
+    layout.add_row(left_content, right_content)
 
     console.print(
         Panel(
-            Columns([left_panel, right_panel], equal=True, expand=True),
+            layout,
             box=rich_box.ROUNDED,
             border_style=border_style,
-            padding=(0, 0),
+            padding=(1, 2),
         )
     )

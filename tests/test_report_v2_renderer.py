@@ -206,3 +206,133 @@ class TestV2CollapseExpand:
             severity_threshold=SeverityLevel.LOW,
         )
         assert "line 3" in output
+
+
+def _make_multi_finding_line_result() -> ScanResult:
+    """Build a result with two findings on the same line, each with different raw spans."""
+    findings = (
+        _make_finding(
+            line_number=10,
+            entity_type="SSN",
+            hipaa_category=PhiCategory.SSN,
+            remediation_hint="Remove SSN immediately.",
+            code_context="pt {'ssn': [REDACTED], 'dob': '1942-07-03'}",
+        ),
+        _make_finding(
+            line_number=10,
+            entity_type="DATE",
+            hipaa_category=PhiCategory.DATE,
+            remediation_hint="Replace dates with year only.",
+            code_context="pt {'ssn': '123-45-6789', 'dob': [REDACTED]}",
+        ),
+    )
+    return ScanResult(
+        findings=findings,
+        files_scanned=1,
+        files_with_findings=1,
+        scan_duration=0.01,
+        is_clean=False,
+        risk_level=RiskLevel.CRITICAL,
+        severity_counts=MappingProxyType({SeverityLevel.HIGH: 2}),
+        category_counts=MappingProxyType({PhiCategory.SSN: 1, PhiCategory.DATE: 1}),
+    )
+
+
+class TestV2MultiFindingLineSafety:
+    """When a line has multiple findings, the preview must redact ALL raw spans."""
+
+    def test_no_raw_ssn_leaked(self) -> None:
+        output = _capture_v2_output(_make_multi_finding_line_result())
+        assert "123-45-6789" not in output
+
+    def test_no_raw_dob_leaked(self) -> None:
+        output = _capture_v2_output(_make_multi_finding_line_result())
+        assert "1942-07-03" not in output
+
+    def test_collapsed_marker_present(self) -> None:
+        output = _capture_v2_output(_make_multi_finding_line_result())
+        assert "[REDACTED]" in output
+
+
+def _make_quasi_combo_result() -> ScanResult:
+    """Quasi-identifier combination findings with differing hints per instance."""
+    findings = tuple(
+        _make_finding(
+            line_number=line_number,
+            entity_type="QUASI_IDENTIFIER_COMBINATION",
+            hipaa_category=PhiCategory.QUASI_IDENTIFIER_COMBINATION,
+            severity=SeverityLevel.HIGH,
+            remediation_hint=(
+                f"This finding indicates quasi-identifier combination #{line_number}. "
+                "Break up the combination or generalize at least one field."
+            ),
+            code_context=f"record_{line_number}: [REDACTED]",
+        )
+        for line_number in (1, 3, 6)
+    )
+    return ScanResult(
+        findings=findings,
+        files_scanned=1,
+        files_with_findings=1,
+        scan_duration=0.01,
+        is_clean=False,
+        risk_level=RiskLevel.CRITICAL,
+        severity_counts=MappingProxyType({SeverityLevel.HIGH: 3}),
+        category_counts=MappingProxyType({PhiCategory.QUASI_IDENTIFIER_COMBINATION: 3}),
+    )
+
+
+class TestV2PlaybookCategoryDedupe:
+    """Playbook must collapse per-category findings even when hint strings differ."""
+
+    def test_quasi_combo_single_card(self) -> None:
+        output = _capture_v2_output(_make_quasi_combo_result())
+        playbook_start = output.index("REMEDIATION PLAYBOOK")
+        scan_complete_start = output.index("SCAN COMPLETE")
+        playbook_section = output[playbook_start:scan_complete_start]
+        assert playbook_section.count("Break up quasi-identifier combinations") == 1
+
+    def test_playbook_shows_aggregate_count(self) -> None:
+        output = _capture_v2_output(_make_quasi_combo_result())
+        assert "3 findings" in output
+
+
+def _make_long_hint_result() -> ScanResult:
+    """Result with a >100-char remediation hint to verify no truncation in playbook."""
+    long_hint = (
+        "Remove or generalize at least one of the quasi-identifiers: use only "
+        "the first 3 digits of the ZIP code, replace the full date of birth "
+        "with birth year only, or remove the combination entirely from test "
+        "fixtures. Do not rely on any single field being 'safe'."
+    )
+    findings = (
+        _make_finding(
+            line_number=42,
+            entity_type="QUASI_IDENTIFIER_COMBINATION",
+            hipaa_category=PhiCategory.QUASI_IDENTIFIER_COMBINATION,
+            severity=SeverityLevel.HIGH,
+            remediation_hint=long_hint,
+            code_context="row_42: [REDACTED]",
+        ),
+    )
+    return (
+        ScanResult(
+            findings=findings,
+            files_scanned=1,
+            files_with_findings=1,
+            scan_duration=0.01,
+            is_clean=False,
+            risk_level=RiskLevel.CRITICAL,
+            severity_counts=MappingProxyType({SeverityLevel.HIGH: 1}),
+            category_counts=MappingProxyType({PhiCategory.QUASI_IDENTIFIER_COMBINATION: 1}),
+        ),
+        long_hint,
+    )
+
+
+class TestV2PlaybookHintUncapped:
+    def test_full_hint_rendered(self) -> None:
+        result, _ = _make_long_hint_result()
+        output = _capture_v2_output(result)
+        tail_phrase = "any single field being"
+        assert tail_phrase in output

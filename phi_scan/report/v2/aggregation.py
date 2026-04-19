@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from phi_scan.constants import SEVERITY_RANK, PhiCategory, SeverityLevel
+from phi_scan.constants import (
+    CODE_CONTEXT_REDACTED_VALUE,
+    SEVERITY_RANK,
+    PhiCategory,
+    SeverityLevel,
+)
 from phi_scan.models import ScanFinding
 from phi_scan.report.v2.models import FileAggregate, LineAggregate, RemediationAction
 
@@ -12,6 +17,10 @@ _TOP_ACTIONS_COUNT: int = 5
 _HOTSPOT_CATEGORY_THRESHOLD: int = 2
 _QUASI_COMBO_THRESHOLD: int = 5
 _HINT_TRUNCATION_LENGTH: int = 60
+_COLLAPSED_INFILL: str = " … "
+_SINGLE_FINDING_COUNT: int = 1
+_SINGLE_DISTINCT_SPAN: int = 1
+_FAIL_CLOSED_PREVIEW_TEMPLATE: str = "[{marker} preview suppressed]"
 
 _ACTION_TITLE_MAP: dict[PhiCategory, str] = {
     PhiCategory.SSN: "Remove Social Security Numbers",
@@ -66,6 +75,73 @@ def _combine_remediation_hints(findings: tuple[ScanFinding, ...]) -> str:
     return "; ".join(seen)
 
 
+def _pick_most_specific_hint(findings: list[ScanFinding]) -> str:
+    """Return the longest remediation hint from a category bucket.
+
+    When a category fans out multiple hint variants (most notably
+    QUASI_IDENTIFIER_COMBINATION, which embeds the specific fields
+    involved), the longest hint is typically the most specific and
+    actionable — generic "replace dates" variants are short, while
+    combination-specific hints enumerate the offending fields. Using
+    length as the proxy avoids hard-coded per-category picks.
+    """
+    return max((finding.remediation_hint for finding in findings), key=len)
+
+
+def _split_context(context: str) -> tuple[str, str] | None:
+    """Split a code_context into (prefix, suffix) around the [REDACTED] marker."""
+    marker = CODE_CONTEXT_REDACTED_VALUE
+    marker_position = context.find(marker)
+    if marker_position == -1:
+        return None
+    prefix = context[:marker_position]
+    suffix = context[marker_position + len(marker) :]
+    return (prefix, suffix)
+
+
+def _build_merged_display_context(findings: tuple[ScanFinding, ...]) -> str:
+    """Build a preview that redacts every finding's span on the line.
+
+    Each ``code_context`` is the source line with one match span replaced by
+    [REDACTED]; its prefix and suffix therefore contain raw source text,
+    including any OTHER findings' raw values. Using a single finding's
+    context would leak those other spans.
+
+    To stay invariant-safe without re-reading disk, we pick the finding with
+    the shortest prefix (earliest span) — its prefix contains no other
+    finding's span — and the finding with the shortest suffix (latest
+    span) — same property for the suffix — and join them around a
+    collapsed ``[REDACTED] … [REDACTED]`` middle. We lose in-between
+    context, but never leak raw PHI.
+
+    If the invariant is violated (any ``code_context`` is missing the
+    [REDACTED] marker, or all spans collapse to one finding), we fail
+    CLOSED: return a bare placeholder rather than any raw prefix/suffix,
+    because any non-empty prefix or suffix from a single finding's context
+    necessarily contains other findings' raw spans.
+    """
+    marker = CODE_CONTEXT_REDACTED_VALUE
+    fail_closed_preview = _FAIL_CLOSED_PREVIEW_TEMPLATE.format(marker=marker)
+
+    if len(findings) == _SINGLE_FINDING_COUNT:
+        return findings[0].code_context
+
+    split_parts: list[tuple[str, str]] = []
+    for finding in findings:
+        parts = _split_context(finding.code_context)
+        if parts is None:
+            return fail_closed_preview
+        split_parts.append(parts)
+
+    distinct_spans = {(prefix, suffix) for prefix, suffix in split_parts}
+    if len(distinct_spans) == _SINGLE_DISTINCT_SPAN:
+        return fail_closed_preview
+
+    earliest_prefix = min(split_parts, key=lambda split_pair: len(split_pair[0]))[0]
+    latest_suffix = min(split_parts, key=lambda split_pair: len(split_pair[1]))[1]
+    return f"{earliest_prefix}{marker}{_COLLAPSED_INFILL}{marker}{latest_suffix}"
+
+
 def group_by_line(findings: tuple[ScanFinding, ...]) -> list[LineAggregate]:
     """Group findings by (file_path, line_number) into LineAgggregates."""
     buckets: dict[tuple[Path, int], list[ScanFinding]] = {}
@@ -85,7 +161,7 @@ def group_by_line(findings: tuple[ScanFinding, ...]) -> list[LineAggregate]:
                 findings=frozen_findings,
                 highest_severity=_highest_severity(line_findings),
                 category_counts=_build_category_counts(frozen_findings),
-                display_context=line_findings[0].code_context,
+                display_context=_build_merged_display_context(frozen_findings),
                 combined_fix=_combine_remediation_hints(frozen_findings),
             )
         )
@@ -119,18 +195,24 @@ def group_by_file(line_aggregates: list[LineAggregate]) -> list[FileAggregate]:
 
 
 def dedupe_remediations(findings: tuple[ScanFinding, ...]) -> list[RemediationAction]:
-    """Group findings by remediation_hint into deduplicated RemediationActions."""
-    buckets: dict[str, list[ScanFinding]] = {}
+    """Group findings by HIPAA category into deduplicated RemediationActions.
+
+    Keying by hipaa_category (rather than the raw hint string) collapses
+    per-invocation variations — e.g., QUASI_IDENTIFIER_COMBINATION emits a
+    differently worded hint for each combination it sees, but the action
+    ("Break up the combination") is the same and belongs on one card.
+    """
+    buckets: dict[PhiCategory, list[ScanFinding]] = {}
     for finding in findings:
-        hint = finding.remediation_hint
-        if not hint:
+        if not finding.remediation_hint:
             continue
-        if hint not in buckets:
-            buckets[hint] = []
-        buckets[hint].append(finding)
+        category = finding.hipaa_category
+        if category not in buckets:
+            buckets[category] = []
+        buckets[category].append(finding)
 
     actions: list[RemediationAction] = []
-    for hint, grouped_findings in buckets.items():
+    for category, grouped_findings in buckets.items():
         highest_sev = _highest_severity(grouped_findings)
         mean_confidence = sum(f.confidence for f in grouped_findings) / len(grouped_findings)
         affected: list[tuple[Path, int]] = []
@@ -140,15 +222,15 @@ def dedupe_remediations(findings: tuple[ScanFinding, ...]) -> list[RemediationAc
             if key not in seen_lines:
                 seen_lines.add(key)
                 affected.append(key)
-        affected.sort(key=lambda pair: (pair[0], pair[1]))
-        primary_category = grouped_findings[0].hipaa_category
-        title = _ACTION_TITLE_MAP.get(primary_category, hint[:_HINT_TRUNCATION_LENGTH])
+        affected.sort(key=lambda path_line_pair: (path_line_pair[0], path_line_pair[1]))
+        representative_hint = _pick_most_specific_hint(grouped_findings)
+        title = _ACTION_TITLE_MAP.get(category, representative_hint[:_HINT_TRUNCATION_LENGTH])
 
         actions.append(
             RemediationAction(
-                remediation_hint=hint,
+                remediation_hint=representative_hint,
                 title=title,
-                hipaa_category=primary_category,
+                hipaa_category=category,
                 finding_count=len(grouped_findings),
                 highest_severity=highest_sev,
                 mean_confidence=mean_confidence,
