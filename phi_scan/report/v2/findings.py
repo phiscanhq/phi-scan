@@ -38,6 +38,21 @@ _LINE_BADGE_STYLE: dict[SeverityLevel, str] = {
 
 _TYPE_CHIP_STYLE: str = "cyan"
 _EXPAND_CUTOFF_DEFAULT: SeverityLevel = SeverityLevel.MEDIUM
+_MAX_INLINE_FIX_HINTS: int = 1
+_PLAYBOOK_POINTER: str = "multiple fixes required — see REMEDIATION PLAYBOOK below"
+
+
+def _format_fix_line(line_aggregate: LineAggregate) -> str:
+    """Render the per-line fix hint, collapsing when multiple hints apply.
+
+    Multi-category lines (e.g., DOB + ZIP + age-over-90) produce several
+    distinct remediation hints that wall-of-text the line card. We show
+    the primary hint inline and defer the rest to the playbook, which
+    already deduplicates per-category actions.
+    """
+    if line_aggregate.unique_fix_count <= _MAX_INLINE_FIX_HINTS:
+        return line_aggregate.combined_fix
+    return _PLAYBOOK_POINTER
 
 
 def _should_expand_line(
@@ -82,7 +97,7 @@ def _render_line_card(console: Console, line_aggregate: LineAggregate) -> None:
     preview = f"  {PREVIEW_MARKER}  {escape_markup(line_aggregate.display_context)}"
     type_chips = f"  types: {_build_type_chips(line_aggregate.category_counts)}"
 
-    fix_line = f"  fix:   {escape_markup(line_aggregate.combined_fix)}"
+    fix_line = f"  fix:   {escape_markup(_format_fix_line(line_aggregate))}"
 
     body = f"{header}\n\n{preview}\n{type_chips}\n{fix_line}"
 

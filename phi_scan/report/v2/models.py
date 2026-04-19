@@ -26,6 +26,7 @@ class LineAggregate:
     category_counts: dict[str, int]
     display_context: str
     combined_fix: str
+    unique_fix_count: int
 
     @property
     def finding_count(self) -> int:

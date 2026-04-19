@@ -66,13 +66,13 @@ def _build_category_counts(findings: tuple[ScanFinding, ...]) -> dict[str, int]:
     return counts
 
 
-def _combine_remediation_hints(findings: tuple[ScanFinding, ...]) -> str:
-    """Join unique remediation hints with semicolons."""
+def _collect_unique_hints(findings: tuple[ScanFinding, ...]) -> list[str]:
+    """Return unique, order-preserving remediation hints across findings."""
     seen: list[str] = []
     for finding in findings:
         if finding.remediation_hint and finding.remediation_hint not in seen:
             seen.append(finding.remediation_hint)
-    return "; ".join(seen)
+    return seen
 
 
 def _pick_most_specific_hint(findings: list[ScanFinding]) -> str:
@@ -154,6 +154,7 @@ def group_by_line(findings: tuple[ScanFinding, ...]) -> list[LineAggregate]:
     aggregates: list[LineAggregate] = []
     for (file_path, line_number), line_findings in buckets.items():
         frozen_findings = tuple(line_findings)
+        unique_hints = _collect_unique_hints(frozen_findings)
         aggregates.append(
             LineAggregate(
                 file_path=file_path,
@@ -162,7 +163,8 @@ def group_by_line(findings: tuple[ScanFinding, ...]) -> list[LineAggregate]:
                 highest_severity=_highest_severity(line_findings),
                 category_counts=_build_category_counts(frozen_findings),
                 display_context=_build_merged_display_context(frozen_findings),
-                combined_fix=_combine_remediation_hints(frozen_findings),
+                combined_fix="; ".join(unique_hints),
+                unique_fix_count=len(unique_hints),
             )
         )
     return aggregates

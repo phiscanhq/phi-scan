@@ -81,7 +81,6 @@ def display_rich_scan_results_v2(
             console,
             all_actions,
             total_finding_count=len(scan_result.findings),
-            report_path=report_path,
         )
 
     render_scan_complete(

@@ -158,6 +158,16 @@
       "primary_entity_types": [],
       "hipaa_identifiers": [],
       "notes": "Tests detector precision. Any finding is a false positive."
+    },
+    {
+      "path": "clean/truly_clean.py",
+      "category": "clean",
+      "description": "Minimal pure-string algorithms — exercises the CLEAN-path of the terminal renderers with zero findings",
+      "expected_min_findings": 0,
+      "expected_max_findings": 0,
+      "primary_entity_types": [],
+      "hipaa_identifiers": [],
+      "notes": "No numbers, no identifiers, no demographic signals. Used to visually verify the CLEAN footer."
     }
   ]
 }

@@ -22,6 +22,7 @@ from phi_scan.report.v2.aggregation import (
 )
 from phi_scan.report.v2.glyphs import (
     BAR_FILLED,
+    BAR_TRACK,
     CLEAN_MARKER,
     EM_DASH,
     SECTION_BAR,
@@ -170,7 +171,7 @@ def _render_proportional_bar(value: int, max_value: int, color: str) -> str:
     filled = max(_BAR_MIN_FILLED, min(_STAT_TILE_BAR_WIDTH, filled))
     empty = _STAT_TILE_BAR_WIDTH - filled
     filled_segment = f"[{color}]{BAR_FILLED * filled}[/{color}]"
-    empty_segment = f"[dim]{BAR_FILLED * empty}[/dim]"
+    empty_segment = f"[dim]{BAR_TRACK * empty}[/dim]"
     return filled_segment + empty_segment
 
 
@@ -315,7 +316,7 @@ def render_category_breakdown(
 
         color = _resolve_category_color(category_name)
         bar_str = (
-            f"[{color}]{BAR_FILLED * filled_width}[/{color}][dim]{BAR_FILLED * empty_width}[/dim]"
+            f"[{color}]{BAR_FILLED * filled_width}[/{color}][dim]{BAR_TRACK * empty_width}[/dim]"
         )
 
         display_name = _resolve_category_display(category_name)

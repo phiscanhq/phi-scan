@@ -130,7 +130,6 @@ def render_remediation_playbook(
     console: Console,
     actions: list[RemediationAction],
     total_finding_count: int,
-    report_path: Path | None,
 ) -> None:
     """Render the REMEDIATION PLAYBOOK section."""
     console.print()
@@ -148,30 +147,3 @@ def render_remediation_playbook(
 
     for index, action in enumerate(actions, start=1):
         _render_action_card(console, action, index)
-
-    _render_full_report_footer(console, report_path)
-
-
-def _render_full_report_footer(console: Console, report_path: Path | None) -> None:
-    """Render the FULL REPORT footer with actual or suggested report paths."""
-    console.print()
-
-    if report_path is not None:
-        body = f"[bold]FULL REPORT[/bold]\n  {escape_markup(str(report_path))}"
-    else:
-        body = (
-            "[bold]FULL REPORT[/bold]\n"
-            "  [dim]Generate full reports with:[/dim]\n"
-            "  [dim]  phi-scan scan . --output json --report-path report.json[/dim]\n"
-            "  [dim]  phi-scan scan . --output html --report-path report.html[/dim]\n"
-            "  [dim]  phi-scan scan . --output sarif --report-path report.sarif[/dim]"
-        )
-
-    console.print(
-        Panel(
-            body,
-            box=rich_box.ROUNDED,
-            border_style="dim",
-            padding=(0, 1),
-        )
-    )

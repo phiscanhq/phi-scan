@@ -336,3 +336,129 @@ class TestV2PlaybookHintUncapped:
         output = _capture_v2_output(result)
         tail_phrase = "any single field being"
         assert tail_phrase in output
+
+
+class TestV2MultiHintFixLineCollapse:
+    """Line cards with multiple distinct hints must collapse to a playbook pointer."""
+
+    def test_multi_hint_line_points_to_playbook(self) -> None:
+        output = _capture_v2_output(_make_violation_result())
+        assert "see REMEDIATION PLAYBOOK" in output
+
+    def test_single_hint_line_still_shows_hint_inline(self) -> None:
+        single_finding = _make_finding(
+            line_number=1,
+            remediation_hint="Replace patient SSN with a synthetic identifier.",
+        )
+        result = ScanResult(
+            findings=(single_finding,),
+            files_scanned=1,
+            files_with_findings=1,
+            scan_duration=0.01,
+            is_clean=False,
+            risk_level=RiskLevel.CRITICAL,
+            severity_counts=MappingProxyType({SeverityLevel.HIGH: 1}),
+            category_counts=MappingProxyType({PhiCategory.SSN: 1}),
+        )
+        output = _capture_v2_output(result)
+        assert "Replace patient SSN with a synthetic identifier." in output
+        assert "see REMEDIATION PLAYBOOK" not in output
+
+
+class TestV2FullReportPanelRemoved:
+    """FULL REPORT panel between playbook and footer has been folded into footer."""
+
+    def test_no_full_report_panel(self) -> None:
+        output = _capture_v2_output(_make_violation_result())
+        assert "FULL REPORT" not in output
+
+    def test_footer_shows_report_hint_when_no_path(self) -> None:
+        output = _capture_v2_output(_make_violation_result())
+        assert "--output html" in output
+
+
+class TestV2FooterLayout:
+    """Scan-complete footer must not wrap at standard terminal widths."""
+
+    def test_wide_terminal_uses_side_by_side(self) -> None:
+        console = Console(record=True, width=140, force_terminal=True)
+        from phi_scan.report.v2 import console as v2_console_module
+
+        original_get_console = v2_console_module.get_console
+        v2_console_module.get_console = lambda: console  # type: ignore[assignment]
+        try:
+            display_rich_scan_results_v2(
+                _make_violation_result(),
+                scan_target="test.py",
+                severity_threshold=SeverityLevel.LOW,
+                is_verbose=False,
+            )
+        finally:
+            v2_console_module.get_console = original_get_console  # type: ignore[assignment]
+        output = console.export_text()
+        next_steps_line = [ln for ln in output.splitlines() if "Next steps" in ln]
+        assert next_steps_line, "Next steps label must be on some line"
+        assert any("VIOLATION" in ln and "Next steps" in ln for ln in next_steps_line), (
+            "At 140 cols, Next steps and VIOLATION must share a row"
+        )
+
+    def test_narrow_terminal_stacks_sections(self) -> None:
+        console = Console(record=True, width=80, force_terminal=True)
+        from phi_scan.report.v2 import console as v2_console_module
+
+        original_get_console = v2_console_module.get_console
+        v2_console_module.get_console = lambda: console  # type: ignore[assignment]
+        try:
+            display_rich_scan_results_v2(
+                _make_violation_result(),
+                scan_target="test.py",
+                severity_threshold=SeverityLevel.LOW,
+                is_verbose=False,
+            )
+        finally:
+            v2_console_module.get_console = original_get_console  # type: ignore[assignment]
+        output = console.export_text()
+        violation_line = next(
+            (line for line in output.splitlines() if "VIOLATION" in line and "│" in line),
+            None,
+        )
+        assert violation_line is not None
+        assert "Next steps" not in violation_line
+
+
+class TestV2CategoryBarDifferentiation:
+    """Category bars must show proportional fill, not a solid wall of blocks."""
+
+    def test_bar_empty_portion_uses_track_glyph(self) -> None:
+        findings = (
+            _make_finding(
+                line_number=1,
+                entity_type="SSN",
+                hipaa_category=PhiCategory.SSN,
+                severity=SeverityLevel.HIGH,
+            ),
+            _make_finding(
+                line_number=2,
+                entity_type="EMAIL",
+                hipaa_category=PhiCategory.EMAIL,
+                severity=SeverityLevel.LOW,
+            ),
+            _make_finding(
+                line_number=3,
+                entity_type="EMAIL",
+                hipaa_category=PhiCategory.EMAIL,
+                severity=SeverityLevel.LOW,
+            ),
+        )
+        result = ScanResult(
+            findings=findings,
+            files_scanned=1,
+            files_with_findings=1,
+            scan_duration=0.01,
+            is_clean=False,
+            risk_level=RiskLevel.CRITICAL,
+            severity_counts=MappingProxyType({SeverityLevel.HIGH: 1, SeverityLevel.LOW: 2}),
+            category_counts=MappingProxyType({PhiCategory.SSN: 1, PhiCategory.EMAIL: 2}),
+        )
+        output = _capture_v2_output(result)
+        assert "░" in output, "Empty bar portion must use the track glyph"

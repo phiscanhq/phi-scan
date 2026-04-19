@@ -104,6 +104,24 @@ class TestGroupByLine:
         aggregates = group_by_line(findings)
         assert aggregates[0].combined_fix == "Fix A; Fix B"
 
+    def test_unique_fix_count_tracks_distinct_hints(self) -> None:
+        findings = (
+            _make_finding(line_number=1, remediation_hint="Fix A"),
+            _make_finding(line_number=1, remediation_hint="Fix A"),
+            _make_finding(line_number=1, remediation_hint="Fix B"),
+            _make_finding(line_number=1, remediation_hint="Fix C"),
+        )
+        aggregates = group_by_line(findings)
+        assert aggregates[0].unique_fix_count == 3
+
+    def test_unique_fix_count_is_one_for_single_hint(self) -> None:
+        findings = (
+            _make_finding(line_number=1, remediation_hint="Fix A"),
+            _make_finding(line_number=1, remediation_hint="Fix A"),
+        )
+        aggregates = group_by_line(findings)
+        assert aggregates[0].unique_fix_count == 1
+
 
 class TestGroupByFile:
     def test_groups_by_file_path(self) -> None:
