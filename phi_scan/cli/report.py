@@ -125,6 +125,9 @@ class ScanOutputOptions:
     report_path: Path | None
     scan_target: Path = field(default_factory=lambda: Path("."))
     framework_annotations: Mapping[int, tuple[ComplianceControl, ...]] | None = None
+    is_v2: bool = False
+    is_verbose: bool = False
+    severity_threshold_value: str = "low"
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +204,25 @@ def display_rich_scan_results(scan_result: ScanResult) -> None:
 
 
 # ---------------------------------------------------------------------------
+# V2 renderer dispatch
+# ---------------------------------------------------------------------------
+
+def _dispatch_v2_renderer(scan_result: ScanResult, options: ScanOutputOptions) -> None:
+    """Dispatch to the v2 terminal report renderer."""
+    from phi_scan.constants import SeverityLevel
+    from phi_scan.report.v2.console import display_rich_scan_results_v2
+
+    severity_threshold = SeverityLevel(options.severity_threshold_value)
+    display_rich_scan_results_v2(
+        scan_result,
+        scan_target=str(options.scan_target),
+        severity_threshold=severity_threshold,
+        is_verbose=options.is_verbose,
+        report_path=options.report_path,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Scan output dispatch
 # ---------------------------------------------------------------------------
 
@@ -223,7 +245,10 @@ def emit_scan_output(scan_result: ScanResult, options: ScanOutputOptions) -> Non
             typer.echo(_REPORT_PATH_TABLE_FORMAT_ERROR, err=True)
             raise typer.Exit(code=EXIT_CODE_ERROR)
         if options.is_rich_mode:
-            display_rich_scan_results(scan_result)
+            if options.is_v2:
+                _dispatch_v2_renderer(scan_result, options)
+            else:
+                display_rich_scan_results(scan_result)
         return
     if options.output_format in (OutputFormat.PDF, OutputFormat.HTML):
         write_binary_report(scan_result, options)
